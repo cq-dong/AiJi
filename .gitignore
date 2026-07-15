@@ -28,3 +28,6 @@ dist-ssr
 
 # Session memory buffer
 .remember/
+
+# E2E acceptance screenshots (regenerable artifacts)
+.e2e_shots/
