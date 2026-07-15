@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, EmptyState } from '@/ui/components'
 import { seedCategories, seedTags } from '@/data/seed'
+import { useUiStore } from '@/app/store'
 import { SearchBar } from './SearchBar'
 import { SearchResultCard } from './SearchResultCard'
 import { searchEntries, type SearchResult } from './helpers'
@@ -57,11 +58,12 @@ export default function Search() {
 
   const hasQuery = query.trim().length > 0
 
+  const entries = useUiStore((s) => s.entries)
   const results = useMemo<SearchResult[]>(() => {
-    const all = searchEntries(query)
+    const all = searchEntries(query, entries)
     if (activeCat === 'all') return all
     return all.filter((r) => r.ai?.category === activeCat)
-  }, [query, activeCat])
+  }, [query, activeCat, entries])
 
   return (
     <div className="px-4 pb-6 pt-4">

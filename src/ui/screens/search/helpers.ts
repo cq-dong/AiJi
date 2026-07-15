@@ -60,10 +60,10 @@ export function formatRelativeTime(iso: string, now: Date = TODAY_REF): string {
 
 // Match query against every searchable surface of an entry: raw text/transcript of
 // every part, plus the AI's title/summary/tags(slag+label)/category(slug+label).
-export function searchEntries(query: string): SearchResult[] {
+export function searchEntries(query: string, entries: Entry[]): SearchResult[] {
   const q = query.trim().toLowerCase()
   if (!q) return []
-  return seedEntries
+  return entries
     .filter((e) => {
       const ai = aiByEntry.get(e.id)
       const cat = ai ? catBySlug.get(ai.category) : undefined
@@ -79,7 +79,7 @@ export function searchEntries(query: string): SearchResult[] {
         .toLowerCase()
       return hay.includes(q)
     })
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .map((e) => {
       const ai = aiByEntry.get(e.id)
       return { entry: e, ai, category: ai ? catBySlug.get(ai.category) : undefined }

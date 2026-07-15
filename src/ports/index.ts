@@ -6,6 +6,7 @@ import type { Aggregate, Category, Entry, EntryAi, Settings, Tag } from '@/domai
 export interface StoragePort {
   listEntries(): Promise<Entry[]>
   getEntry(id: string): Promise<Entry | undefined>
+  saveEntry(entry: Entry): Promise<void>
   getEntryAi(entryId: string): Promise<EntryAi | undefined>
   listCategories(): Promise<Category[]>
   listTags(): Promise<Tag[]>

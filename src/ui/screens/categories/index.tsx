@@ -1,17 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, EmptyState } from '@/ui/components'
-import { seedCategories, seedEntries, seedEntryAi } from '@/data/seed'
+import { seedCategories, seedEntryAi } from '@/data/seed'
+import { useUiStore } from '@/app/store'
+import type { Entry } from '@/domain/types'
 import { CategoryCard } from './CategoryCard'
 
 // Snippet = the latest entry's AI summary within this category.
 // Walk entries (which carry createdAt), keep those whose AI is filed under `slug`,
 // pick the newest, and return its summary.
-function latestSummaryFor(slug: string): string {
+function latestSummaryFor(slug: string, entries: Entry[]): string {
   const aiByEntry = new Map(seedEntryAi.map((a) => [a.entryId, a]))
-  const latest = seedEntries
+  const latest = entries
     .filter((e) => aiByEntry.get(e.id)?.category === slug)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
   return latest ? (aiByEntry.get(latest.id)?.summary ?? '') : ''
 }
 
@@ -30,9 +32,10 @@ export default function Categories() {
   const navigate = useNavigate()
   const [demoEmpty, setDemoEmpty] = useState(false)
 
+  const entries = useUiStore((s) => s.entries)
   const cards = useMemo(
-    () => seedCategories.map((c) => ({ category: c, snippet: latestSummaryFor(c.slug) })),
-    [],
+    () => seedCategories.map((c) => ({ category: c, snippet: latestSummaryFor(c.slug, entries) })),
+    [entries],
   )
   const totalCount = seedCategories.reduce((n, c) => n + c.usageCount, 0)
   const isEmpty = demoEmpty || seedCategories.length === 0

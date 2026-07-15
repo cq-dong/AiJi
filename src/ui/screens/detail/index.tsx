@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, EmptyState, cn } from '@/ui/components'
-import { seedEntries, seedEntryAi } from '@/data/seed'
+import { seedEntryAi } from '@/data/seed'
+import { useUiStore } from '@/app/store'
 import type { EntryStatus } from '@/domain/types'
 import { PartView } from './PartView'
 import { AiPanel, type AiState } from './AiPanel'
@@ -98,7 +99,8 @@ export default function Detail() {
     setOverride(null)
   }, [id])
 
-  const found = id ? seedEntries.find((e) => e.id === id) : undefined
+  const entries = useUiStore((s) => s.entries)
+  const found = id ? entries.find((e) => e.id === id) : undefined
 
   if (!found) {
     return (
