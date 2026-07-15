@@ -1,6 +1,5 @@
-import { useState } from 'react'
-import { seedSettings } from '@/data/seed'
 import { Button, Card, cn } from '@/ui/components'
+import { useUiStore } from '@/app/store'
 import { Toggle } from './Toggle'
 
 type Theme = 'light' | 'dark' | 'system'
@@ -52,10 +51,10 @@ function ModelRow({ label, value }: { label: string; value: string }) {
 }
 
 export default function Settings() {
-  const [theme, setTheme] = useState<Theme>(seedSettings.theme)
-  const [recordLocation, setRecordLocation] = useState<boolean>(
-    seedSettings.recordLocation,
-  )
+  const settings = useUiStore((s) => s.settings)
+  const setSettings = useUiStore((s) => s.setSettings)
+  const theme = settings.theme
+  const recordLocation = settings.recordLocation
 
   return (
     <div className="px-4 pb-4 pt-4">
@@ -72,7 +71,7 @@ export default function Settings() {
               <button
                 key={t.key}
                 type="button"
-                onClick={() => setTheme(t.key)}
+                onClick={() => setSettings({ theme: t.key })}
                 className={cn(
                   'h-8 flex-1 rounded-[16px] text-[12px] font-medium transition',
                   active
@@ -95,7 +94,7 @@ export default function Settings() {
             默认关闭，开启后给条目加位置
           </p>
         </div>
-        <Toggle checked={recordLocation} onChange={setRecordLocation} />
+        <Toggle checked={recordLocation} onChange={(v) => setSettings({ recordLocation: v })} />
       </div>
 
       {/* 提醒与待办 */}
@@ -110,9 +109,9 @@ export default function Settings() {
           BYOK · 各模型独立配置 URL + Key
         </p>
         <div className="mt-3">
-          <ModelRow label="文本 / 分类模型" value={seedSettings.llmProvider} />
+          <ModelRow label="文本 / 分类模型" value={settings.llmProvider} />
           <div className="my-3 h-px bg-brd" />
-          <ModelRow label="音频转写模型" value={seedSettings.sttProvider} />
+          <ModelRow label="音频转写模型" value={settings.sttProvider} />
         </div>
       </Card>
 

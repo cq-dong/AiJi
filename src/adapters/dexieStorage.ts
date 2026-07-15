@@ -9,9 +9,9 @@ import {
   seedTags,
 } from '@/data/seed'
 
-// PWA StoragePort 适配：entries 走 Dexie（首屏空库时从 seed 灌入，保存即落库、重载留存）。
-// entryAi/categories/aggregates/tags/settings 仍取 seed——其写入路径（LLM/设置 UI）未落地，
-// 待对应端口接入时再路由到 Dexie。
+// PWA StoragePort 适配：entries + settings 走 Dexie（首屏空库时 entries 从 seed 灌入；
+// settings 落库到单行 key=1，seed 兜底首启）。entryAi/categories/aggregates/tags 仍取 seed——
+// 其写入路径（LLM）未落地，待 LlmPort 接入时再路由到 Dexie。
 let seeded = false
 async function ensureSeeded(): Promise<void> {
   if (seeded) return
@@ -47,7 +47,13 @@ export const dexieStorage: StoragePort = {
     return seedAggregates
   },
   async getSettings() {
-    return seedSettings
+    // Single-row settings at key 1. Fall back to seed on first run / empty DB.
+    const row = await db.settings.get(1)
+    return row ?? seedSettings
+  },
+  async saveSettings(s) {
+    // Upsert the single settings row at fixed key 1 (++id never fires — explicit key).
+    await db.settings.put(s, 1)
   },
   async saveMedia(ref, blob) {
     // OPFS (PRD §7.2). A2 de-risk: does the browser persist media locally (iOS 尤甚)?

@@ -8,7 +8,9 @@ export class AiJiDB extends Dexie {
   categories!: Table<Category, string>
   tags!: Table<Tag, string>
   aggregates!: Table<Aggregate, string>
-  settings!: Table<Settings, string>
+  // Single-row settings: stored at fixed key 1 (put(obj, 1) upserts). ++id schema,
+  // but we always pass the explicit key — auto-increment never fires.
+  settings!: Table<Settings, number>
 
   constructor() {
     super('aiji')

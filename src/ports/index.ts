@@ -12,6 +12,7 @@ export interface StoragePort {
   listTags(): Promise<Tag[]>
   listAggregates(): Promise<Aggregate[]>
   getSettings(): Promise<Settings>
+  saveSettings(s: Settings): Promise<void>
   // Media blobs (audio/video) persist to OPFS (PRD §7.2 媒体后置→A2)。ref = EntryPart.ref.
   // saveMedia: persist (or overwrite) a blob. getMedia: read back; undefined if absent or OPFS unsupported.
   saveMedia(ref: string, blob: Blob): Promise<void>

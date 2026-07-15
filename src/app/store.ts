@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { Entry, EntryPart } from '@/domain/types'
-import { seedEntries } from '@/data/seed'
+import type { Entry, EntryPart, Settings } from '@/domain/types'
+import { seedEntries, seedSettings } from '@/data/seed'
 import { di } from './di'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：首屏 seed 兜底即时渲染，
@@ -19,6 +19,7 @@ interface UiState {
   online: boolean
   entries: Entry[] // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
   hydrated: boolean // 是否已从 Dexie 载入
+  settings: Settings // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
   justSaved: boolean // 刚保存 → 首页 toast + 置顶处理中卡片
   hydrate: () => Promise<void>
   startRecording: () => Promise<void>
@@ -31,6 +32,7 @@ interface UiState {
   clearDraft: () => void
   clearJustSaved: () => void
   setOnline: (v: boolean) => void
+  setSettings: (patch: Partial<Settings>) => void
 }
 
 const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '' }
@@ -40,12 +42,16 @@ export const useUiStore = create<UiState>((set, get) => ({
   online: true,
   entries: seedEntries,
   hydrated: false,
+  settings: seedSettings,
   justSaved: false,
   hydrate: async () => {
     if (get().hydrated) return
     try {
-      const entries = await di.storage.listEntries()
-      set({ entries, hydrated: true })
+      const [entries, settings] = await Promise.all([
+        di.storage.listEntries(),
+        di.storage.getSettings(),
+      ])
+      set({ entries, settings, hydrated: true })
     } catch (e) {
       // 载入失败：保持 seed 兜底，标记已尝试避免反复重试（存储失败不阻断 UI）
       console.error('[store] hydrate failed', e)
@@ -106,4 +112,9 @@ export const useUiStore = create<UiState>((set, get) => ({
   clearDraft: () => set({ capture: emptyDraft }),
   clearJustSaved: () => set({ justSaved: false }),
   setOnline: (v) => set({ online: v }),
+  setSettings: (patch) => {
+    const next = { ...get().settings, ...patch }
+    set({ settings: next })
+    void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+  },
 }))
