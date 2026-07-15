@@ -2,12 +2,10 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useUiStore } from '@/app/store'
-import { CaptureKeyframes } from './widgets'
+import { CaptureKeyframes, TextEntrySheet } from './widgets'
 import type { Mode } from './widgets'
 import { EmptyView, MultiView, NoMicView, RecordingView } from './variants'
 import type { CaptureApi } from './variants'
-
-const SAMPLE_TEXT = '不用再开另一个 app 了'
 
 export default function Capture() {
   const navigate = useNavigate()
@@ -28,6 +26,8 @@ export default function Capture() {
   const [mode, setMode] = useState<Mode>('voice')
   const [popOpen, setPopOpen] = useState(false)
   const [elapsed, setElapsed] = useState(0)
+  const [textDraft, setTextDraft] = useState('')
+  const [textSheetOpen, setTextSheetOpen] = useState(false)
 
   // Count-up timer while recording.
   useEffect(() => {
@@ -53,6 +53,16 @@ export default function Capture() {
       capture: { ...s.capture, parts: s.capture.parts.filter((_, i) => i !== idx) },
     }))
 
+  const closeTextSheet = () => {
+    setTextDraft('')
+    setTextSheetOpen(false)
+  }
+  const submitText = () => {
+    const t = textDraft.trim()
+    if (t) addPart({ type: 'text', content: t })
+    closeTextSheet()
+  }
+
   const api: CaptureApi = {
     mode,
     popOpen,
@@ -66,7 +76,7 @@ export default function Capture() {
         setElapsed(0)
         startRecording()
       } else if (m === 'text') {
-        addPart({ type: 'text', content: SAMPLE_TEXT })
+        setTextSheetOpen(true)
       }
     },
     onOpenVideoPop: () => {
@@ -74,7 +84,7 @@ export default function Capture() {
       setPopOpen(true)
     },
     onClosePop: () => setPopOpen(false),
-    onAddText: () => addPart({ type: 'text', content: SAMPLE_TEXT }),
+    onAddText: () => setTextSheetOpen(true),
     onAddVideo: () => {
       addPart({ type: 'video', ref: 'mock', durationSec: 8 })
       setPopOpen(false)
@@ -93,6 +103,7 @@ export default function Capture() {
     onUseText: () => {
       allowMic()
       setMode('text')
+      setTextSheetOpen(true)
     },
   }
 
@@ -107,6 +118,13 @@ export default function Capture() {
     <div className="relative h-full w-full bg-page">
       <CaptureKeyframes />
       {body}
+      <TextEntrySheet
+        open={textSheetOpen}
+        value={textDraft}
+        onChange={setTextDraft}
+        onAdd={submitText}
+        onCancel={closeTextSheet}
+      />
     </div>
   )
 }

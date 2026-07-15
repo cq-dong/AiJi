@@ -152,6 +152,58 @@ export function VideoPop({
   )
 }
 
+// ── Text entry sheet: bottom sheet with textarea for typing a text part. ──
+// The Figma prototype has no dedicated text-input frame (文本 is a pill only),
+// so this is a token-matched bottom sheet standing in for real text capture.
+export function TextEntrySheet({
+  open,
+  value,
+  onChange,
+  onAdd,
+  onCancel,
+}: {
+  open: boolean
+  value: string
+  onChange: (v: string) => void
+  onAdd: () => void
+  onCancel: () => void
+}) {
+  if (!open) return null
+  const canAdd = value.trim().length > 0
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col justify-end" role="dialog" aria-label="文本输入">
+      <button type="button" aria-label="取消" tabIndex={-1} className="absolute inset-0 bg-black/30" onClick={onCancel} />
+      <div className="relative rounded-t-[20px] bg-card px-4 pb-5 pt-3 shadow-lg">
+        <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-brd" />
+        <textarea
+          autoFocus
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="记下点什么…"
+          className="h-32 w-full resize-none rounded-card border border-brd bg-page p-3 text-[14px] leading-relaxed text-ink outline-none focus:border-pri"
+        />
+        <div className="mt-3 flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex h-11 flex-1 items-center justify-center rounded-btn border border-brd bg-card text-[14px] font-medium text-t2 active:scale-[0.98]"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={onAdd}
+            disabled={!canAdd}
+            className="flex h-11 flex-1 items-center justify-center rounded-btn bg-pri text-[14px] font-medium text-white disabled:opacity-40 active:scale-[0.98]"
+          >
+            添加
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Parts stack: card holding accumulated parts + "添加片段" link ──
 export function PartsStack({
   parts,
