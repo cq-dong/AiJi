@@ -1,0 +1,35 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  #root {
+    display: flex;
+    flex-direction: column;
+  }
+  button {
+    font-family: inherit;
+  }
+}
+
+/* Mobile preview frame: 390×844 centered on larger screens */
+.aji-frame {
+  width: 390px;
+  max-width: 100%;
+  min-height: 844px;
+  margin: 0 auto;
+  position: relative;
+  overflow: hidden;
+}
