@@ -2,11 +2,9 @@ import type { CapturePort } from '@/ports'
 
 // PWA capture adapter (PRD §7.3 "WebSpeech+getUserMedia"): mic via getUserMedia,
 // live STT preview via WebSpeech, recording via MediaRecorder. Whisper final-quality
-// STT is SttPort (deferred — cloud/BYOK). Audio blobs live in-memory for in-session
-// replay only; OPFS media persistence is 后置 (PRD §7.2). After reload the audio part
-// keeps its transcript but loses replay — acceptable until OPFS lands.
-
-const blobs = new Map<string, Blob>()
+// STT is SttPort (deferred — cloud/BYOK). stopAudio returns the recorded blob; the
+// store persists it via StoragePort.saveMedia (OPFS, PRD §7.2). Seed audio parts have
+// no blob → detail player shows static/disabled.
 
 let stream: MediaStream | null = null
 let recorder: MediaRecorder | null = null
@@ -87,24 +85,21 @@ export const webCapture: CapturePort = {
     const durationSec = Math.max(0.1, (Date.now() - startedAt) / 1000)
     try { recognition?.stop() } catch { /* noop */ }
     recognition = null
+    let blob: Blob | undefined
     if (recorder && recorder.state !== 'inactive') {
-      await new Promise<void>((resolve) => {
-        recorder!.onstop = () => resolve()
+      blob = await new Promise<Blob | undefined>((resolve) => {
+        recorder!.onstop = () => {
+          const type = recorder!.mimeType || 'audio/webm'
+          resolve(chunks.length > 0 ? new Blob(chunks, { type }) : undefined)
+        }
         recorder!.stop()
       })
     }
     stream?.getTracks().forEach((t) => t.stop())
-    const type = recorder?.mimeType ?? 'audio/webm'
     const ref = `audio-${crypto.randomUUID()}`
-    if (chunks.length > 0) blobs.set(ref, new Blob(chunks, { type }))
     recorder = null
     stream = null
     chunks = []
-    return { ref, durationSec }
+    return { ref, durationSec, blob }
   },
-}
-
-// In-session replay lookup (detail/player). undefined after reload — OPFS 后置.
-export function getAudioBlob(ref: string): Blob | undefined {
-  return blobs.get(ref)
 }

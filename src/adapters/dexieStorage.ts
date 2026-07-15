@@ -49,4 +49,29 @@ export const dexieStorage: StoragePort = {
   async getSettings() {
     return seedSettings
   },
+  async saveMedia(ref, blob) {
+    // OPFS (PRD §7.2). A2 de-risk: does the browser persist media locally (iOS 尤甚)?
+    // Graceful degradation: OPFS unsupported → no-op (transcript still shows; replay lost).
+    try {
+      const root = await navigator.storage?.getDirectory?.()
+      if (!root) return
+      const handle = await root.getFileHandle(ref, { create: true })
+      const writable = await handle.createWritable()
+      await writable.write(blob)
+      await writable.close()
+    } catch (e) {
+      console.error('[dexieStorage] saveMedia failed', e)
+    }
+  },
+  async getMedia(ref) {
+    try {
+      const root = await navigator.storage?.getDirectory?.()
+      if (!root) return undefined
+      const handle = await root.getFileHandle(ref)
+      const file = await handle.getFile()
+      return file
+    } catch {
+      return undefined // not found (seed parts) or OPFS unsupported
+    }
+  },
 }

@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react'
 import type { EntryPart } from '@/domain/types'
 import { Card } from '@/ui/components'
+import { di } from '@/app/di'
 import { formatDateTime, formatDuration, partTypeLabel } from './helpers'
 
 const BAR_HEIGHTS = [4, 11, 6, 13, 8, 15, 10, 5, 12, 7, 14, 9, 4, 11, 6, 13, 8, 15, 10, 5, 12, 7, 14, 9]
@@ -8,6 +10,15 @@ function PlayTriangle({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 10 10" className={className} fill="currentColor" aria-hidden="true">
       <polygon points="2,1 9,5 2,9" />
+    </svg>
+  )
+}
+
+function PauseIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 10 10" className={className} fill="currentColor" aria-hidden="true">
+      <rect x="2" y="1" width="2" height="8" />
+      <rect x="6" y="1" width="2" height="8" />
     </svg>
   )
 }
@@ -22,14 +33,54 @@ function Waveform() {
   )
 }
 
-function AudioPlayer({ durationSec }: { durationSec: number }) {
+function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durationSec: number }) {
+  // Fetch the persisted blob from OPFS (A2). Seed parts have no blob → static/disabled.
+  const [status, setStatus] = useState<'loading' | 'ready' | 'none'>('loading')
+  const [url, setUrl] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(false)
+  const audioRef = useRef<HTMLAudioElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let createdUrl: string | null = null
+    void (async () => {
+      const blob = await di.storage.getMedia(mediaRef)
+      if (cancelled) return
+      if (!blob) { setStatus('none'); return }
+      createdUrl = URL.createObjectURL(blob)
+      setUrl(createdUrl)
+      setStatus('ready')
+    })()
+    return () => {
+      cancelled = true
+      if (createdUrl) URL.revokeObjectURL(createdUrl)
+    }
+  }, [mediaRef])
+
+  const toggle = () => {
+    const a = audioRef.current
+    if (!a || status !== 'ready') return
+    if (playing) { a.pause(); setPlaying(false) }
+    else { void a.play(); setPlaying(true) }
+  }
+
+  const disabled = status !== 'ready'
   return (
     <div className="flex items-center gap-2 h-[28px] rounded-[14px] bg-priS px-2">
-      <span className="flex size-3 items-center justify-center text-pri">
-        <PlayTriangle className="size-[10px]" />
-      </span>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={disabled}
+        aria-label={playing ? '暂停' : '播放'}
+        className="flex size-3 items-center justify-center text-pri disabled:opacity-40"
+      >
+        {playing ? <PauseIcon className="size-[10px]" /> : <PlayTriangle className="size-[10px]" />}
+      </button>
       <Waveform />
       <span className="ml-auto text-[11px] font-medium tabular-nums text-pri">{formatDuration(durationSec)}</span>
+      {status === 'ready' && url && (
+        <audio ref={audioRef} src={url} onEnded={() => setPlaying(false)} className="hidden" />
+      )}
     </div>
   )
 }
@@ -62,7 +113,7 @@ export function PartView({ part, iso }: { part: EntryPart; iso: string }) {
           {part.transcript && (
             <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{part.transcript}</p>
           )}
-          <AudioPlayer durationSec={part.durationSec} />
+          <AudioPlayer mediaRef={part.ref} durationSec={part.durationSec} />
         </>
       )}
       {part.type === 'video' && (

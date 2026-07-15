@@ -12,13 +12,19 @@ export interface StoragePort {
   listTags(): Promise<Tag[]>
   listAggregates(): Promise<Aggregate[]>
   getSettings(): Promise<Settings>
+  // Media blobs (audio/video) persist to OPFS (PRD §7.2 媒体后置→A2)。ref = EntryPart.ref.
+  // saveMedia: persist (or overwrite) a blob. getMedia: read back; undefined if absent or OPFS unsupported.
+  saveMedia(ref: string, blob: Blob): Promise<void>
+  getMedia(ref: string): Promise<Blob | undefined>
 }
 
 export interface CapturePort {
   // onInterim: partial transcript (overwrites prior interim). onFinal: a finalized
   // segment (appends). WebSpeech live preview; Whisper final-quality STT is SttPort (deferred).
   startAudio(opts: { onInterim?: (text: string) => void; onFinal?: (text: string) => void }): Promise<void>
-  stopAudio(): Promise<{ ref: string; durationSec: number }>
+  // Returns the recorded blob so the store can persist it (StoragePort.saveMedia).
+  // blob undefined when MediaRecorder unsupported (degrades to transcript-only).
+  stopAudio(): Promise<{ ref: string; durationSec: number; blob?: Blob }>
   hasMicPermission(): Promise<boolean>
   requestMicPermission(): Promise<boolean>
 }

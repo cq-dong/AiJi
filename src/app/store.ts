@@ -68,7 +68,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   stopRecording: async () => {
     const s = get()
     if (!s.capture.recording) return
-    let result: { ref: string; durationSec: number }
+    let result: { ref: string; durationSec: number; blob?: Blob }
     try {
       result = await di.capture.stopAudio()
     } catch (e) {
@@ -78,6 +78,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     const cur = get().capture
     const transcript = (cur.finalized + cur.interim).trim()
     const part: EntryPart = { type: 'audio', ref: result.ref, durationSec: Math.max(1, Math.round(result.durationSec)), transcript }
+    if (result.blob) void di.storage.saveMedia(result.ref, result.blob).catch((e) => console.error('[store] saveMedia failed', e))
     set((s2) => ({
       capture: { ...s2.capture, recording: false, finalized: '', interim: '', parts: [...s2.capture.parts, part] },
     }))
