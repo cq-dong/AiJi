@@ -9,6 +9,7 @@ export interface CaptureApi {
   popOpen: boolean
   elapsed: number
   parts: EntryPart[]
+  liveTranscript: string
   onClose: () => void
   onPickMode: (m: Mode) => void
   onOpenVideoPop: () => void
@@ -173,7 +174,7 @@ export function RecordingView({ api }: { api: CaptureApi }) {
       <div className="absolute left-[16px] top-[340px] w-[358px] rounded-card border border-brd bg-card p-[19px]">
         <p className="text-[12px] text-t3">正在转写</p>
         <p className="mt-[12px] w-[318px] text-[13px] leading-[1.5] text-t2">
-          …地铁里想到——如果记一条东西能顺便变成提醒或待办，就不用再开另一个 app 了…
+          {api.liveTranscript || '…'}
         </p>
       </div>
       <button

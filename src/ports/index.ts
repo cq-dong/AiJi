@@ -15,7 +15,9 @@ export interface StoragePort {
 }
 
 export interface CapturePort {
-  startAudio(): Promise<void>
+  // onInterim: partial transcript (overwrites prior interim). onFinal: a finalized
+  // segment (appends). WebSpeech live preview; Whisper final-quality STT is SttPort (deferred).
+  startAudio(opts: { onInterim?: (text: string) => void; onFinal?: (text: string) => void }): Promise<void>
   stopAudio(): Promise<{ ref: string; durationSec: number }>
   hasMicPermission(): Promise<boolean>
   requestMicPermission(): Promise<boolean>

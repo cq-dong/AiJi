@@ -10,6 +10,8 @@ interface CaptureDraft {
   recording: boolean
   saving: boolean
   micDenied: boolean
+  finalized: string // accumulated finalized STT segments (live preview)
+  interim: string // current partial segment (live preview)
 }
 
 interface UiState {
@@ -19,8 +21,8 @@ interface UiState {
   hydrated: boolean // 是否已从 Dexie 载入
   justSaved: boolean // 刚保存 → 首页 toast + 置顶处理中卡片
   hydrate: () => Promise<void>
-  startRecording: () => void
-  stopRecording: () => void
+  startRecording: () => Promise<void>
+  stopRecording: () => Promise<void>
   beginSave: () => void
   finishSave: () => void
   denyMic: () => void
@@ -31,7 +33,7 @@ interface UiState {
   setOnline: (v: boolean) => void
 }
 
-const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false }
+const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '' }
 
 export const useUiStore = create<UiState>((set, get) => ({
   capture: emptyDraft,
@@ -50,8 +52,36 @@ export const useUiStore = create<UiState>((set, get) => ({
       set({ hydrated: true })
     }
   },
-  startRecording: () => set((s) => ({ capture: { ...s.capture, recording: true } })),
-  stopRecording: () => set((s) => ({ capture: { ...s.capture, recording: false } })),
+  startRecording: async () => {
+    set((s) => ({ capture: { ...s.capture, finalized: '', interim: '' } }))
+    try {
+      await di.capture.startAudio({
+        onInterim: (t) => set((s) => ({ capture: { ...s.capture, interim: t } })),
+        onFinal: (t) => set((s) => ({ capture: { ...s.capture, finalized: s.capture.finalized + t, interim: '' } })),
+      })
+      set((s) => ({ capture: { ...s.capture, recording: true } }))
+    } catch (e) {
+      console.error('[store] startAudio failed', e)
+      set((s) => ({ capture: { ...s.capture, recording: false, micDenied: true } }))
+    }
+  },
+  stopRecording: async () => {
+    const s = get()
+    if (!s.capture.recording) return
+    let result: { ref: string; durationSec: number }
+    try {
+      result = await di.capture.stopAudio()
+    } catch (e) {
+      console.error('[store] stopAudio failed', e)
+      result = { ref: `audio-${crypto.randomUUID()}`, durationSec: 0.1 }
+    }
+    const cur = get().capture
+    const transcript = (cur.finalized + cur.interim).trim()
+    const part: EntryPart = { type: 'audio', ref: result.ref, durationSec: Math.max(1, Math.round(result.durationSec)), transcript }
+    set((s2) => ({
+      capture: { ...s2.capture, recording: false, finalized: '', interim: '', parts: [...s2.capture.parts, part] },
+    }))
+  },
   beginSave: () => set((s) => ({ capture: { ...s.capture, recording: false, saving: true } })),
   finishSave: () => {
     const s = get()

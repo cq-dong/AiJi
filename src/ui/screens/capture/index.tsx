@@ -7,7 +7,6 @@ import type { Mode } from './widgets'
 import { EmptyView, MultiView, NoMicView, RecordingView } from './variants'
 import type { CaptureApi } from './variants'
 
-const SAMPLE_TRANSCRIPT = '…地铁里想到——如果记一条东西能顺便变成提醒或待办，就不用再开另一个 app 了…'
 const SAMPLE_TEXT = '不用再开另一个 app 了'
 
 export default function Capture() {
@@ -16,6 +15,8 @@ export default function Capture() {
   const recording = useUiStore((s) => s.capture.recording)
   const saving = useUiStore((s) => s.capture.saving)
   const micDenied = useUiStore((s) => s.capture.micDenied)
+  const finalized = useUiStore((s) => s.capture.finalized)
+  const interim = useUiStore((s) => s.capture.interim)
   const startRecording = useUiStore((s) => s.startRecording)
   const stopRecording = useUiStore((s) => s.stopRecording)
   const beginSave = useUiStore((s) => s.beginSave)
@@ -57,6 +58,7 @@ export default function Capture() {
     popOpen,
     elapsed,
     parts,
+    liveTranscript: finalized + interim,
     onClose: () => navigate('/'),
     onPickMode: (m) => {
       setMode(m)
@@ -83,12 +85,6 @@ export default function Capture() {
     },
     onStop: () => {
       stopRecording()
-      addPart({
-        type: 'audio',
-        ref: 'mock',
-        durationSec: Math.max(1, elapsed),
-        transcript: SAMPLE_TRANSCRIPT,
-      })
     },
     onSave: () => beginSave(),
     onRemovePart: removePart,
