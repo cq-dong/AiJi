@@ -88,6 +88,23 @@ async function handleShare(): Promise<void> {
   }
 }
 
+// 待提醒列表用 — dueAt 格式化为本地时间 M/D HH:MM（简洁，如 7/17 15:00）。
+function formatDueAt(iso: string): string {
+  const d = new Date(iso)
+  const m = d.getMonth() + 1
+  const day = d.getDate()
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${m}/${day} ${hh}:${mm}`
+}
+
+const STATUS_LABELS = {
+  pending: '待提醒',
+  fired: '已提醒',
+  snoozed: '已稍后',
+  missed: '已错过',
+} as const
+
 const THEMES: { key: Theme; label: string }[] = [
   { key: 'light', label: '亮色' },
   { key: 'dark', label: '暗色' },
@@ -282,6 +299,68 @@ function SttSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+function RemindersSheet({ onClose }: { onClose: () => void }) {
+  const reminders = useUiStore((s) => s.reminders)
+  const pending = reminders
+    .filter((r) => r.status === 'pending')
+    .sort((a, b) => (a.dueAt < b.dueAt ? -1 : 1))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div
+        className="flex max-h-[80vh] w-full max-w-[420px] flex-col rounded-screen bg-page p-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-bold text-ink">提醒与待办</p>
+          <button type="button" onClick={onClose} className="text-[16px] text-t3">
+            ✕
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-t3">查看与管理待提醒事项</p>
+
+        {pending.length === 0 ? (
+          <div className="mt-6 flex flex-col items-center justify-center pb-4">
+            <p className="text-[13px] text-t3">暂无待提醒事项</p>
+          </div>
+        ) : (
+          <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
+            {pending.map((r) => (
+              <div key={r.id} className="rounded-card border border-brd bg-card p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-medium text-ink">{formatDueAt(r.dueAt)}</span>
+                  <span className="rounded-chip bg-priS px-2 py-0.5 text-[10px] font-medium text-pri">
+                    {STATUS_LABELS[r.status]}
+                  </span>
+                </div>
+                <p className="mt-1 text-[13px] text-ink">{r.label}</p>
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-[34px] flex-1 rounded-btn"
+                    onClick={() => void useUiStore.getState().snoozeReminder(r.id, 10)}
+                  >
+                    稍后提醒
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-[34px] flex-1 rounded-btn"
+                    onClick={() => void useUiStore.getState().dismissReminder(r.id)}
+                  >
+                    取消
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
   const settings = useUiStore((s) => s.settings)
   const setSettings = useUiStore((s) => s.setSettings)
@@ -290,6 +369,7 @@ export default function Settings() {
   const hasEntries = useUiStore((s) => s.entries.length > 0)
   const [editing, setEditing] = useState(false)
   const [editingStt, setEditingStt] = useState(false)
+  const [viewingReminders, setViewingReminders] = useState(false)
 
   return (
     <div className="px-4 pb-4 pt-4">
@@ -332,7 +412,7 @@ export default function Settings() {
 
       {/* 提醒与待办 */}
       <div className="mt-3">
-        <ChevronRow label="提醒与待办" value="查看与确认" />
+        <ChevronRow label="提醒与待办" value="查看与确认" onClick={() => setViewingReminders(true)} />
       </div>
 
       {/* AI 模型 */}
@@ -402,6 +482,7 @@ export default function Settings() {
 
       {editing && <ByokSheet onClose={() => setEditing(false)} />}
       {editingStt && <SttSheet onClose={() => setEditingStt(false)} />}
+      {viewingReminders && <RemindersSheet onClose={() => setViewingReminders(false)} />}
     </div>
   )
 }
