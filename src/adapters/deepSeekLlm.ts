@@ -15,6 +15,10 @@ interface ClassifyResult {
   facets?: Facets
   titleSuggestion?: string
   summary?: string
+  // B4: LLM-detected time-based reminder intent. dueAt is absolute ISO 8601
+  // (LLM resolves relative time using entry.createdAt as anchor). label is a
+  // short user-editable summary. Absent when no reminder intent is detected.
+  reminderSuggestion?: { dueAt: string; label: string }
 }
 
 function entryText(entry: Entry): string {
@@ -24,26 +28,34 @@ function entryText(entry: Entry): string {
     .join('\n')
 }
 
-function buildPrompt(content: string, categories: Category[], tags: Tag[]) {
+function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[]) {
   const catList = categories.map((c) => `${c.slug}:${c.label}`).join(', ') || '（暂无）'
   const tagList = tags.map((t) => t.slug).join(', ') || '（暂无）'
-  const system = `你是「AiJi」(AI 记) 的笔记分类助手。给定一条用户的「记」条目内容 + 现有类别库 + 现有标签库，输出严格 JSON。
+  const system = `你是「AiJi」(AI 记) 的笔记分类助手。给定一条用户的「记」条目内容 + 条目创建时间 + 现有类别库 + 现有标签库，输出严格 JSON。
 
 铁律：
 1. 类别由内容涌现——优先复用现有类别 slug；若都不贴切，创造一个新 slug（kebab-case，英文或拼音小写连字符）+ 中文 label。绝不硬编码固定类别集。
 2. 标签同理，复用或新建，2-5 个，去重。
 3. 情绪只是可选侧面——若内容明显带情绪，填 facets.mood（一个词）；绝不把情绪当主轴或必填。
 4. titleSuggestion 一句话 ≤16 字；summary 一句话概述。
+5. 时间型提醒意图：若正文含明确的提醒/待办时间意图（如「明天下午3点提醒我给设计稿反馈」「周五记得啃 STT」「下周一早上9点交周报」），解析出绝对时间并填 reminderSuggestion：dueAt 为绝对 ISO 8601 时间戳（含时区偏移），以条目创建时间为基准解析相对表达（"明天"=createdAt 次日、"下周一"=下一个周一等）；label 为 ≤12 字短摘要，用户后续可改。仅建议不调度——不创建任何 Reminder。无明确时间提醒意图时此字段必须省略，绝不臆造时间。
 
 输出 JSON schema：
-{"categorySlug":string,"categoryLabel"?:string,"tags":string[],"facets":{"mood"?:string,"person"?:string[],"place"?:string,"project"?:string,"event"?:string},"titleSuggestion"?:string,"summary"?:string}
+{"categorySlug":string,"categoryLabel"?:string,"tags":string[],"facets":{"mood"?:string,"person"?:string[],"place"?:string,"project"?:string,"event"?:string},"titleSuggestion"?:string,"summary"?:string,"reminderSuggestion"?:{"dueAt":string,"label":string}}
 
 只输出 JSON，不要 markdown 围栏、不要解释。`
-  const example = `示例：
+  const example = `示例1（无提醒意图，reminderSuggestion 省略）：
 内容："把 CapturePort 抽成接口，PWA 和 Capacitor 各实现一个，UI 层不动。"
 现有类别：idea:想法, project:项目进展, life:生活片段
-输出：{"categorySlug":"project","tags":["aiji","design"],"facets":{"project":"AiJi"},"titleSuggestion":"CapturePort 接口化","summary":"抽 CapturePort 为接口，PWA/Capacitor 各实现"}`
-  const user = `现有类别：${catList}
+输出：{"categorySlug":"project","tags":["aiji","design"],"facets":{"project":"AiJi"},"titleSuggestion":"CapturePort 接口化","summary":"抽 CapturePort 为接口，PWA/Capacitor 各实现"}
+
+示例2（含提醒意图，相对时间解析为绝对 ISO）：
+内容："明天下午3点提醒我给设计稿反馈。"
+条目创建时间：2026-07-16T09:30:00+08:00
+现有类别：idea:想法, project:项目进展, life:生活片段
+输出：{"categorySlug":"project","tags":["design","reminder"],"facets":{"project":"设计稿"},"titleSuggestion":"给设计稿反馈","summary":"明天下午3点给设计稿反馈","reminderSuggestion":{"dueAt":"2026-07-17T15:00:00+08:00","label":"给设计稿反馈"}}`
+  const user = `条目创建时间：${createdAt}
+现有类别：${catList}
 现有标签：${tagList}
 条目内容：
 ${content}
@@ -154,7 +166,7 @@ export const deepSeekLlm: LlmPort = {
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages: buildPrompt(content, categories, tags), max_tokens: 512, temperature: 0.3, thinking: { type: 'disabled' } }),
+      body: JSON.stringify({ model, messages: buildPrompt(content, entry.createdAt, categories, tags), max_tokens: 512, temperature: 0.3, thinking: { type: 'disabled' } }),
     })
     if (!res.ok) {
       const t = await res.text().catch(() => '')
@@ -195,6 +207,8 @@ export const deepSeekLlm: LlmPort = {
       facets: parsed.facets ?? {},
       titleSuggestion: parsed.titleSuggestion,
       summary: parsed.summary,
+      // B4: 仅 LLM 建议，不调度——用户在 TodoConfirm(B6) 确认后才建 Reminder
+      reminderSuggestion: parsed.reminderSuggestion,
       modelUsed: model,
       createdAt: now,
     }
