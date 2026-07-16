@@ -44,7 +44,7 @@
 
 验收 LGTM（2026-07-16）：6 项行为测试（卡片渲染 / 确认流 / Notification fire / reload 持久 / 错过策略 / snooze+dismiss）+ 4 项 store 不变量（timeout 去重 / fire 前 re-check / Q3 阈值 / processEntry 不自动建）全 pass，无 console error。
 
-**已知小问题（后置打磨）**：确认提醒后 reload，detail 的确认卡会重现（`reminderSuggestion` 未在确认时清掉 + `reminderHidden` 是本地 state 不持久）→ 重确认会建重复 Reminder。minor，用户可点「忽略」消解；留待打磨。
+**打磨回合（2026-07-16，LGTM 后 polish）**：修 3 处 correctness minor——(1) `confirmReminder` 清掉 EntryAi.reminderSuggestion 防 reload 后卡片重现/重确认建重复（含深链直达 detail、hydrate 前 aiByEntry 空时从 Dexie 取 AI 再清）；(2) `snoozeReminder` 锚定 `max(now, dueAt)` 防稍后提醒把未来到点提醒往前挪；(3) `deepSeekLlm` 传本地带偏移 ISO 给 LLM（原 UTC `Z` 无时区信号，相对时间解析偏移会错）。余 a11y/UX minor（label-input 关联、空 datetime guard、formatDueAt 防错、dead STATUS_LABELS、comment rot）留后续打磨轮。
 
 ## 后置 / 不做（用户已决策，2026-07-16）
 

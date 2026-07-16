@@ -28,6 +28,17 @@ function entryText(entry: Entry): string {
     .join('\n')
 }
 
+// createdAt 落库是 UTC（Z）；LLM 解析「明天下午3点」需用户本地时区信号——转成本地带偏移
+// ISO（如 2026-07-16T09:30:00+08:00），与 prompt 示例格式一致，LLM 才输出对的偏移。
+function toLocalIso(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const off = -d.getTimezoneOffset()
+  const sign = off >= 0 ? '+' : '-'
+  const offStr = `${sign}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}${offStr}`
+}
+
 function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[]) {
   const catList = categories.map((c) => `${c.slug}:${c.label}`).join(', ') || '（暂无）'
   const tagList = tags.map((t) => t.slug).join(', ') || '（暂无）'
@@ -166,7 +177,7 @@ export const deepSeekLlm: LlmPort = {
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages: buildPrompt(content, entry.createdAt, categories, tags), max_tokens: 512, temperature: 0.3, thinking: { type: 'disabled' } }),
+      body: JSON.stringify({ model, messages: buildPrompt(content, toLocalIso(entry.createdAt), categories, tags), max_tokens: 512, temperature: 0.3, thinking: { type: 'disabled' } }),
     })
     if (!res.ok) {
       const t = await res.text().catch(() => '')

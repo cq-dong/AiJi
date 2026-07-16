@@ -370,6 +370,16 @@ export const useUiStore = create<UiState>((set, get) => ({
       createdAt: new Date().toISOString(),
     }
     await di.storage.saveReminder(r)
+    // 确认即消费 suggestion：清掉 EntryAi 上的 reminderSuggestion，避免 reload 后卡片重现 → 重确认建重复 Reminder。
+    // fire-and-forget：Reminder 已落库（关键步），清 suggestion 是 cosmetic——写失败不应让 confirmReminder reject（否则用户重试会建重复）。
+    // 深链直达 detail 时 hydrate 可能尚未载入 aiByEntry → 从 Dexie 取，确保 suggestion 仍被清掉。
+    const ai = get().aiByEntry[entryId] ?? (await di.storage.getEntryAi(entryId))
+    if (ai?.reminderSuggestion) {
+      const cleared: EntryAi = { ...ai, reminderSuggestion: undefined }
+      void di.storage.saveEntryAi(cleared)
+        .then(() => set((s) => ({ aiByEntry: { ...s.aiByEntry, [entryId]: cleared } })))
+        .catch((e) => console.error('[store] clear reminderSuggestion failed', e))
+    }
     set((s) => ({ reminders: [r, ...s.reminders] }))
     scheduleReminders()
   },
@@ -383,9 +393,11 @@ export const useUiStore = create<UiState>((set, get) => ({
     clearScheduledTimeout(id)
     const cur = get().reminders.find((x) => x.id === id)
     if (!cur) return
+    // 锚定 max(now, dueAt)：稍后提醒必须更晚，不能把未来到点的提醒往前挪。
+    const base = Math.max(Date.now(), new Date(cur.dueAt).getTime())
     const snoozed: Reminder = {
       ...cur,
-      dueAt: new Date(Date.now() + minutes * 60_000).toISOString(),
+      dueAt: new Date(base + minutes * 60_000).toISOString(),
       status: 'pending',
     }
     await di.storage.saveReminder(snoozed)
