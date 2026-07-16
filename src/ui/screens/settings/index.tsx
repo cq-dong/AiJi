@@ -63,6 +63,31 @@ function downloadMarkdown(md: string): void {
   URL.revokeObjectURL(url)
 }
 
+// Web Share API：可用时弹原生分享面板（由系统选择目标 App，不做 per-app 定向）；
+// 否则回退到剪贴板复制；两者皆不可用则禁用按钮。
+const canShare =
+  typeof navigator !== 'undefined' &&
+  (typeof navigator.share === 'function' ||
+    typeof navigator.clipboard?.writeText === 'function')
+
+async function handleShare(): Promise<void> {
+  const md = buildExportMarkdown()
+  try {
+    if (typeof navigator.share === 'function') {
+      await navigator.share({ title: 'AiJi 导出', text: md })
+      return
+    }
+    if (typeof navigator.clipboard?.writeText === 'function') {
+      await navigator.clipboard.writeText(md)
+      alert('已复制到剪贴板')
+    }
+  } catch (err) {
+    // 用户取消分享面板，静默处理。
+    if (err instanceof DOMException && err.name === 'AbortError') return
+    console.error('AiJi 分享失败：', err)
+  }
+}
+
 const THEMES: { key: Theme; label: string }[] = [
   { key: 'light', label: '亮色' },
   { key: 'dark', label: '暗色' },
@@ -357,19 +382,15 @@ export default function Settings() {
             导出 .zip
           </Button>
         </div>
-        <p className="mt-3 text-[11px] text-t3">分享至</p>
-        <div className="mt-2 flex gap-2">
+        <p className="mt-3 text-[11px] text-t3">分享</p>
+        <div className="mt-2">
           <Button
             size="sm"
-            className="h-[30px] w-[76px] rounded-[15px] border-transparent bg-[#12ac50] text-white"
+            className="h-[38px] w-full rounded-btn"
+            disabled={!hasEntries || !canShare}
+            onClick={() => void handleShare()}
           >
-            微信
-          </Button>
-          <Button
-            size="sm"
-            className="h-[30px] w-[76px] rounded-[15px] border-transparent bg-[#1f7ccc] text-white"
-          >
-            QQ
+            分享
           </Button>
         </div>
       </Card>
