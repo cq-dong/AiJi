@@ -6,10 +6,12 @@ import type { Entry, EntryAi } from '@/domain/types'
 import { CategoryCard } from './CategoryCard'
 import { CategoryDetail } from './CategoryDetail'
 import { CategoryEditSheet } from './CategoryEditSheet'
+import { ViewSwitcher, type CategoryView } from './ViewSwitcher'
+import { PinnedCards } from './PinnedCards'
+import { TimeLens } from './TimeLens'
+import { FacetLens } from './FacetLens'
 
 // Snippet = the latest entry's AI summary within this category.
-// Walk entries (which carry createdAt), keep those whose AI is filed under `slug`,
-// pick the newest, and return its summary.
 function latestSummaryFor(
   slug: string,
   entries: Entry[],
@@ -36,11 +38,14 @@ export default function Categories() {
   const navigate = useNavigate()
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [editingSlug, setEditingSlug] = useState<string | null>(null)
+  const [view, setView] = useState<CategoryView>('category')
 
   const entries = useUiStore((s) => s.entries)
   const categories = useUiStore((s) => s.categories)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
   const tags = useUiStore((s) => s.tags)
+  const drafts = useUiStore((s) => s.drafts)
+  const trashed = useUiStore((s) => s.trashed)
   const saveCategory = useUiStore((s) => s.saveCategory)
   const deleteCategory = useUiStore((s) => s.deleteCategory)
 
@@ -55,8 +60,6 @@ export default function Categories() {
   )
   const totalCount = cards.reduce((n, c) => n + c.liveCount, 0)
   const isEmpty = categories.length === 0
-  // selectedSlug may point to a slug that no longer exists after store hydrate
-  // (LLM emerged/merged categories). Fall through to grid in that case.
   const selected = selectedSlug
     ? categories.find((c) => c.slug === selectedSlug)
     : undefined
@@ -92,18 +95,39 @@ export default function Categories() {
               {categories.length} 个涌现类别 · {totalCount} 条 · LLM 自动发现
             </p>
           </div>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            {cards.map(({ category, snippet, liveCount }) => (
-              <CategoryCard
-                key={category.slug}
-                category={category}
-                snippet={snippet}
-                liveCount={liveCount}
-                onClick={() => setSelectedSlug(category.slug)}
-                onLongPress={() => setEditingSlug(category.slug)}
-              />
-            ))}
+          <div className="mt-3">
+            <ViewSwitcher view={view} onChange={setView} />
           </div>
+          {view === 'category' && (
+            <>
+              <div className="mt-4">
+                <PinnedCards draftCount={drafts.length} trashCount={trashed.length} />
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {cards.map(({ category, snippet, liveCount }) => (
+                  <CategoryCard
+                    key={category.slug}
+                    category={category}
+                    snippet={snippet}
+                    liveCount={liveCount}
+                    onClick={() => setSelectedSlug(category.slug)}
+                    onLongPress={() => setEditingSlug(category.slug)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+          {view === 'time' && (
+            <TimeLens entries={entries} aiByEntry={aiByEntry} categories={categories} />
+          )}
+          {(view === 'mood' || view === 'project' || view === 'person' || view === 'place') && (
+            <FacetLens
+              kind={view}
+              entries={entries}
+              aiByEntry={aiByEntry}
+              categories={categories}
+            />
+          )}
         </>
       )}
       {editing && (

@@ -1,41 +1,31 @@
-import { useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import type { Category, Entry, EntryAi, EntryPart, Tag } from '@/domain/types'
-import { Button, Card, Chip, EmptyState, cn } from '@/ui/components'
+import { useMemo, useState } from 'react'
+import type { Category, Entry, EntryAi, Facets, Tag } from '@/domain/types'
+import { Button, Card, EmptyState, cn } from '@/ui/components'
+import { EntryRow } from './EntryRow'
 
-// Local pure helpers — kept here so the categories screen stays self-contained
-// (mirrors the per-screen helpers pattern used by home/ and detail/).
+// Group-by dimension within a category's detail list.
+type GroupBy = 'time' | 'project' | 'person' | 'place'
 
-function firstText(parts: EntryPart[]): string {
-  for (const p of parts) {
-    if (p.type === 'text') return p.content
-    if (p.type === 'audio' && p.transcript) return p.transcript
-    if (p.type === 'video' && p.transcript) return p.transcript
-  }
-  return ''
-}
-
-function timeLabel(iso: string): string {
-  const d = new Date(iso)
-  const min = String(d.getMinutes()).padStart(2, '0')
-  const h = d.getHours()
-  return h + ':' + min
-}
-
-function modalityLabel(parts: EntryPart[]): string {
-  if (parts.length > 1) return '多模态'
-  const p = parts[0]
-  if (!p) return '文本'
-  if (p.type === 'audio') return '语音'
-  if (p.type === 'video') return '视频'
-  return '文本'
-}
+const GROUP_OPTIONS: { key: GroupBy; label: string }[] = [
+  { key: 'time', label: '时间' },
+  { key: 'project', label: '项目' },
+  { key: 'person', label: '人物' },
+  { key: 'place', label: '地点' },
+]
 
 const BAR: Record<NonNullable<Category['accent']>, string> = {
   catIdea: 'bg-catIdea',
   catProject: 'bg-catProject',
   catPending: 'bg-catPending',
   catFail: 'bg-catFail',
+}
+
+function facetValues(ai: EntryAi | undefined, kind: Exclude<GroupBy, 'time'>): string[] {
+  if (!ai) return []
+  const f: Facets = ai.facets
+  if (kind === 'project') return f.project ? [f.project] : []
+  if (kind === 'place') return f.place ? [f.place] : []
+  return f.person ?? []
 }
 
 interface CategoryDetailProps {
@@ -47,8 +37,7 @@ interface CategoryDetailProps {
 }
 
 // Inline category-detail view: lists entries whose AI category === category.slug,
-// each showing AI titleSuggestion (or body preview) + summary + resolved tags.
-// Replaces the grid when a CategoryCard is clicked (PRD intent — see task brief).
+// with a group-by toggle (时间 / 项目 / 人物 / 地点). Default 时间 = newest-first flat.
 export function CategoryDetail({
   category,
   entries,
@@ -56,7 +45,7 @@ export function CategoryDetail({
   tags,
   onBack,
 }: CategoryDetailProps) {
-  const navigate = useNavigate()
+  const [groupBy, setGroupBy] = useState<GroupBy>('time')
 
   const items = useMemo(
     () =>
@@ -66,8 +55,8 @@ export function CategoryDetail({
     [entries, aiByEntry, category.slug],
   )
 
-  const tagLabel = (slug: string): string =>
-    tags.find((t) => t.slug === slug)?.label ?? slug
+  // unused param guard: tags are resolved by EntryRow via categories; kept for API compat.
+  void tags
 
   const bar = category.accent ? BAR[category.accent] : 'bg-t3'
   const dot = bar
@@ -92,54 +81,97 @@ export function CategoryDetail({
         count={items.length}
         onBack={onBack}
       />
-      <div className="mt-3 flex flex-col gap-3">
-        {items.map((entry) => {
-          const ai = aiByEntry[entry.id]
-          const title = ai?.titleSuggestion || firstText(entry.parts) || '未命名'
-          const preview = firstText(entry.parts)
-          return (
-            <Card
-              key={entry.id}
-              padded={false}
-              role="button"
-              tabIndex={0}
-              onClick={() => navigate('/detail/' + entry.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  navigate('/detail/' + entry.id)
-                }
-              }}
-              className="relative cursor-pointer p-4 pl-5 transition active:scale-[0.99]"
-            >
-              <span className={cn('absolute left-0 top-0 bottom-0 w-1', bar)} />
-              <h3 className="line-clamp-2 text-[14px] font-medium leading-tight text-ink">
-                {title}
-              </h3>
-              {preview && preview !== title && (
-                <p className="mt-1 line-clamp-2 text-[13px] leading-tight text-t2">
-                  {preview}
-                </p>
-              )}
-              {ai?.summary && (
-                <p className="mt-2 line-clamp-3 rounded-chip bg-page px-2.5 py-1.5 text-[12px] leading-relaxed text-t2">
-                  {ai.summary}
-                </p>
-              )}
-              <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                {ai?.tags?.map((slug) => (
-                  <Chip key={slug} tone="default">
-                    {tagLabel(slug)}
-                  </Chip>
-                ))}
-                <span className="ml-auto text-[11px] text-t3">
-                  {timeLabel(entry.createdAt)} · {modalityLabel(entry.parts)}
-                </span>
-              </div>
-            </Card>
-          )
-        })}
+      <div className="mt-3 grid grid-cols-4 gap-1 rounded-btn bg-page p-1">
+        {GROUP_OPTIONS.map((o) => (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => setGroupBy(o.key)}
+            aria-pressed={groupBy === o.key}
+            className={cn(
+              'rounded-btn py-1 text-[12px] font-medium transition',
+              groupBy === o.key
+                ? 'bg-card text-ink shadow-sm'
+                : 'text-t3 active:scale-95',
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
       </div>
+      <div className="mt-3 flex flex-col gap-3">
+        {groupBy === 'time' ? (
+          <div className="flex flex-col gap-2">
+            {items.map((entry) => {
+              const ai = aiByEntry[entry.id]
+              return <EntryRow key={entry.id} entry={entry} ai={ai} category={category} />
+            })}
+          </div>
+        ) : (
+          <GroupedEntries
+            items={items}
+            aiByEntry={aiByEntry}
+            category={category}
+            kind={groupBy}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+interface GroupedEntriesProps {
+  items: Entry[]
+  aiByEntry: Record<string, EntryAi>
+  category: Category
+  kind: Exclude<GroupBy, 'time'>
+}
+
+function GroupedEntries({ items, aiByEntry, category, kind }: GroupedEntriesProps) {
+  const clusters = useMemo(() => {
+    const map = new Map<string, Entry[]>()
+    for (const e of items) {
+      for (const val of facetValues(aiByEntry[e.id], kind)) {
+        if (!val) continue
+        const arr = map.get(val)
+        if (arr) arr.push(e)
+        else map.set(val, [e])
+      }
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    }
+    return [...map.entries()]
+      .map(([value, list]) => ({ value, list, count: list.length, newest: list[0]!.createdAt }))
+      .sort((a, b) => new Date(b.newest).getTime() - new Date(a.newest).getTime())
+  }, [items, aiByEntry, kind])
+
+  if (clusters.length === 0) {
+    return (
+      <EmptyState
+        title={`暂无${kind === 'project' ? '项目' : kind === 'person' ? '人物' : '地点'}侧面`}
+        subtitle="该类别下的条目尚未识别该侧面"
+      />
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {clusters.map((c) => (
+        <Card key={c.value} padded={false} className="p-3">
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="size-2 rounded-full bg-pri" />
+            <h3 className="text-[14px] font-medium text-ink">{c.value}</h3>
+            <span className="text-[11px] text-t3">{c.count} 条</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            {c.list.map((e) => {
+              const ai = aiByEntry[e.id]
+              return <EntryRow key={e.id} entry={e} ai={ai} category={category} />
+            })}
+          </div>
+        </Card>
+      ))}
     </div>
   )
 }

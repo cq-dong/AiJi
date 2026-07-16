@@ -12,6 +12,8 @@ const Reminders = lazy(() => import('@/ui/screens/reminders'))
 const Capture = lazy(() => import('@/ui/screens/capture'))
 const Detail = lazy(() => import('@/ui/screens/detail'))
 const Onboarding = lazy(() => import('@/ui/screens/onboarding'))
+const Drafts = lazy(() => import('@/ui/screens/drafts'))
+const Trash = lazy(() => import('@/ui/screens/trash'))
 
 function Loading() {
   return (
@@ -37,6 +39,8 @@ export function AppRouter() {
           <Route path="capture" element={<Capture />} />
           <Route path="detail/:id" element={<Detail />} />
           <Route path="onboarding" element={<Onboarding />} />
+          <Route path="drafts" element={<Drafts />} />
+          <Route path="trash" element={<Trash />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

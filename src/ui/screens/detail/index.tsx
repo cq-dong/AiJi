@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Button, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
+import { exportEntryZip, shareEntry, canShareEntry } from '@/adapters/zipExport'
 import type { EntryAi, EntryPart, EntryStatus } from '@/domain/types'
 import { PartView } from './PartView'
 import { AiPanel, type AiState } from './AiPanel'
@@ -38,7 +39,7 @@ function statusToAiState(s: EntryStatus): AiState {
   return 'processing'
 }
 
-function TopBar({ title, onBack }: { title: string; onBack: () => void }) {
+function TopBar({ title, onBack, onMore }: { title: string; onBack: () => void; onMore?: () => void }) {
   return (
     <div className="flex h-11 items-center">
       <button
@@ -50,13 +51,18 @@ function TopBar({ title, onBack }: { title: string; onBack: () => void }) {
         ‹
       </button>
       <h1 className="flex-1 text-center text-[17px] font-bold text-ink">{title}</h1>
-      <button
-        type="button"
-        aria-label="更多"
-        className="flex size-8 items-center justify-center text-[20px] leading-none text-t2"
-      >
-        ···
-      </button>
+      {onMore ? (
+        <button
+          type="button"
+          onClick={onMore}
+          aria-label="更多"
+          className="flex size-8 items-center justify-center text-[20px] leading-none text-t2"
+        >
+          ···
+        </button>
+      ) : (
+        <span className="size-8" />
+      )}
     </div>
   )
 }
@@ -381,18 +387,72 @@ function ConfirmDeleteDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
       <button type="button" aria-label="取消" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/40" />
       <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card bg-card p-4">
-        <h3 className="text-[14px] font-bold text-ink">删除条目</h3>
-        <p className="text-[12px] leading-relaxed text-t2">删除后不可恢复，关联提醒也会一并删除。</p>
+        <h3 className="text-[14px] font-bold text-ink">移到回收站</h3>
+        <p className="text-[12px] leading-relaxed text-t2">移到回收站？30 天内可在回收站恢复。</p>
         <div className="flex items-center gap-2 pt-1">
           <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
             取消
           </Button>
           <Button type="button" variant="primary" className="flex-1 bg-catFail" onClick={handleDelete} disabled={deleting}>
-            删除
+            移到回收站
           </Button>
         </div>
       </div>
     </div>
+  )
+}
+
+// 更多 sheet：导出（下载单条 .zip）+ 分享（Web Share 或剪贴板降级）。
+function MoreSheet({
+  entryId,
+  onClose,
+}: {
+  entryId: string
+  onClose: () => void
+}) {
+  const [exporting, setExporting] = useState(false)
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null)
+
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      await exportEntryZip(entryId)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const handleShare = async () => {
+    const result = await shareEntry(entryId)
+    if (result.method === 'share') setShareFeedback('已分享')
+    else if (result.method === 'clipboard') setShareFeedback('已复制到剪贴板')
+    else setShareFeedback('分享失败')
+  }
+
+  const shareLabel = canShareEntry() ? '分享…' : '分享'
+
+  return (
+    <Sheet title="更多操作" onClose={onClose}>
+      <button
+        type="button"
+        onClick={handleExport}
+        disabled={exporting}
+        className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink active:scale-[0.99] disabled:opacity-50"
+      >
+        <span>导出</span>
+        {exporting && <span className="text-[12px] text-t3">导出中…</span>}
+      </button>
+      <div className="flex flex-col gap-1.5">
+        <button
+          type="button"
+          onClick={handleShare}
+          className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink active:scale-[0.99]"
+        >
+          <span>{shareLabel}</span>
+        </button>
+        {shareFeedback && <p className="text-[11px] text-t3">{shareFeedback}</p>}
+      </div>
+    </Sheet>
   )
 }
 
@@ -413,6 +473,7 @@ export default function Detail() {
   const [editingAi, setEditingAi] = useState(false)
   const [editingParts, setEditingParts] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
 
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
@@ -455,7 +516,7 @@ export default function Detail() {
 
   const handleConfirmDelete = async () => {
     if (!id) return
-    await useUiStore.getState().deleteEntry(id)
+    await useUiStore.getState().trashEntry(id)
     navigate('/')
   }
 
@@ -494,6 +555,7 @@ export default function Detail() {
       <TopBar
         title={formatTitle(entry.createdAt)}
         onBack={() => (window.history.length <= 1 ? navigate('/') : navigate(-1))}
+        onMore={() => setMoreOpen(true)}
       />
 
       {entry.parts.map((part, i) => (
@@ -537,6 +599,7 @@ export default function Detail() {
       {confirmingDelete && (
         <ConfirmDeleteDialog onConfirm={handleConfirmDelete} onClose={() => setConfirmingDelete(false)} />
       )}
+      {moreOpen && id && <MoreSheet entryId={id} onClose={() => setMoreOpen(false)} />}
     </div>
   )
 }
