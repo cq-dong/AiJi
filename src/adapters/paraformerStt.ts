@@ -39,6 +39,8 @@ async function blobToPcm16k(blob: Blob): Promise<Int16Array> {
   const src = off.createBufferSource()
   src.buffer = decoded
   src.connect(off.destination)
+  // 必须 start(0)：AudioBufferSourceNode 不 start 不发声，startRendering 会渲染全静音 PCM → DashScope 收全零 → 空转写。
+  src.start(0)
   const rendered = await off.startRendering()
   const float = rendered.getChannelData(0)
   const int16 = new Int16Array(float.length)

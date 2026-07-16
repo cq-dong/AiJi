@@ -200,7 +200,7 @@ export const deepSeekLlm: LlmPort = {
     }
     return ai
   },
-  async aggregate(entryIds, scope) {
+  async aggregate(entryIds: string[], scope: AggregateScopeType, id?: string) {
     const settings = await di.storage.getSettings()
     const apiKey = await di.secrets.get(SECRET_KEY)
     const url = settings.llmUrl
@@ -243,7 +243,7 @@ export const deepSeekLlm: LlmPort = {
     const range = scopeRange(scope, new Date())
 
     const ag: Aggregate = {
-      id: crypto.randomUUID(),
+      id: id ?? crypto.randomUUID(),
       scope: { type: scope, range },
       summary: parsed.summary,
       highlights: parsed.highlights,

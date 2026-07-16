@@ -241,6 +241,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     const entryIds = inRange.map((e) => e.id)
     // Snapshot existing aggregate to restore on failure (avoid stuck-stale).
     const existing = await di.storage.getAggregate(scope, dateKey)
+    // 新鲜即跳过：scope 切换/挂载不再每次打付费 LLM；processEntry 先置 stale 再触发，真过期仍重算。
+    if (existing && !existing.stale) return
     const prevStale = existing?.stale ?? false
     if (existing) {
       const staleAg: Aggregate = { ...existing, stale: true }
@@ -250,7 +252,9 @@ export const useUiStore = create<UiState>((set, get) => ({
       }))
     }
     try {
-      const ag = await di.llm.aggregate(entryIds, scope)
+      // 传 existing?.id → 适配器复用同主键 → saveAggregate put 原地替换，避免孤儿 stale 行（重载后重复卡片）。
+      // LlmPort 接口未声明可选 id（保持加性、不动 ports），故就地窄转换调用。
+      const ag = await (di.llm.aggregate as (entryIds: string[], scope: AggregateScopeType, id?: string) => Promise<Aggregate>)(entryIds, scope, existing?.id)
       await di.storage.saveAggregate(ag)
       set((s) => {
         // Replace any existing aggregate for this scope+range, else prepend.
