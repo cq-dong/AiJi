@@ -65,6 +65,18 @@ function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durationSec:
   }
 
   const disabled = status !== 'ready'
+  if (status === 'none') {
+    // seed parts 无 blob / OPFS 不可用 → 显式「音频不可用（样例）」静默态，别留一个点了没反应的按钮。
+    return (
+      <div className="flex items-center gap-2 h-[28px] rounded-[14px] bg-page px-2 text-t3">
+        <span className="flex size-3 items-center justify-center opacity-40">
+          <PlayTriangle className="size-[10px]" />
+        </span>
+        <span className="text-[11px] font-medium">音频不可用（样例）</span>
+        <span className="ml-auto text-[11px] font-medium tabular-nums">{formatDuration(durationSec)}</span>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center gap-2 h-[28px] rounded-[14px] bg-priS px-2">
       <button
@@ -85,12 +97,49 @@ function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durationSec:
   )
 }
 
-function VideoThumb({ durationSec }: { durationSec: number }) {
+function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durationSec: number }) {
+  // 取真实媒体 blob：durationSec===0 → 图片（<img>）；>0 → 视频（<video controls>）。
+  // seed parts 无 blob → 显式「视频/图片不可用（样例）」静默态，与音频不可用一致。
+  const [status, setStatus] = useState<'loading' | 'ready' | 'none'>('loading')
+  const [url, setUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let createdUrl: string | null = null
+    void (async () => {
+      const blob = await di.storage.getMedia(mediaRef)
+      if (cancelled) return
+      if (!blob) { setStatus('none'); return }
+      createdUrl = URL.createObjectURL(blob)
+      setUrl(createdUrl)
+      setStatus('ready')
+    })()
+    return () => {
+      cancelled = true
+      if (createdUrl) URL.revokeObjectURL(createdUrl)
+    }
+  }, [mediaRef])
+
+  if (status === 'none') {
+    return (
+      <div className="flex aspect-video w-full items-center justify-center rounded-[12px] bg-page text-t3">
+        <span className="text-[11px] font-medium">
+          {durationSec === 0 ? '图片不可用（样例）' : '视频不可用（样例）'}
+        </span>
+      </div>
+    )
+  }
+
+  if (status === 'ready' && url) {
+    if (durationSec === 0) {
+      return <img src={url} alt="" className="w-full rounded-[12px] object-cover" />
+    }
+    return <video controls src={url} className="w-full rounded-[12px]" />
+  }
+
+  // loading：保留占位渐变 + 播放钮（避免首屏跳）。
   return (
     <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-gradient-to-br from-brd to-page">
-      <span className="absolute bottom-2 left-2 rounded-[6px] bg-black/40 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-white">
-        {formatDuration(durationSec)}
-      </span>
       <span className="absolute left-1/2 top-1/2 flex size-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-pri text-card shadow">
         <PlayTriangle className="size-4" />
       </span>
@@ -118,7 +167,7 @@ export function PartView({ part, iso }: { part: EntryPart; iso: string }) {
       )}
       {part.type === 'video' && (
         <>
-          <VideoThumb durationSec={part.durationSec} />
+          <VideoThumb mediaRef={part.ref} durationSec={part.durationSec} />
           {part.transcript && (
             <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-t2">{part.transcript}</p>
           )}

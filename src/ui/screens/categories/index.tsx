@@ -5,6 +5,7 @@ import { useUiStore } from '@/app/store'
 import type { Entry, EntryAi } from '@/domain/types'
 import { CategoryCard } from './CategoryCard'
 import { CategoryDetail } from './CategoryDetail'
+import { CategoryEditSheet } from './CategoryEditSheet'
 
 // Snippet = the latest entry's AI summary within this category.
 // Walk entries (which carry createdAt), keep those whose AI is filed under `slug`,
@@ -34,11 +35,14 @@ function HubIcon() {
 export default function Categories() {
   const navigate = useNavigate()
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
+  const [editingSlug, setEditingSlug] = useState<string | null>(null)
 
   const entries = useUiStore((s) => s.entries)
   const categories = useUiStore((s) => s.categories)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
   const tags = useUiStore((s) => s.tags)
+  const saveCategory = useUiStore((s) => s.saveCategory)
+  const deleteCategory = useUiStore((s) => s.deleteCategory)
 
   const cards = useMemo(
     () =>
@@ -56,6 +60,12 @@ export default function Categories() {
   const selected = selectedSlug
     ? categories.find((c) => c.slug === selectedSlug)
     : undefined
+  const editing = editingSlug
+    ? categories.find((c) => c.slug === editingSlug)
+    : undefined
+  const editingCount = editing
+    ? entries.filter((e) => aiByEntry[e.id]?.category === editing.slug).length
+    : 0
 
   return (
     <div className="px-4 pt-4 pb-6">
@@ -90,10 +100,26 @@ export default function Categories() {
                 snippet={snippet}
                 liveCount={liveCount}
                 onClick={() => setSelectedSlug(category.slug)}
+                onLongPress={() => setEditingSlug(category.slug)}
               />
             ))}
           </div>
         </>
+      )}
+      {editing && (
+        <CategoryEditSheet
+          category={editing}
+          liveCount={editingCount}
+          onClose={() => setEditingSlug(null)}
+          onSave={(cat) => {
+            void saveCategory(cat)
+            setEditingSlug(null)
+          }}
+          onDelete={(slug) => {
+            void deleteCategory(slug)
+            setEditingSlug(null)
+          }}
+        />
       )}
     </div>
   )

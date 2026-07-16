@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { exportZip } from '@/adapters/zipExport'
@@ -142,17 +143,25 @@ function ChevronRow({
 function ModelRow({
   label,
   value,
+  hasKey,
   onClick,
 }: {
   label: string
   value: string
+  hasKey: boolean
   onClick?: () => void
 }) {
+  // Key 状态点：绿点=已配置 Key，灰点=未配置。settings.*KeyRef 是"Key 已存"的引用，
+  // 真实值在 SecretStorePort；这里只反映 ref 是否存在，让用户一眼看到 Key 配置情况。
   return (
     <button type="button" onClick={onClick} className="flex w-full items-center justify-between text-left">
       <span className="text-[13px] font-medium text-ink">{label}</span>
       <span className="flex items-center gap-2">
-        <span className="text-[11px] text-t3">{value}</span>
+        <span className="flex items-center gap-1">
+          <span className={cn('h-1.5 w-1.5 rounded-full', hasKey ? 'bg-emerald-500' : 'bg-t3')} />
+          <span className="text-[11px] text-t3">{hasKey ? '已配置' : '未配置'}</span>
+        </span>
+        <span className="max-w-[120px] truncate text-[11px] text-t3">{value}</span>
         <ChevronRight />
       </span>
     </button>
@@ -299,11 +308,33 @@ function SttSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+function SectionEmpty({ text }: { text: string }) {
+  return (
+    <div className="flex items-center justify-center rounded-card border border-dashed border-brd py-3">
+      <p className="text-[12px] text-t3">{text}</p>
+    </div>
+  )
+}
+
 function RemindersSheet({ onClose }: { onClose: () => void }) {
+  const navigate = useNavigate()
   const reminders = useUiStore((s) => s.reminders)
+  // snoozed 在运行期仍由调度器当 pending 处理（store 注释：status stays 'pending'），
+  // 这里把 snoozed 归入"待提醒"段，避免它在 UI 里无处安放。
   const pending = reminders
-    .filter((r) => r.status === 'pending')
+    .filter((r) => r.status === 'pending' || r.status === 'snoozed')
     .sort((a, b) => (a.dueAt < b.dueAt ? -1 : 1))
+  const fired = reminders
+    .filter((r) => r.status === 'fired')
+    .sort((a, b) => (a.dueAt < b.dueAt ? 1 : -1))
+  const missed = reminders
+    .filter((r) => r.status === 'missed')
+    .sort((a, b) => (a.dueAt < b.dueAt ? 1 : -1))
+
+  const goEntry = (entryId: string) => {
+    onClose()
+    navigate(`/detail/${entryId}`)
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
@@ -317,45 +348,126 @@ function RemindersSheet({ onClose }: { onClose: () => void }) {
             ✕
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-t3">查看与管理待提醒事项</p>
+        <p className="mt-1 text-[11px] text-t3">查看与管理提醒事项 · 共 {reminders.length} 条</p>
 
-        {pending.length === 0 ? (
-          <div className="mt-6 flex flex-col items-center justify-center pb-4">
-            <p className="text-[13px] text-t3">暂无待提醒事项</p>
-          </div>
-        ) : (
-          <div className="mt-3 flex-1 space-y-2 overflow-y-auto">
-            {pending.map((r) => (
-              <div key={r.id} className="rounded-card border border-brd bg-card p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[12px] font-medium text-ink">{formatDueAt(r.dueAt)}</span>
-                  <span className="rounded-chip bg-priS px-2 py-0.5 text-[10px] font-medium text-pri">
-                    {STATUS_LABELS[r.status]}
-                  </span>
-                </div>
-                <p className="mt-1 text-[13px] text-ink">{r.label}</p>
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="h-[34px] flex-1 rounded-btn"
-                    onClick={() => void useUiStore.getState().snoozeReminder(r.id, 10)}
+        <div className="mt-3 flex-1 space-y-4 overflow-y-auto pb-2">
+          {/* 待提醒 */}
+          <section>
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[12px] font-semibold text-t2">待提醒</p>
+              {pending.length > 0 && <span className="text-[11px] text-t3">{pending.length}</span>}
+            </div>
+            <div className="mt-2 space-y-2">
+              {pending.length === 0 ? (
+                <SectionEmpty text="暂无待提醒事项" />
+              ) : (
+                pending.map((r) => (
+                  <div key={r.id} className="rounded-card border border-brd bg-card p-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] font-medium text-ink">{formatDueAt(r.dueAt)}</span>
+                      <span className="rounded-chip bg-priS px-2 py-0.5 text-[10px] font-medium text-pri">
+                        {STATUS_LABELS[r.status]}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => goEntry(r.entryId)}
+                      className="mt-1 block w-full text-left"
+                    >
+                      <p className="truncate text-[13px] text-ink underline decoration-t3 underline-offset-2 active:text-pri">
+                        {r.label}
+                      </p>
+                    </button>
+                    <div className="mt-2 flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-[34px] flex-1 rounded-btn"
+                        onClick={() => void useUiStore.getState().snoozeReminder(r.id, 10)}
+                      >
+                        稍后提醒
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-[34px] flex-1 rounded-btn"
+                        onClick={() => void useUiStore.getState().dismissReminder(r.id)}
+                      >
+                        取消
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          {/* 已提醒 */}
+          <section>
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[12px] font-semibold text-t2">已提醒</p>
+              {fired.length > 0 && <span className="text-[11px] text-t3">{fired.length}</span>}
+            </div>
+            <div className="mt-2 space-y-2">
+              {fired.length === 0 ? (
+                <SectionEmpty text="暂无已提醒记录" />
+              ) : (
+                fired.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => goEntry(r.entryId)}
+                    className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3 text-left"
                   >
-                    稍后提醒
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="h-[34px] flex-1 rounded-btn"
-                    onClick={() => void useUiStore.getState().dismissReminder(r.id)}
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[12px] font-medium text-t2">{formatDueAt(r.dueAt)}</span>
+                      <p className="mt-0.5 truncate text-[13px] text-ink">{r.label}</p>
+                    </div>
+                    <span className="flex items-center gap-2">
+                      <span className="rounded-chip bg-priS px-2 py-0.5 text-[10px] font-medium text-t2">
+                        {STATUS_LABELS[r.status]}
+                      </span>
+                      <ChevronRight />
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+
+          {/* 已错过 */}
+          <section>
+            <div className="flex items-center justify-between px-1">
+              <p className="text-[12px] font-semibold text-t2">已错过</p>
+              {missed.length > 0 && <span className="text-[11px] text-t3">{missed.length}</span>}
+            </div>
+            <div className="mt-2 space-y-2">
+              {missed.length === 0 ? (
+                <SectionEmpty text="暂无错过记录" />
+              ) : (
+                missed.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => goEntry(r.entryId)}
+                    className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3 text-left"
                   >
-                    取消
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[12px] font-medium text-t2">{formatDueAt(r.dueAt)}</span>
+                      <p className="mt-0.5 truncate text-[13px] text-ink">{r.label}</p>
+                    </div>
+                    <span className="flex items-center gap-2">
+                      <span className="rounded-chip bg-priS px-2 py-0.5 text-[10px] font-medium text-catFail">
+                        {STATUS_LABELS[r.status]}
+                      </span>
+                      <ChevronRight />
+                    </span>
+                  </button>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   )
@@ -425,12 +537,14 @@ export default function Settings() {
           <ModelRow
             label="文本 / 分类模型"
             value={settings.llmModel || settings.llmProvider}
+            hasKey={settings.apiKeyRef === 'llm:key'}
             onClick={() => setEditing(true)}
           />
           <div className="my-3 h-px bg-brd" />
           <ModelRow
             label="音频转写模型"
             value={settings.sttModel || settings.sttProvider}
+            hasKey={settings.sttKeyRef === 'stt:key'}
             onClick={() => setEditingStt(true)}
           />
         </div>

@@ -1,11 +1,22 @@
-import { useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useUiStore } from '@/app/store'
-import { CaptureKeyframes, TextEntrySheet } from './widgets'
-import type { Mode } from './widgets'
-import { EmptyView, MultiView, NoMicView, RecordingView } from './variants'
-import type { CaptureApi } from './variants'
+import { di } from '@/app/di'
+import type { EntryPart } from '@/domain/types'
+import {
+  CameraView,
+  CaptureHeader,
+  CaptureKeyframes,
+  CaptureToolbar,
+  EmptyCompose,
+  FlowPart,
+  NoMicPanel,
+  SaveBar,
+  TextEntrySheet,
+  VoicePanel,
+} from './widgets'
+
+type View = 'compose' | 'camera'
 
 export default function Capture() {
   const navigate = useNavigate()
@@ -15,23 +26,29 @@ export default function Capture() {
   const micDenied = useUiStore((s) => s.capture.micDenied)
   const finalized = useUiStore((s) => s.capture.finalized)
   const interim = useUiStore((s) => s.capture.interim)
+  const location = useUiStore((s) => s.capture.location)
   const startRecording = useUiStore((s) => s.startRecording)
   const stopRecording = useUiStore((s) => s.stopRecording)
   const beginSave = useUiStore((s) => s.beginSave)
   const finishSave = useUiStore((s) => s.finishSave)
   const addPart = useUiStore((s) => s.addPart)
   const allowMic = useUiStore((s) => s.allowMic)
-  const denyMic = useUiStore((s) => s.denyMic)
 
-  const [mode, setMode] = useState<Mode>('voice')
-  const [popOpen, setPopOpen] = useState(false)
+  const [view, setView] = useState<View>('compose')
+  const [cameraMode, setCameraMode] = useState<'photo' | 'video'>('photo')
   const [elapsed, setElapsed] = useState(0)
   const [textDraft, setTextDraft] = useState('')
-  const [textSheetOpen, setTextSheetOpen] = useState(false)
+  const [textOpen, setTextOpen] = useState(false)
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
 
-  // Count-up timer while recording.
+  // Mirror into a ref so the unmount cleanup revokes the latest object URLs.
+  const urlsRef = useRef<Record<string, string>>({})
+  urlsRef.current = mediaUrls
+  useEffect(() => () => { Object.values(urlsRef.current).forEach((u) => URL.revokeObjectURL(u)) }, [])
+
+  // Count-up timer while voice-recording.
   useEffect(() => {
-    if (!recording) return
+    if (!recording) { setElapsed(0); return }
     const id = window.setInterval(() => setElapsed((e) => e + 1), 1000)
     return () => window.clearInterval(id)
   }, [recording])
@@ -46,16 +63,33 @@ export default function Capture() {
     return () => window.clearTimeout(id)
   }, [saving, finishSave, navigate])
 
-  // Store has no removePart action; mutate via the exposed zustand setter so the
-  // store remains the single source of truth. Candidate to promote to store.ts.
-  const removePart = (idx: number) =>
+  // Persist a media blob + add the part. Keeps a local object URL for live preview.
+  const addMediaPart = (part: EntryPart, blob: Blob) => {
+    if (part.type !== 'video' && part.type !== 'audio') return
+    const url = URL.createObjectURL(blob)
+    setMediaUrls((m) => ({ ...m, [part.ref]: url }))
+    void di.storage.saveMedia(part.ref, blob).catch((e) => console.error('[capture] saveMedia failed', e))
+    addPart(part)
+  }
+
+  const removePart = (idx: number) => {
+    const p = parts[idx]
+    if (p && (p.type === 'video' || p.type === 'audio') && mediaUrls[p.ref]) {
+      URL.revokeObjectURL(mediaUrls[p.ref])
+      setMediaUrls((m) => {
+        const next = { ...m }
+        delete next[p.ref]
+        return next
+      })
+    }
     useUiStore.setState((s) => ({
       capture: { ...s.capture, parts: s.capture.parts.filter((_, i) => i !== idx) },
     }))
+  }
 
   const closeTextSheet = () => {
     setTextDraft('')
-    setTextSheetOpen(false)
+    setTextOpen(false)
   }
   const submitText = () => {
     const t = textDraft.trim()
@@ -63,63 +97,91 @@ export default function Capture() {
     closeTextSheet()
   }
 
-  const api: CaptureApi = {
-    mode,
-    popOpen,
-    elapsed,
-    parts,
-    liveTranscript: finalized + interim,
-    onClose: () => navigate('/'),
-    onPickMode: (m) => {
-      setMode(m)
-      if (m === 'voice') {
-        setElapsed(0)
-        startRecording()
-      } else if (m === 'text') {
-        setTextSheetOpen(true)
-      }
-    },
-    onOpenVideoPop: () => {
-      setMode('video')
-      setPopOpen(true)
-    },
-    onClosePop: () => setPopOpen(false),
-    onAddText: () => setTextSheetOpen(true),
-    onAddVideo: () => {
-      addPart({ type: 'video', ref: 'mock', durationSec: 8 })
-      setPopOpen(false)
-    },
-    onStartRec: () => {
-      setElapsed(0)
-      startRecording()
-    },
-    onStop: () => {
-      stopRecording()
-    },
-    onSave: () => beginSave(),
-    onRemovePart: removePart,
-    onToggleMic: () => (micDenied ? allowMic() : denyMic()),
-    onAllowMic: () => allowMic(),
-    onUseText: () => {
-      allowMic()
-      setMode('text')
-      setTextSheetOpen(true)
-    },
+  const handleVoice = () => {
+    if (micDenied) allowMic()
+    void startRecording()
+  }
+  const handleStopVoice = () => { void stopRecording() }
+
+  const openPhoto = () => { setCameraMode('photo'); setView('camera') }
+  const openVideo = () => { setCameraMode('video'); setView('camera') }
+
+  const handleGallery = async () => {
+    const r = await di.capture.pickMedia()
+    if (!r) return
+    addMediaPart(
+      { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)) },
+      r.blob,
+    )
   }
 
-  let body: ReactNode
-  if (micDenied) body = <NoMicView api={api} />
-  else if (recording) body = <RecordingView api={api} />
-  else if (saving) body = <MultiView api={api} saving />
-  else if (parts.length > 0) body = <MultiView api={api} />
-  else body = <EmptyView api={api} />
+  const handleSave = () => beginSave()
+
+  const showHeader = view === 'compose'
+  const showEmpty = parts.length === 0 && !recording && !micDenied
 
   return (
-    <div className="relative h-full w-full bg-page">
+    <div className="relative flex h-full w-full flex-col bg-page">
       <CaptureKeyframes />
-      {body}
+
+      {showHeader && (
+        <CaptureHeader partCount={parts.length} location={location} onClose={() => navigate('/')} />
+      )}
+
+      <main className="relative flex-1 overflow-y-auto">
+        {view === 'compose' && (
+          recording ? (
+            <VoicePanel
+              elapsed={elapsed}
+              liveTranscript={(finalized + interim).trim()}
+              onStop={handleStopVoice}
+            />
+          ) : micDenied ? (
+            <NoMicPanel
+              onUseText={() => { allowMic(); setTextOpen(true) }}
+              onRetry={() => { allowMic(); void startRecording() }}
+            />
+          ) : showEmpty ? (
+            <EmptyCompose />
+          ) : (
+            <div className="flex flex-col gap-3 px-4 py-4">
+              {parts.map((p, i) => (
+                <FlowPart
+                  key={i}
+                  part={p}
+                  mediaUrl={p.type === 'video' ? mediaUrls[p.ref] : undefined}
+                  onRemove={() => removePart(i)}
+                />
+              ))}
+            </div>
+          )
+        )}
+
+        {view === 'camera' && (
+          <CameraView
+            mode={cameraMode}
+            onPart={addMediaPart}
+            onClose={() => setView('compose')}
+          />
+        )}
+      </main>
+
+      {view === 'compose' && !recording && !micDenied && (
+        <footer className="flex shrink-0 flex-col gap-3 border-t border-brd bg-card px-4 pb-5 pt-3">
+          <CaptureToolbar
+            onText={() => setTextOpen(true)}
+            onVoice={handleVoice}
+            onPhoto={openPhoto}
+            onVideo={openVideo}
+            onGallery={handleGallery}
+            disabled={saving}
+          />
+          <SaveBar saving={saving} disabled={parts.length === 0} onSave={handleSave} />
+        </footer>
+      )}
+
       <TextEntrySheet
-        open={textSheetOpen}
+        open={textOpen}
         value={textDraft}
         onChange={setTextDraft}
         onAdd={submitText}

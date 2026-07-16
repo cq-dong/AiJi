@@ -3,10 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Button, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
-import type { EntryAi, EntryStatus } from '@/domain/types'
+import type { EntryAi, EntryPart, EntryStatus } from '@/domain/types'
 import { PartView } from './PartView'
 import { AiPanel, type AiState } from './AiPanel'
-import { formatTitle } from './helpers'
+import { Sheet } from './Sheet'
+import { formatTitle, formatDuration, partTypeLabel, tagLabel } from './helpers'
 
 // ISO 8601 → datetime-local input format (YYYY-MM-DDTHH:MM, local time)
 function isoToLocalInput(iso: string): string {
@@ -20,6 +21,13 @@ function isoToLocalInput(iso: string): string {
 function localInputToIso(local: string): string {
   const d = new Date(local)
   if (Number.isNaN(d.getTime())) return new Date().toISOString()
+  return d.toISOString()
+}
+
+// 「创建待办」无具体时间 → 默认今日 23:59 到点（domain 无 Todo 类型，复用 Reminder）。
+function endOfTodayIso(): string {
+  const d = new Date()
+  d.setHours(23, 59, 0, 0)
   return d.toISOString()
 }
 
@@ -53,7 +61,34 @@ function TopBar({ title, onBack }: { title: string; onBack: () => void }) {
   )
 }
 
-function TodoConfirm({ title }: { title: string }) {
+function TodoConfirm({
+  entryId,
+  title,
+  suggestion,
+  onDismissed,
+}: {
+  entryId: string
+  title: string
+  suggestion?: { dueAt: string; label: string }
+  onDismissed: () => void
+}) {
+  // domain 只有 Reminder（无 Todo 类型）。「待办/提醒我」均建 Reminder，区别在 dueAt 来源：
+  // 待办 → 今日 23:59（无具体时间）；提醒我 → 用 LLM 建议 dueAt（无建议亦回落今日 23:59）。
+  // 忽略 → 清 reminderSuggestion（有建议才写）+ 本地藏卡。
+  const [busy, setBusy] = useState(false)
+  const label = suggestion?.label ?? title
+  const remindDue = suggestion?.dueAt ?? endOfTodayIso()
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true)
+    try {
+      await fn()
+      onDismissed()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2 rounded-card bg-catPending/10 p-4">
       <div className="flex items-center gap-2">
@@ -63,13 +98,36 @@ function TodoConfirm({ title }: { title: string }) {
       <p className="text-[13px] font-medium text-ink">「{title}」</p>
       <p className="text-[11px] text-t3">作为待办创建？可设提醒时间。</p>
       <div className="flex items-center gap-2 pt-1">
-        <Button type="button" size="sm" variant="primary">
+        <Button
+          type="button"
+          size="sm"
+          variant="primary"
+          disabled={busy}
+          onClick={() => run(() => useUiStore.getState().confirmReminder(entryId, endOfTodayIso(), label))}
+        >
           创建待办
         </Button>
-        <Button type="button" size="sm" variant="secondary">
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={busy}
+          onClick={() => run(() => useUiStore.getState().confirmReminder(entryId, remindDue, label))}
+        >
           提醒我
         </Button>
-        <Button type="button" size="sm" variant="ghost" className="text-t3">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="text-t3"
+          disabled={busy}
+          onClick={() =>
+            run(async () => {
+              if (suggestion) await useUiStore.getState().updateEntryAi(entryId, { reminderSuggestion: undefined })
+            })
+          }
+        >
           忽略
         </Button>
       </div>
@@ -137,6 +195,207 @@ function ReminderConfirm({
   )
 }
 
+// AI 面板编辑：改 title / summary / category / tags → updateEntryAi(entryId, patch)。
+function AiEditSheet({
+  ai,
+  onSave,
+  onClose,
+}: {
+  ai: EntryAi
+  onSave: (patch: Partial<EntryAi>) => Promise<void> | void
+  onClose: () => void
+}) {
+  const categories = useUiStore((s) => s.categories)
+  const tags = useUiStore((s) => s.tags)
+  const [title, setTitle] = useState(ai.titleSuggestion ?? '')
+  const [summary, setSummary] = useState(ai.summary ?? '')
+  const [category, setCategory] = useState(ai.category)
+  // 标签按 label 编辑（逗号分隔），保存时映射回 slug：已知 label→slug，未知 label slugify。
+  const [tagsText, setTagsText] = useState(() => ai.tags.map((slug) => tagLabel(slug, tags)).join('，'))
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const slugs = tagsText
+        .split(/[，,]/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((label) => {
+          const found = tags.find((t) => t.label === label)
+          return found?.slug ?? label.toLowerCase().replace(/\s+/g, '-')
+        })
+      await onSave({
+        titleSuggestion: title.trim() || undefined,
+        summary: summary.trim() || undefined,
+        category,
+        tags: slugs,
+      })
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputCls = 'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
+
+  return (
+    <Sheet
+      title="编辑 AI 处理"
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
+            取消
+          </Button>
+          <Button type="button" variant="primary" className="flex-1" onClick={handleSave} disabled={saving}>
+            保存
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[11px] text-t2">标题</label>
+        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} placeholder="无标题" />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[11px] text-t2">摘要</label>
+        <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={3} className={inputCls} placeholder="无摘要" />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[11px] text-t2">类别</label>
+        <select value={category} onChange={(e) => setCategory(e.target.value)} className={inputCls}>
+          <option value="">未分类</option>
+          {categories.map((c) => (
+            <option key={c.slug} value={c.slug}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[11px] text-t2">标签</label>
+        <input type="text" value={tagsText} onChange={(e) => setTagsText(e.target.value)} className={inputCls} placeholder="用逗号分隔" />
+      </div>
+    </Sheet>
+  )
+}
+
+// 手动编辑条目 parts：文本可改 content；音视频只能改 transcript（原始媒体不可编辑）→ updateEntry(id, { parts })。
+function PartsEditSheet({
+  parts,
+  onSave,
+  onClose,
+}: {
+  parts: EntryPart[]
+  onSave: (parts: EntryPart[]) => Promise<void> | void
+  onClose: () => void
+}) {
+  const [draft, setDraft] = useState<EntryPart[]>(() => parts.map((p) => ({ ...p })))
+  const [saving, setSaving] = useState(false)
+
+  const update = (i: number, fn: (p: EntryPart) => EntryPart) =>
+    setDraft((d) => d.map((p, idx) => (idx === i ? fn(p) : p)))
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await onSave(draft)
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const inputCls = 'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
+
+  return (
+    <Sheet
+      title="手动编辑"
+      onClose={onClose}
+      footer={
+        <>
+          <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
+            取消
+          </Button>
+          <Button type="button" variant="primary" className="flex-1" onClick={handleSave} disabled={saving}>
+            保存
+          </Button>
+        </>
+      }
+    >
+      {draft.map((p, i) => (
+        <div key={i} className="flex flex-col gap-1.5">
+          <span className="text-[11px] text-t3">
+            {partTypeLabel(p)}
+            {p.type !== 'text' ? ` · ${formatDuration(p.durationSec)}` : ''}
+          </span>
+          {p.type === 'text' && (
+            <textarea
+              value={p.content}
+              onChange={(e) => update(i, (x) => (x.type === 'text' ? { ...x, content: e.target.value } : x))}
+              rows={4}
+              className={inputCls}
+            />
+          )}
+          {(p.type === 'audio' || p.type === 'video') && (
+            <>
+              <span className="text-[11px] text-t3">转写文本</span>
+              <textarea
+                value={p.transcript ?? ''}
+                onChange={(e) =>
+                  update(i, (x) =>
+                    x.type === 'audio' || x.type === 'video' ? { ...x, transcript: e.target.value } : x,
+                  )
+                }
+                rows={3}
+                className={inputCls}
+                placeholder="无转写"
+              />
+              <span className="text-[10px] text-t3">原始媒体不可编辑</span>
+            </>
+          )}
+        </div>
+      ))}
+    </Sheet>
+  )
+}
+
+function ConfirmDeleteDialog({
+  onConfirm,
+  onClose,
+}: {
+  onConfirm: () => Promise<void> | void
+  onClose: () => void
+}) {
+  const [deleting, setDeleting] = useState(false)
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await onConfirm()
+    } finally {
+      setDeleting(false)
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
+      <button type="button" aria-label="取消" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/40" />
+      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card bg-card p-4">
+        <h3 className="text-[14px] font-bold text-ink">删除条目</h3>
+        <p className="text-[12px] leading-relaxed text-t2">删除后不可恢复，关联提醒也会一并删除。</p>
+        <div className="flex items-center gap-2 pt-1">
+          <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
+            取消
+          </Button>
+          <Button type="button" variant="primary" className="flex-1 bg-catFail" onClick={handleDelete} disabled={deleting}>
+            删除
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -148,6 +407,12 @@ export default function Detail() {
   const [reprocessing, setReprocessing] = useState(false)
   // B6: 本地旗标——确认/忽略后隐藏提醒卡。keyed by entry id，不持久化。
   const [reminderHidden, setReminderHidden] = useState<Record<string, boolean>>({})
+  // 待办卡本地旗标——创建/提醒/忽略后藏卡（TodoConfirm 基于 errand/event 显，不随 reminderSuggestion 变）。
+  const [todoHidden, setTodoHidden] = useState<Record<string, boolean>>({})
+  // 编辑/删除 sheet 本地开关。编辑 AI 面板走 updateEntryAi；手动编辑 parts 走 updateEntry；删除走 deleteEntry + 返回首页。
+  const [editingAi, setEditingAi] = useState(false)
+  const [editingParts, setEditingParts] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
@@ -180,6 +445,18 @@ export default function Detail() {
     if (!id) return
     setReprocessing(true)
     void useUiStore.getState().processEntry(id)
+  }
+
+  const handleSaveAi = (patch: Partial<EntryAi>) =>
+    id ? useUiStore.getState().updateEntryAi(id, patch) : Promise.resolve()
+
+  const handleSaveParts = (parts: EntryPart[]) =>
+    id ? useUiStore.getState().updateEntry(id, { parts }) : Promise.resolve()
+
+  const handleConfirmDelete = async () => {
+    if (!id) return
+    await useUiStore.getState().deleteEntry(id)
+    navigate('/')
   }
 
   if (!found) {
@@ -223,10 +500,22 @@ export default function Detail() {
         <PartView key={i} part={part} iso={entry.createdAt} />
       ))}
 
-      <AiPanel state={state} ai={ai} onReprocess={handleReprocess} />
+      <AiPanel
+        state={state}
+        ai={ai}
+        onReprocess={handleReprocess}
+        onEdit={() => setEditingAi(true)}
+        onManualEdit={() => setEditingParts(true)}
+        onDelete={() => setConfirmingDelete(true)}
+      />
 
-      {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event) && (
-        <TodoConfirm title={ai.titleSuggestion ?? ''} />
+      {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event) && !todoHidden[entry.id] && (
+        <TodoConfirm
+          entryId={entry.id}
+          title={ai.titleSuggestion ?? ''}
+          suggestion={ai.reminderSuggestion}
+          onDismissed={() => setTodoHidden((h) => ({ ...h, [entry.id]: true }))}
+        />
       )}
 
       {state === 'ready' && ai?.reminderSuggestion && !reminderHidden[entry.id] && (
@@ -238,6 +527,16 @@ export default function Detail() {
       )}
 
       <p className="text-[11px] text-t3">◎ 地点：未记录（设置中可开启）</p>
+
+      {editingAi && ai && (
+        <AiEditSheet ai={ai} onSave={handleSaveAi} onClose={() => setEditingAi(false)} />
+      )}
+      {editingParts && (
+        <PartsEditSheet parts={entry.parts} onSave={handleSaveParts} onClose={() => setEditingParts(false)} />
+      )}
+      {confirmingDelete && (
+        <ConfirmDeleteDialog onConfirm={handleConfirmDelete} onClose={() => setConfirmingDelete(false)} />
+      )}
     </div>
   )
 }

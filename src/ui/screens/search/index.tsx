@@ -5,11 +5,11 @@ import { useUiStore } from '@/app/store'
 import { SearchBar } from './SearchBar'
 import { SearchResultCard } from './SearchResultCard'
 import {
-  dateChipsFrom,
   EMPTY_FILTERS,
   filterResults,
   MODALITY_CHIPS,
   moodChipsFrom,
+  QUICK_DATE_CHIPS,
   searchEntries,
   todayRefFrom,
   type SearchFilters,
@@ -119,7 +119,6 @@ export default function Search() {
     [tags],
   )
   const moodChips = useMemo(() => moodChipsFrom(aiByEntry), [aiByEntry])
-  const dateChips = useMemo(() => dateChipsFrom(entries), [entries])
 
   const hasFilters =
     filters.category !== 'all' ||
@@ -129,14 +128,24 @@ export default function Search() {
     filters.date !== 'all'
 
   const todayRef = useMemo(() => todayRefFrom(entries), [entries])
+  const now = useMemo(() => new Date(), [])
 
   const results = useMemo<SearchResult[]>(() => {
     const all = searchEntries(query, entries, categories, tags, aiByEntry)
-    return filterResults(all, filters, aiByEntry)
-  }, [query, filters, entries, categories, tags, aiByEntry])
+    return filterResults(all, filters, aiByEntry, now)
+  }, [query, filters, entries, categories, tags, aiByEntry, now])
 
   const setFilter = (key: keyof SearchFilters) => (slug: string) => {
     setFilters((prev) => ({ ...prev, [key]: slug }))
+  }
+  const pickQuickDate = (slug: string) => {
+    setFilters((prev) => ({ ...prev, date: slug, dateFrom: '', dateTo: '' }))
+  }
+  const setCustomFrom = (v: string) => {
+    setFilters((prev) => ({ ...prev, date: 'custom', dateFrom: v }))
+  }
+  const setCustomTo = (v: string) => {
+    setFilters((prev) => ({ ...prev, date: 'custom', dateTo: v }))
   }
   const clearFilters = () => setFilters(EMPTY_FILTERS)
 
@@ -167,10 +176,28 @@ export default function Search() {
           />
           <ChipRow
             label="日期"
-            chips={dateChips}
+            chips={QUICK_DATE_CHIPS}
             active={filters.date}
-            onPick={setFilter('date')}
+            onPick={pickQuickDate}
           />
+          <div className="flex items-center gap-2">
+            <span className="shrink-0 text-[11px] font-medium text-t3">自定义</span>
+            <input
+              type="date"
+              value={filters.dateFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              aria-label="起始日期"
+              className="h-7 min-w-0 flex-1 rounded-btn border border-brd bg-card px-2 text-[12px] text-ink outline-none focus:border-pri/40"
+            />
+            <span className="shrink-0 text-t3">–</span>
+            <input
+              type="date"
+              value={filters.dateTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              aria-label="结束日期"
+              className="h-7 min-w-0 flex-1 rounded-btn border border-brd bg-card px-2 text-[12px] text-ink outline-none focus:border-pri/40"
+            />
+          </div>
           {hasFilters && (
             <button
               type="button"

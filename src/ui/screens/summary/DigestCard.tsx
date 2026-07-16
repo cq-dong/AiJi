@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import type { Aggregate, Category, EntryAi } from '@/domain/types'
-import { Card, Chip, Skeleton, Spinner } from '@/ui/components'
+import { Button, Card, Chip, Skeleton, Spinner } from '@/ui/components'
 import {
   aggregateChips,
   formatCreated,
@@ -12,7 +13,7 @@ interface DigestCardProps {
   entryAi: EntryAi[]
   categories: Category[]
   recalculating?: boolean
-  onToggle?: () => void
+  onRegen?: () => void
 }
 
 export function DigestCard({
@@ -20,22 +21,17 @@ export function DigestCard({
   entryAi,
   categories,
   recalculating = false,
-  onToggle,
+  onRegen,
 }: DigestCardProps) {
+  const [expanded, setExpanded] = useState(false)
   const { label, range } = scopeDisplay(aggregate)
   const chips = aggregateChips(aggregate, entryAi, categories)
-  const interactive = Boolean(onToggle)
+  const highlights = aggregate.highlights ?? []
+  const hasSummary = aggregate.summary.trim().length > 0
+  const canExpand = hasSummary || highlights.length > 0
 
   return (
-    <Card
-      className={[
-        recalculating ? 'bg-priS' : 'bg-card',
-        interactive ? 'cursor-pointer' : '',
-      ].join(' ')}
-      onClick={onToggle}
-      role={interactive ? 'button' : undefined}
-      tabIndex={interactive ? 0 : undefined}
-    >
+    <Card className={recalculating ? 'bg-priS' : 'bg-card'}>
       <div className="flex items-baseline justify-between">
         <span className="text-[15px] font-bold text-pri">{label}</span>
         <span className="text-[12px] text-t3">{range}</span>
@@ -54,12 +50,65 @@ export function DigestCard({
         </div>
       ) : (
         <>
-          <p className="mt-2 text-[13px] leading-relaxed text-t2">
-            {aggregate.summary}
-          </p>
-          <p className="mt-2 text-[11px] text-t3">
-            {aggregate.entryIds.length} 条 · 挂链
-          </p>
+          <div
+            className="overflow-hidden transition-[max-height] duration-300 ease-out"
+            style={{ maxHeight: expanded ? 640 : 60 }}
+          >
+            {hasSummary ? (
+              <p className="mt-2 text-[13px] leading-relaxed text-t2">
+                {aggregate.summary}
+              </p>
+            ) : (
+              <p className="mt-2 text-[13px] text-t3">暂无摘要内容。</p>
+            )}
+            {expanded && highlights.length > 0 && (
+              <ul className="mt-2 flex flex-col gap-1">
+                {highlights.map((h, i) => (
+                  <li
+                    key={i}
+                    className="flex gap-1.5 text-[12px] leading-relaxed text-t2"
+                  >
+                    <span className="mt-[5px] inline-block h-1 w-1 shrink-0 rounded-full bg-pri" />
+                    <span>{h}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {canExpand && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-pri"
+            >
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                className={[
+                  'transition-transform',
+                  expanded ? 'rotate-180' : '',
+                ].join(' ')}
+                aria-hidden
+              >
+                <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              {expanded ? '收起' : '展开'}
+            </button>
+          )}
+
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-[11px] text-t3">
+              {aggregate.entryIds.length} 条 · 挂链
+            </span>
+            {aggregate.stale && (
+              <Chip tone="pending" className="text-[10px]">
+                已过期
+              </Chip>
+            )}
+          </div>
+
           {chips.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {chips.map((c) => (
@@ -69,10 +118,23 @@ export function DigestCard({
               ))}
             </div>
           )}
-          <p className="mt-2 text-[11px] text-t3">
-            生成于 {formatCreated(aggregate.createdAt)} ·{' '}
-            {friendlyModel(aggregate.modelUsed)}
-          </p>
+
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] text-t3">
+              生成于 {formatCreated(aggregate.createdAt)} ·{' '}
+              {friendlyModel(aggregate.modelUsed)}
+            </span>
+            {onRegen && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-[11px]"
+                onClick={onRegen}
+              >
+                重新生成
+              </Button>
+            )}
+          </div>
         </>
       )}
     </Card>

@@ -143,23 +143,6 @@ function parseAggregateJson(raw: string): AggregateResult {
   return JSON.parse(s.slice(start, end + 1)) as AggregateResult
 }
 
-// Compute the range string (dateKey) for a given scope anchored at a reference date.
-function scopeRange(scope: AggregateScopeType, ref: Date): string {
-  const y = ref.getFullYear()
-  const m = String(ref.getMonth() + 1).padStart(2, '0')
-  const d = String(ref.getDate()).padStart(2, '0')
-  if (scope === 'day') return `${y}-${m}-${d}`
-  if (scope === 'month') return `${y}-${m}`
-  // week: ISO week number + year
-  const tmp = new Date(Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate()))
-  const dayNum = (tmp.getUTCDay() + 6) % 7 // Mon=0
-  tmp.setUTCDate(tmp.getUTCDate() - dayNum + 3) // Thursday in this week
-  const isoYear = tmp.getUTCFullYear()
-  const firstThursday = new Date(Date.UTC(isoYear, 0, 4))
-  const week = 1 + Math.round(((tmp.getTime() - firstThursday.getTime()) / 86400000 - 3) / 7)
-  return `${isoYear}-W${String(week).padStart(2, '0')}`
-}
-
 export const deepSeekLlm: LlmPort = {
   async classify(entryId) {
     const settings = await di.storage.getSettings()
@@ -225,7 +208,7 @@ export const deepSeekLlm: LlmPort = {
     }
     return ai
   },
-  async aggregate(entryIds: string[], scope: AggregateScopeType, id?: string) {
+  async aggregate(entryIds: string[], scope: AggregateScopeType, range: string, id?: string) {
     const settings = await di.storage.getSettings()
     const apiKey = await di.secrets.get(SECRET_KEY)
     const url = settings.llmUrl
@@ -265,7 +248,6 @@ export const deepSeekLlm: LlmPort = {
     if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
     const parsed = parseAggregateJson(raw)
     const now = new Date().toISOString()
-    const range = scopeRange(scope, new Date())
 
     const ag: Aggregate = {
       id: id ?? crypto.randomUUID(),

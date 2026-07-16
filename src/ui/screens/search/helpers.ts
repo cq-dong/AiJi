@@ -7,13 +7,16 @@ export interface SearchResult {
 }
 
 // Filter facet selections. `undefined`/`'all'` means "no filter on this axis".
-// Dates are grouped by YYYY-M-D bucket strings derived from entry.createdAt.
+// `date` is a quick range slug; when 'custom', the dateFrom/dateTo pair holds a
+// caller-chosen [start, end] range. Either axis being 'all' means "no filter".
 export interface SearchFilters {
   category: string // 'all' or a category slug
   tag: string // 'all' or a tag slug
   mood: string // 'all' or a mood string
   modality: string // 'all' | 'text' | 'audio' | 'video'
-  date: string // 'all' or a 'YYYY-M-D' bucket
+  date: string // 'all' | 'today' | 'yesterday' | 'thisWeek' | 'thisMonth' | 'custom'
+  dateFrom: string // 'YYYY-MM-DD' or '' — consulted only when date === 'custom'
+  dateTo: string // 'YYYY-MM-DD' or '' — consulted only when date === 'custom'
 }
 
 export const EMPTY_FILTERS: SearchFilters = {
@@ -22,6 +25,8 @@ export const EMPTY_FILTERS: SearchFilters = {
   mood: 'all',
   modality: 'all',
   date: 'all',
+  dateFrom: '',
+  dateTo: '',
 }
 
 // Fixed modality chip set (text/audio/video). The design chips use Chinese labels
@@ -45,48 +50,80 @@ export function moodChipsFrom(aiByEntry: Record<string, EntryAi>): Array<{ slug:
     .map((m) => ({ slug: m, label: m }))
 }
 
-// Aggregate distinct date buckets from entries' createdAt, newest first.
-// Bucket key is 'YYYY-M-D' (no zero-pad) so it matches what we compare against.
-export function dateChipsFrom(entries: ReadonlyArray<Entry>): Array<{ slug: string; label: string }> {
-  const seen = new Map<string, number>() // bucket -> latest timestamp
-  for (const e of entries) {
-    const d = new Date(e.createdAt)
-    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
-    const t = d.getTime()
-    const prev = seen.get(key)
-    if (prev === undefined || t > prev) seen.set(key, t)
+// Quick relative date chips. One is active at a time; the 全部 button (added by
+// ChipRow) clears the axis. The custom from-to inputs live alongside — when both
+// are filled, `date` switches to 'custom' and ChipRow shows no quick chip active.
+export const QUICK_DATE_CHIPS: ReadonlyArray<{ slug: DateRangeSlug; label: string }> = [
+  { slug: 'today', label: '今天' },
+  { slug: 'yesterday', label: '昨天' },
+  { slug: 'thisWeek', label: '本周' },
+  { slug: 'thisMonth', label: '本月' },
+]
+
+export type DateRangeSlug = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth'
+
+// [start, end] ms for a relative range anchored to `now`. Every range ends at
+// the close of "today" (23:59:59.999) so entries created later today still pass.
+// 本周 starts Monday (ISO week).
+export function rangeForSlug(slug: DateRangeSlug, now: Date): { start: number; end: number } | null {
+  const y = now.getFullYear()
+  const m = now.getMonth()
+  const d = now.getDate()
+  const endToday = new Date(y, m, d, 23, 59, 59, 999).getTime()
+  switch (slug) {
+    case 'today':
+      return { start: new Date(y, m, d, 0, 0, 0, 0).getTime(), end: endToday }
+    case 'yesterday':
+      return {
+        start: new Date(y, m, d - 1, 0, 0, 0, 0).getTime(),
+        end: new Date(y, m, d - 1, 23, 59, 59, 999).getTime(),
+      }
+    case 'thisWeek': {
+      const day = new Date(y, m, d).getDay() // 0=Sun..6=Sat
+      const daysSinceMonday = (day + 6) % 7
+      return { start: new Date(y, m, d - daysSinceMonday, 0, 0, 0, 0).getTime(), end: endToday }
+    }
+    case 'thisMonth':
+      return { start: new Date(y, m, 1, 0, 0, 0, 0).getTime(), end: endToday }
+    default:
+      return null
   }
-  return Array.from(seen.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([slug]) => {
-      const [y, m, d] = slug.split('-').map(Number)
-      const dt = new Date(y, m - 1, d)
-      const today = new Date()
-      const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
-      const startDt = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate())
-      const diff = Math.round((startToday.getTime() - startDt.getTime()) / 86_400_000)
-      const label = diff <= 0 ? '今天' : diff === 1 ? '昨天' : `${m}/${d}`
-      return { slug, label }
-    })
 }
 
-function dateBucket(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+// [start 00:00, end 23:59:59] ms for a caller-chosen 'YYYY-MM-DD' pair, inclusive
+// on both ends. Returns null if either date is blank or malformed — callers
+// treat null as "apply no date filter" (matches the spec: filter only when both set).
+export function customRangeFrom(from: string, to: string): { start: number; end: number } | null {
+  if (!from || !to) return null
+  const a = from.split('-').map(Number)
+  const b = to.split('-').map(Number)
+  if (a.length !== 3 || b.length !== 3 || a.some(Number.isNaN) || b.some(Number.isNaN)) return null
+  return {
+    start: new Date(a[0], a[1] - 1, a[2], 0, 0, 0, 0).getTime(),
+    end: new Date(b[0], b[1] - 1, b[2], 23, 59, 59, 999).getTime(),
+  }
 }
 
 // Apply the selected facets to the full-text matches returned by searchEntries.
 // A result is kept iff EVERY non-'all' facet matches. No selections => all pass.
+// `now` anchors the relative date ranges (今天/昨天/本周/本月) to the wall clock.
 export function filterResults(
   results: SearchResult[],
   filters: SearchFilters,
   aiByEntry: Record<string, EntryAi>,
+  now: Date,
 ): SearchResult[] {
   const hasCat = filters.category !== 'all'
   const hasTag = filters.tag !== 'all'
   const hasMood = filters.mood !== 'all'
   const hasMod = filters.modality !== 'all'
-  const hasDate = filters.date !== 'all'
+  const dateRange =
+    filters.date === 'custom'
+      ? customRangeFrom(filters.dateFrom, filters.dateTo)
+      : filters.date !== 'all'
+        ? rangeForSlug(filters.date as DateRangeSlug, now)
+        : null
+  const hasDate = dateRange !== null
   if (!hasCat && !hasTag && !hasMood && !hasMod && !hasDate) return results
   return results.filter((r) => {
     const ai = aiByEntry[r.entry.id]
@@ -94,7 +131,10 @@ export function filterResults(
     if (hasTag && !(ai?.tags ?? []).includes(filters.tag)) return false
     if (hasMood && (ai?.facets.mood ?? '') !== filters.mood) return false
     if (hasMod && !r.entry.parts.some((p) => p.type === filters.modality)) return false
-    if (hasDate && dateBucket(r.entry.createdAt) !== filters.date) return false
+    if (hasDate) {
+      const t = new Date(r.entry.createdAt).getTime()
+      if (t < dateRange.start || t > dateRange.end) return false
+    }
     return true
   })
 }

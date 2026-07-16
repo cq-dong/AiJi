@@ -30,11 +30,15 @@ function ReadyBody({
   categories,
   tags,
   onReprocess,
+  onEdit,
+  onDelete,
 }: {
   ai: EntryAi
   categories: Category[]
   tags: Tag[]
   onReprocess: () => void
+  onEdit: () => void
+  onDelete: () => void
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -70,9 +74,9 @@ function ReadyBody({
         </div>
       )}
       <div className="flex items-center gap-4 pt-1">
-        <button type="button" className="text-[12px] text-t3">编辑</button>
+        <button type="button" onClick={onEdit} className="text-[12px] text-t3">编辑</button>
         <button type="button" onClick={onReprocess} className="text-[12px] text-t3">重处理</button>
-        <button type="button" className="text-[12px] text-catFail">删除</button>
+        <button type="button" onClick={onDelete} className="text-[12px] text-catFail">删除</button>
       </div>
     </div>
   )
@@ -96,7 +100,7 @@ function ProcessingBody() {
   )
 }
 
-function FailedBody({ onReprocess }: { onReprocess: () => void }) {
+function FailedBody({ onReprocess, onManualEdit }: { onReprocess: () => void; onManualEdit: () => void }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[14px] font-bold text-catFail">处理失败</p>
@@ -105,7 +109,7 @@ function FailedBody({ onReprocess }: { onReprocess: () => void }) {
         <Button type="button" variant="primary" className="bg-catFail" onClick={onReprocess}>
           重试
         </Button>
-        <Button type="button" variant="secondary">
+        <Button type="button" variant="secondary" onClick={onManualEdit}>
           手动编辑
         </Button>
       </div>
@@ -117,10 +121,16 @@ export function AiPanel({
   state,
   ai,
   onReprocess,
+  onEdit,
+  onManualEdit,
+  onDelete,
 }: {
   state: AiState
   ai?: EntryAi
   onReprocess: () => void
+  onEdit: () => void
+  onManualEdit: () => void
+  onDelete: () => void
 }) {
   // 读侧从 store 取类别/标签（含涌现），不再依赖 seed 静态数组。
   const categories = useUiStore((s) => s.categories)
@@ -132,11 +142,18 @@ export function AiPanel({
         <Chip tone="pending">上送云端</Chip>
       </div>
       {state === 'ready' && ai && (
-        <ReadyBody ai={ai} categories={categories} tags={tags} onReprocess={onReprocess} />
+        <ReadyBody
+          ai={ai}
+          categories={categories}
+          tags={tags}
+          onReprocess={onReprocess}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       )}
       {state === 'ready' && !ai && <p className="text-[12px] text-t3">暂无 AI 处理结果</p>}
       {state === 'processing' && <ProcessingBody />}
-      {state === 'failed' && <FailedBody onReprocess={onReprocess} />}
+      {state === 'failed' && <FailedBody onReprocess={onReprocess} onManualEdit={onManualEdit} />}
     </Card>
   )
 }

@@ -44,6 +44,22 @@ export interface CapturePort {
   requestMicPermission(): Promise<boolean>
   // Geolocation for recordLocation setting (Wave 1 core). Null if denied/unsupported.
   getLocation(): Promise<GeoPoint | null>
+
+  // ── Camera + gallery (Wave 2 capture redesign). Photo/video share the 'video'
+  // EntryPart (no 'photo' PartType): photos are a video part with durationSec=0.
+  // The adapter owns the MediaStream; the screen passes a <video> for live preview.
+  /** Open the camera. Attaches the live stream to `preview` (if given). Returns false if denied/unsupported. */
+  startCamera(opts: { preview?: HTMLVideoElement; facingMode?: 'user' | 'environment'; withAudio?: boolean }): Promise<boolean>
+  /** Grab a single still frame from the active camera stream. Null if no active camera. */
+  capturePhoto(): Promise<{ ref: string; blob: Blob } | null>
+  /** Begin recording video (+audio) from the active camera stream. */
+  startVideo(): Promise<void>
+  /** Stop recording; returns blob + ref + duration. Null if nothing was recording. */
+  stopVideo(): Promise<{ ref: string; blob: Blob; durationSec: number } | null>
+  /** Stop the camera, release tracks, detach preview. Safe to call when not running. */
+  stopCamera(): Promise<void>
+  /** Open the system file picker (image/video). Returns null when the user cancels. */
+  pickMedia(): Promise<{ ref: string; blob: Blob; kind: 'image' | 'video'; durationSec: number } | null>
 }
 
 export interface SttPort {
@@ -52,7 +68,9 @@ export interface SttPort {
 
 export interface LlmPort {
   classify(entryId: string): Promise<EntryAi>
-  aggregate(entryIds: string[], scope: AggregateScopeType, id?: string): Promise<Aggregate>
+  // range = the period key the store wants this digest scoped to ('2026-07-16' / '2026-W28' / '2026-07').
+  // Adapter must use it verbatim — NOT recompute from today（过去周期重算会用错 range 覆盖，1b 根因之一）。
+  aggregate(entryIds: string[], scope: AggregateScopeType, range: string, id?: string): Promise<Aggregate>
 }
 
 export interface SecretStorePort {

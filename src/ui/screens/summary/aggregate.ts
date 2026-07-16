@@ -1,4 +1,4 @@
-import type { Aggregate, Category, EntryAi } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, EntryAi } from '@/domain/types'
 
 // Seed "today" — anchors relative labels (本周/今日) and 7-day windows.
 const TODAY = new Date('2026-07-15T00:00:00+08:00')
@@ -99,4 +99,47 @@ export function aggregateChips(
               : 'idea'
       return { label: cat?.label ?? slug, tone }
     })
+}
+
+// ── 期间导航（1b 根因：过去时段从未被 recompute 命中）──────────────────────
+// range 字符串必须与 store.scopeRange 逐字一致，"当前"才对得上 store 无 range 的
+// recomputeAggregate(scope) 调用（W28/W27/2026-07-15 等都靠此匹配）。
+export function scopeRange(scope: AggregateScopeType, ref: Date): string {
+  const y = ref.getFullYear()
+  const m = String(ref.getMonth() + 1).padStart(2, '0')
+  const d = String(ref.getDate()).padStart(2, '0')
+  if (scope === 'day') return `${y}-${m}-${d}`
+  if (scope === 'month') return `${y}-${m}`
+  const tmp = new Date(Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate()))
+  const dayNum = (tmp.getUTCDay() + 6) % 7
+  tmp.setUTCDate(tmp.getUTCDate() - dayNum + 3)
+  const isoYear = tmp.getUTCFullYear()
+  const firstThursday = new Date(Date.UTC(isoYear, 0, 4))
+  const week = 1 + Math.round(((tmp.getTime() - firstThursday.getTime()) / 86400000 - 3) / 7)
+  return `${isoYear}-W${String(week).padStart(2, '0')}`
+}
+
+// Shift a reference date by N whole periods (day=±1d, week=±7d, month=±1 month).
+export function shiftRef(scope: AggregateScopeType, ref: Date, periods: number): Date {
+  const next = new Date(ref)
+  if (scope === 'day') next.setDate(next.getDate() + periods)
+  else if (scope === 'month') next.setMonth(next.getMonth() + periods)
+  else next.setDate(next.getDate() + periods * 7)
+  return next
+}
+
+// Friendly navigator label for the selected period, anchored at ref.
+export function periodLabel(scope: AggregateScopeType, ref: Date, isCurrent: boolean): string {
+  if (scope === 'day') {
+    return isCurrent ? '今日' : fmtMD(ref)
+  }
+  if (scope === 'month') {
+    const base = `${ref.getFullYear()}年${ref.getMonth() + 1}月`
+    return isCurrent ? `本月 · ${base}` : base
+  }
+  const end = startOfDay(ref)
+  const start = new Date(end)
+  start.setDate(start.getDate() - 6)
+  const base = `${fmtMD(start)}–${fmtMD(end)}`
+  return isCurrent ? `本周 · ${base}` : base
 }
