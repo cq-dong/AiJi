@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  Bookmark,
   Camera,
   GalleryThumbnails,
   Image as ImageIcon,
+  Info,
   MapPin,
   Mic,
+  Trash2,
   Type,
   Video,
   X,
@@ -62,16 +65,35 @@ export function LiveWaveform() {
   )
 }
 
-// ── Header: close + title + part-count + location chip ──
+// ── Header: close + editable title + part-count + location chip ──
+// Wave 3 #3: title is click-to-edit. Empty on blur → display "新条目" but
+// keep title undefined in store (don't persist empty string as a title).
 export function CaptureHeader({
   partCount,
   location,
+  title,
+  onTitleChange,
   onClose,
 }: {
   partCount: number
   location?: GeoPoint
+  title?: string
+  onTitleChange: (v: string | undefined) => void
   onClose: () => void
 }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+
+  const startEdit = () => {
+    setDraft(title ?? '')
+    setEditing(true)
+  }
+  const commit = () => {
+    const t = draft.trim()
+    onTitleChange(t.length > 0 ? t : undefined)
+    setEditing(false)
+  }
+
   return (
     <div className="flex h-12 shrink-0 items-center gap-3 px-4">
       <button
@@ -82,18 +104,72 @@ export function CaptureHeader({
       >
         <X size={20} strokeWidth={2.2} />
       </button>
-      <h1 className="text-[17px] font-bold text-ink">新条目</h1>
+      {editing ? (
+        <input
+          name="captureTitle"
+          aria-label="条目标题"
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() } }
+          placeholder="新条目"
+          maxLength={60}
+          className="min-w-0 flex-1 border-b border-pri bg-transparent text-[17px] font-bold text-ink outline-none placeholder:text-t3"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={startEdit}
+          className="min-w-0 truncate text-[17px] font-bold text-ink"
+        >
+          {title || '新条目'}
+        </button>
+      )}
       {partCount > 0 && (
-        <span className="flex h-6 items-center rounded-chip bg-priS px-2 text-[11px] font-medium text-pri">
+        <span className="flex h-6 shrink-0 items-center rounded-chip bg-priS px-2 text-[11px] font-medium text-pri">
           {partCount} 片段
         </span>
       )}
       {location && (
-        <span className="ml-auto flex items-center gap-1 text-[11px] font-medium text-t2">
+        <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] font-medium text-t2">
           <MapPin size={13} strokeWidth={2.2} className="text-pri" />
           <span className="max-w-[120px] truncate">{location.label ?? `${location.lat.toFixed(3)}, ${location.lng.toFixed(3)}`}</span>
         </span>
       )}
+    </div>
+  )
+}
+
+// ── Draft hint banner: shown when parts restored from persisted draft ──
+export function DraftHintBanner({ onDismiss }: { onDismiss: () => void }) {
+  return (
+    <div className="mx-4 mb-2 flex items-center gap-2 rounded-chip bg-priS px-3 py-2">
+      <Info size={14} strokeWidth={2.2} className="shrink-0 text-pri" />
+      <span className="flex-1 text-[12px] font-medium text-pri">继续上次草稿</span>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="关闭提示"
+        className="flex size-5 shrink-0 items-center justify-center rounded-full text-pri active:bg-pri/10"
+      >
+        <X size={13} strokeWidth={2.4} />
+      </button>
+    </div>
+  )
+}
+
+// ── Toast: brief auto-dismiss message ──
+export function Toast({ message, onDone }: { message: string; onDone: () => void }) {
+  useEffect(() => {
+    const id = window.setTimeout(onDone, 1600)
+    return () => window.clearTimeout(id)
+  }, [onDone])
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-24 z-40 flex justify-center">
+      <span className="rounded-btn bg-black/80 px-4 py-2 text-[13px] font-medium text-white shadow-lg">
+        {message}
+      </span>
     </div>
   )
 }
@@ -211,7 +287,9 @@ export function EmptyCompose() {
   )
 }
 
-// ── Capture toolbar: text / voice / photo / video / gallery ──
+// ── Capture toolbar: text / voice / camera / gallery ──
+// Wave 3 #1: merged 拍照+录视频 into single 相机 entry (mode toggle moved
+// inside CameraView).
 function ToolButton({
   icon,
   label,
@@ -250,15 +328,13 @@ function ToolButton({
 export function CaptureToolbar({
   onText,
   onVoice,
-  onPhoto,
-  onVideo,
+  onCamera,
   onGallery,
   disabled,
 }: {
   onText: () => void
   onVoice: () => void
-  onPhoto: () => void
-  onVideo: () => void
+  onCamera: () => void
   onGallery: () => void
   disabled?: boolean
 }) {
@@ -266,73 +342,124 @@ export function CaptureToolbar({
     <div className="flex items-stretch gap-1">
       <ToolButton icon={<Type size={22} strokeWidth={2} />} label="文本" onClick={onText} disabled={disabled} />
       <ToolButton icon={<Mic size={22} strokeWidth={2} />} label="语音" onClick={onVoice} primary disabled={disabled} />
-      <ToolButton icon={<Camera size={22} strokeWidth={2} />} label="拍照" onClick={onPhoto} disabled={disabled} />
-      <ToolButton icon={<Video size={22} strokeWidth={2} />} label="录视频" onClick={onVideo} disabled={disabled} />
+      <ToolButton icon={<Camera size={22} strokeWidth={2} />} label="相机" onClick={onCamera} disabled={disabled} />
       <ToolButton icon={<GalleryThumbnails size={22} strokeWidth={2} />} label="相册" onClick={onGallery} disabled={disabled} />
     </div>
   )
 }
 
-// ── Sticky save bar ──
-export function SaveBar({ saving, disabled, onSave }: { saving: boolean; disabled: boolean; onSave: () => void }) {
+// ── Sticky save bar: 清空 / 存草稿 / 保存 ──
+// Wave 3 #4: three-button row. 清空 confirms before clearing; 存草稿
+// persists to Dexie + shows a toast; 保存 is the existing beginSave flow.
+export function SaveBar({
+  saving,
+  disabled,
+  onClear,
+  onSaveDraft,
+  onSave,
+}: {
+  saving: boolean
+  disabled: boolean
+  onClear: () => void
+  onSaveDraft: () => void
+  onSave: () => void
+}) {
   return (
-    <button
-      type="button"
-      onClick={onSave}
-      disabled={disabled || saving}
-      className={cn(
-        'flex h-12 w-full items-center justify-center gap-2 rounded-btn text-[15px] font-medium transition active:scale-[0.99] disabled:opacity-40',
-        saving ? 'border border-brd bg-priS text-pri' : 'bg-pri text-white',
-      )}
-    >
-      {saving ? (
-        <>
-          <Spinner size={16} /> 保存中…
-        </>
-      ) : (
-        '保存'
-      )}
-    </button>
+    <div className="flex items-stretch gap-2">
+      <button
+        type="button"
+        onClick={onClear}
+        disabled={disabled || saving}
+        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 transition active:scale-[0.98] disabled:opacity-40"
+      >
+        <Trash2 size={16} strokeWidth={2} />
+        清空
+      </button>
+      <button
+        type="button"
+        onClick={onSaveDraft}
+        disabled={disabled || saving}
+        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 transition active:scale-[0.98] disabled:opacity-40"
+      >
+        <Bookmark size={16} strokeWidth={2} />
+        存草稿
+      </button>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={disabled || saving}
+        className={cn(
+          'flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-btn text-[15px] font-medium transition active:scale-[0.99] disabled:opacity-40',
+          saving ? 'border border-brd bg-priS text-pri' : 'bg-pri text-white',
+        )}
+      >
+        {saving ? (
+          <>
+            <Spinner size={16} /> 保存中…
+          </>
+        ) : (
+          '保存'
+        )}
+      </button>
+    </div>
   )
 }
 
-// ── Voice recording panel (shown while store.capture.recording) ──
-export function VoicePanel({
+// ── Compact voice recording bar (footer, non-fullscreen) ──
+// Wave 3 #2: recording no longer takes over main. Parts list + interim
+// bubble stay visible/scrollable; this compact bar sits at the footer with
+// a small waveform + elapsed timer + stop button.
+export function VoiceBar({
   elapsed,
-  liveTranscript,
   onStop,
 }: {
   elapsed: number
-  liveTranscript: string
   onStop: () => void
 }) {
   return (
-    <div className="flex flex-col items-center gap-5 px-4 py-8">
-      <div className="flex size-40 items-center justify-center rounded-full border-[1.5px] border-pri/15 bg-priS/40">
-        <LiveWaveform />
-      </div>
-      <div className="flex items-center gap-2 whitespace-nowrap text-[13px] font-medium text-pri">
+    <div className="flex h-16 shrink-0 items-center gap-3 border-t border-brd bg-card px-4">
+      <span className="flex items-center" style={{ gap: 3 }}>
+        {LIVE_HEIGHTS.slice(0, 5).map((h, i) => (
+          <span
+            key={i}
+            className="w-[3px] rounded-[2px] bg-pri"
+            style={{
+              height: Math.min(h, 28),
+              transformOrigin: 'center',
+              animation: 'aji-wave 1s ease-in-out ' + i * 0.12 + 's infinite',
+            }}
+          />
+        ))}
+      </span>
+      <span className="flex items-center gap-1.5 whitespace-nowrap text-[13px] font-medium text-pri">
         <span
           className="inline-block size-2 rounded-full bg-pri"
           style={{ animation: 'aji-pulse 1s ease-in-out infinite' }}
         />
         录音中 · {fmtDur(elapsed)}
-      </div>
-      <div className="w-full rounded-card border border-brd bg-card p-4">
-        <p className="text-[12px] text-t3">正在转写</p>
-        <p className="mt-2 min-h-[2.5em] text-[13px] leading-relaxed text-t2">
-          {liveTranscript || '…'}
-        </p>
-      </div>
+      </span>
       <button
         type="button"
         onClick={onStop}
         aria-label="停止录音"
-        className="flex size-16 items-center justify-center rounded-full bg-pri text-white shadow-lg shadow-pri/30 active:scale-95"
+        className="ml-auto flex size-12 items-center justify-center rounded-full bg-pri text-white shadow-lg shadow-pri/30 active:scale-95"
       >
-        <span className="block size-6 rounded-[4px] bg-white" />
+        <span className="block size-5 rounded-[3px] bg-white" />
       </button>
-      <p className="text-[11px] text-t3">点一下停止 · 自动存为语音片段</p>
+    </div>
+  )
+}
+
+// ── Interim transcription bubble (shown in main area during recording) ──
+// Wave 3 #2: live transcript shown inline below the parts list so the user
+// can see what's being captured without a full-screen takeover.
+export function InterimBubble({ liveTranscript }: { liveTranscript: string }) {
+  return (
+    <div className="rounded-card border border-pri/20 bg-priS/30 p-3">
+      <p className="text-[11px] font-medium text-pri">正在转写</p>
+      <p className="mt-1.5 min-h-[1.5em] text-[13px] leading-relaxed text-t2">
+        {liveTranscript || '…'}
+      </p>
     </div>
   )
 }
@@ -392,6 +519,8 @@ export function TextEntrySheet({
       <div className="relative rounded-t-[20px] bg-card px-4 pb-5 pt-3 shadow-lg">
         <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-brd" />
         <textarea
+          name="captureText"
+          aria-label="条目内容"
           autoFocus
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -421,24 +550,24 @@ export function TextEntrySheet({
 }
 
 // ── Camera capture overlay. Owns startCamera/stopCamera lifecycle via effect.
-// mode='photo' captures a still on shutter; 'video' toggles record on shutter. ──
+// Wave 3 #1: mode (photo/video) is internal state + segmented toggle at top.
+// 'photo' captures a still on shutter; 'video' toggles record on shutter. ──
 export function CameraView({
-  mode,
   onPart,
   onClose,
 }: {
-  mode: 'photo' | 'video'
   onPart: (part: EntryPart, blob: Blob) => void
   onClose: () => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const [mode, setMode] = useState<'photo' | 'video'>('photo')
   const [facing, setFacing] = useState<'user' | 'environment'>('environment')
   const [recording, setRecording] = useState(false)
   const [denied, setDenied] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  // Start camera on mount / facing switch; release on unmount + when the PWA is
-  // backgrounded (pagehide) so the camera light doesn't stay on (matches video-probe.html).
+  // Start camera on mount / facing switch / mode switch; release on unmount +
+  // when the PWA is backgrounded (pagehide) so the camera light doesn't stay on.
   useEffect(() => {
     let active = true
     void (async () => {
@@ -499,6 +628,11 @@ export function CameraView({
     onClose()
   }
 
+  const switchMode = (m: 'photo' | 'video') => {
+    if (m === mode || recording || busy) return
+    setMode(m)
+  }
+
   return (
     <div className="absolute inset-0 z-30 flex flex-col bg-black">
       <div className="flex h-12 shrink-0 items-center justify-between px-4 text-white">
@@ -510,7 +644,24 @@ export function CameraView({
         >
           <X size={20} strokeWidth={2.2} />
         </button>
-        <span className="text-[15px] font-medium">{mode === 'photo' ? '拍照' : '录视频'}</span>
+        {/* Wave 3 #1: segmented toggle to switch photo/video mode */}
+        <div className="flex items-center rounded-full bg-white/15 p-0.5">
+          {(['photo', 'video'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => switchMode(m)}
+              disabled={recording || busy}
+              className={cn(
+                'flex h-8 items-center justify-center gap-1 rounded-full px-3 text-[13px] font-medium transition disabled:opacity-60',
+                mode === m ? 'bg-white text-black' : 'text-white/80',
+              )}
+            >
+              {m === 'photo' ? <Camera size={14} strokeWidth={2.2} /> : <Video size={14} strokeWidth={2.2} />}
+              {m === 'photo' ? '拍照' : '录视频'}
+            </button>
+          ))}
+        </div>
         <button
           type="button"
           onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}

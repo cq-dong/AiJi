@@ -116,15 +116,15 @@ export const seedReminders: Reminder[] = [
 export const seedAggregates: Aggregate[] = [
   {
     id: 'ag-w28', scope: { type: 'week', range: '2026-W28' }, summary: '本周以 AiJi 项目推进为主轴：抽象端口、涌现分类、STT 方案逐步成形；穿插两次生活片段（跑步、咖啡）与一篇阅读笔记（second brain / 卡片笔记）。情绪整体偏专注，周末略疲惫。',
-    entryIds: ['e2', 'e3', 'e4', 'e6', 'e10', 'e11', 'e12'], modelUsed: 'deepseek-chat', createdAt: '2026-07-15T09:00:00+08:00', stale: false,
+    entryIds: ['e2', 'e3', 'e4', 'e6', 'e10', 'e11', 'e12'], modelUsed: 'deepseek-chat', createdAt: '2026-07-15T09:00:00+08:00', stale: false, detailLevel: 3,
   },
   {
     id: 'ag-d715', scope: { type: 'day', range: '2026-07-15' }, summary: '今天记了两条：地铁里的想法（记一条顺便变提醒）和 CapturePort 接口化的项目进展。情绪专注。',
-    entryIds: ['e1', 'e2'], modelUsed: 'deepseek-chat', createdAt: '2026-07-15T09:01:00+08:00', stale: false,
+    entryIds: ['e1', 'e2'], modelUsed: 'deepseek-chat', createdAt: '2026-07-15T09:01:00+08:00', stale: false, detailLevel: 3,
   },
   {
     id: 'ag-w27', scope: { type: 'week', range: '2026-W27' }, summary: '上周主要在打磨 Figma 原型，把采集流的三模态选择器和边缘态补齐。',
-    entryIds: [], modelUsed: 'deepseek-chat', createdAt: '2026-07-08T09:00:00+08:00', stale: true,
+    entryIds: [], modelUsed: 'deepseek-chat', createdAt: '2026-07-08T09:00:00+08:00', stale: true, detailLevel: 3,
   },
 ]
 
@@ -139,4 +139,5 @@ export const seedSettings = {
   recordLocation: false,
   dailyReminder: false,
   theme: 'light' as const,
+  aggregateDetailLevel: 3 as const,
 }

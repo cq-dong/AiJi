@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, Draft, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
 import { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedReminders, seedSettings, seedTags } from '@/data/seed'
 import { di } from './di'
 
@@ -13,6 +13,7 @@ interface CaptureDraft {
   finalized: string // accumulated finalized STT segments (live preview)
   interim: string // current partial segment (live preview)
   location?: GeoPoint // recordLocation 开时，采集开始时取一次（best-effort，未解析则 undefined）
+  title?: string // Wave 3: user-editable compose title (UI-only, not on Entry domain)
 }
 
 interface UiState {
@@ -37,13 +38,16 @@ interface UiState {
   allowMic: () => void
   addPart: (p: EntryPart) => void
   clearDraft: () => void
+  // Wave 3: persist/resume mid-entry draft across refresh + app restart.
+  saveDraft: () => void
+  loadDraft: () => Promise<void>
   clearJustSaved: () => void
   setOnline: (v: boolean) => void
   setSettings: (patch: Partial<Settings>) => void
   setLlmConfig: (url: string, model: string, key: string) => void
   setSttConfig: (model: string, key: string) => void
   processEntry: (entryId: string) => Promise<void>
-  recomputeAggregate: (scope: AggregateScopeType, range?: string) => Promise<void>
+  recomputeAggregate: (scope: AggregateScopeType, range?: string, detailLevel?: number) => Promise<void>
   // Phase 9 Batch 2b · 提醒。processEntry 不自动建 Reminder（Q2：用户在 B6 TodoConfirm 确认）。
   confirmReminder: (entryId: string, dueAt: string, label: string) => Promise<void>
   dismissReminder: (id: string) => Promise<void>
@@ -57,7 +61,7 @@ interface UiState {
   primeLocation: () => void
 }
 
-const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined }
+const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined, title: undefined }
 
 // Compute the range string (dateKey) for a given scope anchored at a reference date.
 // day → '2026-07-15' · week → '2026-W28' · month → '2026-07'.
@@ -121,7 +125,7 @@ function scheduleReminders(): void {
   const { reminders } = useUiStore.getState()
   const now = Date.now()
   for (const r of reminders) {
-    if (r.status !== 'pending') continue
+    if (r.status !== 'pending' && r.status !== 'snoozed') continue
     if (scheduledTimeouts.has(r.id)) continue
     const due = new Date(r.dueAt).getTime()
     const diff = due - now
@@ -133,7 +137,7 @@ function scheduleReminders(): void {
       // 未来：setTimeout 到点；fire 前 re-check（可能已被 dismiss/snooze）
       const h = setTimeout(() => {
         const cur = useUiStore.getState().reminders.find((x) => x.id === r.id)
-        if (cur && cur.status === 'pending') fireReminder(cur)
+        if (cur && (cur.status === 'pending' || cur.status === 'snoozed')) fireReminder(cur)
         else scheduledTimeouts.delete(r.id)
       }, diff)
       scheduledTimeouts.set(r.id, h)
@@ -173,6 +177,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       set({ entries, settings, categories, tags, aggregates, reminders, aiByEntry, hydrated: true })
       // 载入后扫 pending 提醒：未来调度到点；overdue <1h 补 fire、≥1h 标 missed（Q3）。
       scheduleReminders()
+      // Wave 3: 恢复上次未保存的采集草稿（跨刷新/重启续记）。
+      await get().loadDraft()
     } catch (e) {
       // 载入失败：保持 seed 兜底，标记已尝试避免反复重试（存储失败不阻断 UI）
       console.error('[store] hydrate failed', e)
@@ -226,6 +232,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       location: s.capture.location,
     }
     set({ capture: emptyDraft, entries: [entry, ...s.entries], justSaved: true })
+    // Wave 3: 保存成功 → 清掉持久化草稿（若之前存过），避免下次进 capture 又恢复已保存内容。
+    void di.storage.clearDraft().catch((e) => console.error('[store] clearDraft failed', e))
     // 落库：异步写 Dexie，失败只记日志不伤 UI（处理管线断网不丢后续补）
     void di.storage.saveEntry(entry).catch((e) => console.error('[store] saveEntry failed', e))
     // 分类入队（火忘）：AI 失败只伤 AI 层（条目标 failed，UI 可重试），采集存储已落库不受影响
@@ -234,7 +242,34 @@ export const useUiStore = create<UiState>((set, get) => ({
   denyMic: () => set((s) => ({ capture: { ...s.capture, micDenied: true, recording: false } })),
   allowMic: () => set((s) => ({ capture: { ...s.capture, micDenied: false } })),
   addPart: (p) => set((s) => ({ capture: { ...s.capture, parts: [...s.capture.parts, p] } })),
-  clearDraft: () => set({ capture: emptyDraft }),
+  clearDraft: () => {
+    // 内存草稿清空 + 删 Dexie 持久化草稿（避免清空后下次又恢复）。
+    set({ capture: emptyDraft })
+    void di.storage.clearDraft().catch((e) => console.error('[store] clearDraft failed', e))
+  },
+  saveDraft: () => {
+    // 持久化当前 parts/title/location 到 Dexie drafts（单行覆盖，key=1）。
+    // recording/saving/micDenied 不存（运行期态，不需跨会话）。
+    const c = get().capture
+    if (c.parts.length === 0) return
+    const draft: Draft = {
+      id: 1,
+      parts: c.parts,
+      title: c.title,
+      location: c.location,
+      updatedAt: new Date().toISOString(),
+    }
+    void di.storage.saveDraft(draft).catch((e) => console.error('[store] saveDraft failed', e))
+  },
+  loadDraft: async () => {
+    // 仅在当前 capture 为空时恢复，避免覆盖用户本会话已记的 parts。
+    const c = get().capture
+    if (c.parts.length > 0) return
+    const d = await di.storage.loadDraft()
+    if (d && d.parts.length > 0) {
+      set({ capture: { ...emptyDraft, parts: d.parts, title: d.title, location: d.location } })
+    }
+  },
   clearJustSaved: () => set({ justSaved: false }),
   setOnline: (v) => set({ online: v }),
   setSettings: (patch) => {
@@ -323,16 +358,19 @@ export const useUiStore = create<UiState>((set, get) => ({
       }
     }
   },
-  recomputeAggregate: async (scope, range) => {
+  recomputeAggregate: async (scope, range, detailLevel) => {
     const ref = new Date()
     const dateKey = range ?? scopeRange(scope, ref)
+    // Wave 3: detailLevel 默认取 settings.aggregateDetailLevel；level 变更视为过期需重算。
+    const lvl = detailLevel ?? get().settings.aggregateDetailLevel ?? 3
     const inRange = entriesInRange(get().entries, scope, dateKey)
     if (inRange.length === 0) return
     const entryIds = inRange.map((e) => e.id)
     // Snapshot existing aggregate to restore on failure (avoid stuck-stale).
     const existing = await di.storage.getAggregate(scope, dateKey)
     // 新鲜即跳过：scope 切换/挂载不再每次打付费 LLM；processEntry 先置 stale 再触发，真过期仍重算。
-    if (existing && !existing.stale) return
+    // Wave 3: detailLevel 变了也算过期——避免级别改了却显示旧级别摘要。
+    if (existing && !existing.stale && (existing.detailLevel ?? 3) === lvl) return
     const recalcingKey = `${scope}:${dateKey}`
     // recalculating 与 stale 分离：in-flight 标记驱动 UI spinner；失败时清 in-flight、留 stale → 显「重新生成」而非永转（1b 修）。
     set((s) => ({ recalculating: { ...s.recalculating, [recalcingKey]: true } }))
@@ -346,7 +384,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     try {
       // 传 existing?.id → 适配器复用同主键 → saveAggregate put 原地替换，避免孤儿 stale 行（重载后重复卡片）。
-      const ag = await di.llm.aggregate(entryIds, scope, dateKey, existing?.id)
+      const ag = await di.llm.aggregate(entryIds, scope, dateKey, lvl, existing?.id)
       await di.storage.saveAggregate(ag)
       set((s) => {
         // Replace any existing aggregate for this scope+range, else prepend.
@@ -407,7 +445,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     set((s) => ({ reminders: s.reminders.filter((x) => x.id !== id) }))
   },
   snoozeReminder: async (id, minutes) => {
-    // status stays 'pending'（ReminderStatus union 含 'snoozed' 但 B5 逻辑用 pending 统一调度）。
+    // Wave 3 修复：snooze 设 status='snoozed'，UI chip 显示"已稍后"反馈稍后动作。
+    // scheduleReminders 把 snoozed 当 pending 一样调度/触发（到点 → fired）。
     clearScheduledTimeout(id)
     const cur = get().reminders.find((x) => x.id === id)
     if (!cur) return
@@ -416,7 +455,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     const snoozed: Reminder = {
       ...cur,
       dueAt: new Date(base + minutes * 60_000).toISOString(),
-      status: 'pending',
+      status: 'snoozed',
     }
     await di.storage.saveReminder(snoozed)
     set((s) => ({ reminders: s.reminders.map((x) => (x.id === id ? snoozed : x)) }))

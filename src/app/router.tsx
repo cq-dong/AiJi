@@ -8,6 +8,7 @@ const Categories = lazy(() => import('@/ui/screens/categories'))
 const Summary = lazy(() => import('@/ui/screens/summary'))
 const Search = lazy(() => import('@/ui/screens/search'))
 const Settings = lazy(() => import('@/ui/screens/settings'))
+const Reminders = lazy(() => import('@/ui/screens/reminders'))
 const Capture = lazy(() => import('@/ui/screens/capture'))
 const Detail = lazy(() => import('@/ui/screens/detail'))
 const Onboarding = lazy(() => import('@/ui/screens/onboarding'))
@@ -29,6 +30,7 @@ export function AppRouter() {
           <Route path="categories" element={<Categories />} />
           <Route path="summary" element={<Summary />} />
           <Route path="search" element={<Search />} />
+          <Route path="reminders" element={<Reminders />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route element={<BareLayout />}>

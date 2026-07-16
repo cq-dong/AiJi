@@ -1,12 +1,12 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutGrid, ListTree, NotebookPen, Search, Settings } from 'lucide-react'
+import { Bell, LayoutGrid, ListTree, NotebookPen, Settings } from 'lucide-react'
 import { cn } from './cn'
 
 const TABS = [
   { to: '/', label: '时间线', Icon: ListTree, end: true },
   { to: '/categories', label: '类别', Icon: LayoutGrid, end: false },
   { to: '/summary', label: '摘要', Icon: NotebookPen, end: false },
-  { to: '/search', label: '搜索', Icon: Search, end: false },
+  { to: '/reminders', label: '提醒', Icon: Bell, end: false },
   { to: '/settings', label: '设置', Icon: Settings, end: false },
 ] as const
 

@@ -1,7 +1,7 @@
 // Port interfaces (PRD §7.3). PWA-agnostic; adapters implement these.
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
-import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, Draft, Entry, EntryAi, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
 
 export interface StoragePort {
   listEntries(): Promise<Entry[]>
@@ -31,6 +31,11 @@ export interface StoragePort {
   // the store action re-maps affected entries' AI category to '' (未分类) first.
   deleteCategory(slug: string): Promise<void>
   deleteEntry(id: string): Promise<void>
+  // Capture draft (Wave 3): single-row at key=1. saveDraft persists mid-entry
+  // parts/title/location so a refresh or app restart can resume. clearDraft on save.
+  saveDraft(d: Draft): Promise<void>
+  loadDraft(): Promise<Draft | undefined>
+  clearDraft(): Promise<void>
 }
 
 export interface CapturePort {
@@ -70,7 +75,15 @@ export interface LlmPort {
   classify(entryId: string): Promise<EntryAi>
   // range = the period key the store wants this digest scoped to ('2026-07-16' / '2026-W28' / '2026-07').
   // Adapter must use it verbatim — NOT recompute from today（过去周期重算会用错 range 覆盖，1b 根因之一）。
-  aggregate(entryIds: string[], scope: AggregateScopeType, range: string, id?: string): Promise<Aggregate>
+  // detailLevel (1-5, default 3) controls digest verbosity; stored on the Aggregate so
+  // changing settings.aggregateDetailLevel marks existing digests stale → recompute.
+  aggregate(
+    entryIds: string[],
+    scope: AggregateScopeType,
+    range: string,
+    detailLevel?: number,
+    id?: string,
+  ): Promise<Aggregate>
 }
 
 export interface SecretStorePort {

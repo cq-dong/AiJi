@@ -14,7 +14,12 @@ interface DigestCardProps {
   categories: Category[]
   recalculating?: boolean
   onRegen?: () => void
+  label?: string // override scopeDisplay label（期间列表用真实日期）
+  rangeLabel?: string // override scopeDisplay range
+  empty?: boolean // 该期间无条目 → 紧凑空态
 }
+
+const DETAIL_LABELS = ['', '极简', '简洁', '标准', '详细', '详尽'] as const
 
 export function DigestCard({
   aggregate,
@@ -22,27 +27,42 @@ export function DigestCard({
   categories,
   recalculating = false,
   onRegen,
+  label,
+  rangeLabel,
+  empty = false,
 }: DigestCardProps) {
   const [expanded, setExpanded] = useState(false)
-  const { label, range } = scopeDisplay(aggregate)
+  const scopeInfo = scopeDisplay(aggregate)
+  const cardLabel = label ?? scopeInfo.label
+  const cardRange = rangeLabel ?? scopeInfo.range
   const chips = aggregateChips(aggregate, entryAi, categories)
   const highlights = aggregate.highlights ?? []
   const hasSummary = aggregate.summary.trim().length > 0
   const canExpand = hasSummary || highlights.length > 0
+  const detailLevel = aggregate.detailLevel ?? 3
 
   return (
     <Card className={recalculating ? 'bg-priS' : 'bg-card'}>
       <div className="flex items-baseline justify-between">
-        <span className="text-[15px] font-bold text-pri">{label}</span>
-        <span className="text-[12px] text-t3">{range}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[15px] font-bold text-pri">{cardLabel}</span>
+          {!empty && (
+            <span className="rounded-chip bg-priS px-1.5 py-0.5 text-[10px] font-medium text-pri">
+              {DETAIL_LABELS[detailLevel] ?? '标准'}
+            </span>
+          )}
+        </div>
+        <span className="text-[12px] text-t3">{cardRange}</span>
       </div>
 
-      {recalculating ? (
+      {empty ? (
+        <p className="mt-2 text-[13px] text-t3">暂无内容</p>
+      ) : recalculating ? (
         <div className="mt-3 flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Spinner size={14} />
             <span className="text-[11px] font-medium text-pri">
-              正在重新生成{label}摘要…
+              正在重新生成{cardLabel}摘要…
             </span>
           </div>
           <Skeleton className="h-2 w-full" rounded="rounded-[4px]" />

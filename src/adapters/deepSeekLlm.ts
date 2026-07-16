@@ -89,7 +89,8 @@ function parseJson(raw: string): ClassifyResult {
 }
 
 interface AggregateResult {
-  summary: string
+  sentences?: string[]
+  summary?: string
   highlights?: string[]
 }
 
@@ -98,25 +99,35 @@ interface AggregateResult {
 function buildAggregatePrompt(
   entries: { id: string; text: string; aiSummary?: string }[],
   scope: AggregateScopeType,
+  detailLevel: number,
 ) {
   const scopeLabel = scope === 'day' ? '日' : scope === 'week' ? '周' : '月'
+  // Wave 3: verbosity levels 1-5 (idx 0 = L1). Default 3 (standard).
+  // summary 以结构化 sentences 数组强约束句数（LLM 对"恰好 N 个数组元素"服从度远高于"N 句话"软指令）。
+  const LEVELS = [
+    { count: 1, highlights: '0 条（输出空数组 []）', tone: '极简：1 句，≤30 字' },
+    { count: 2, highlights: '1-2 条', tone: '简洁：2 句' },
+    { count: 3, highlights: '2-3 条', tone: '标准：3 句' },
+    { count: 5, highlights: '3-5 条', tone: '详细：5 句' },
+    { count: 7, highlights: '5-7 条', tone: '详尽：7 句，含跨条目脉络与时间线索' },
+  ] as const
+  const lvl = LEVELS[Math.min(4, Math.max(0, (detailLevel ?? 3) - 1))]
+  const n = lvl.count
   const system = `你是「AiJi」(AI 记) 的聚合摘要助手。给定一个${scopeLabel}内用户的若干条「记」条目（每条含原文与 AI 单条摘要），输出该${scopeLabel}的聚合摘要。
 
 铁律：
-1. 聚合摘要应覆盖该时段的主要主题与线索，2-4 句话，中文。
-2. highlights 为 2-4 条该时段的关键亮点（每条 ≤16 字），反映最重要的内容/想法/进展。
-3. 不要罗列每条条目，要提炼跨条目的共性与脉络。
-4. 情绪只是可选侧面——若整体情绪明显可提，但不当主轴。
-
-输出 JSON schema：
-{"summary":string,"highlights":string[]}
+1. 输出 JSON：{"sentences":string[], "highlights":string[]}。
+2. sentences 数组**必须恰好包含 ${n} 个元素**（${lvl.tone}）。每个元素是一句完整中文，以「。」结尾，不得合并、不得拆分、不得多一句或少一句。
+3. highlights 为 ${lvl.highlights} 该时段关键亮点（每条 ≤16 字），反映最重要的内容/想法/进展。
+4. 不要罗列每条条目，要提炼跨条目共性与脉络。
+5. 情绪只是可选侧面，不当主轴。
 
 只输出 JSON，不要 markdown 围栏、不要解释。`
-  const example = `示例：
+  const example = `示例（sentences 恰好 3 句的范式——你的句数须依上面的 ${n} 而定，不照搬示例句数）：
 条目1：原文="把 CapturePort 抽成接口，PWA 和 Capacitor 各实现一个。" 摘要="抽 CapturePort 为接口，PWA/Capacitor 各实现"
 条目2：原文="地铁里想到如果记一条东西能顺便变成提醒就好了。" 摘要="希望记录时能顺带生成提醒"
 条目3：原文="读到一篇讲 second brain 的文章，核心是不要整理只要捕获。" 摘要="只捕获不整理，整理交给后端"
-输出：{"summary":"本周以 AiJi 项目推进为主轴：抽象端口、涌现分类逐步成形；穿插阅读笔记（second brain）与地铁灵感（记录变提醒）。整体偏专注。","highlights":["CapturePort 接口化","记录变提醒","Second brain 阅读"]}`
+输出：{"sentences":["本周以 AiJi 项目推进为主轴：抽象端口、涌现分类逐步成形。","穿插阅读笔记（second brain：只捕获不整理）与地铁灵感（记录变提醒）。","整体偏专注，偏工程向。"],"highlights":["CapturePort 接口化","记录变提醒","Second brain 阅读"]}`
 
   const items = entries
     .map((e, i) => `条目${i + 1}：原文="${e.text}"${e.aiSummary ? ` 摘要="${e.aiSummary}"` : ''}`)
@@ -124,6 +135,7 @@ function buildAggregatePrompt(
 
   const user = `时段：${scopeLabel}
 条目数：${entries.length}
+要求：sentences 数组恰好 ${n} 个元素。
 ${items}
 
 输出 JSON。`
@@ -208,7 +220,7 @@ export const deepSeekLlm: LlmPort = {
     }
     return ai
   },
-  async aggregate(entryIds: string[], scope: AggregateScopeType, range: string, id?: string) {
+  async aggregate(entryIds: string[], scope: AggregateScopeType, range: string, detailLevel?: number, id?: string) {
     const settings = await di.storage.getSettings()
     const apiKey = await di.secrets.get(SECRET_KEY)
     const url = settings.llmUrl
@@ -233,7 +245,7 @@ export const deepSeekLlm: LlmPort = {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: buildAggregatePrompt(valid, scope),
+        messages: buildAggregatePrompt(valid, scope, detailLevel ?? 3),
         max_tokens: 768,
         temperature: 0.4,
         thinking: { type: 'disabled' },
@@ -252,12 +264,13 @@ export const deepSeekLlm: LlmPort = {
     const ag: Aggregate = {
       id: id ?? crypto.randomUUID(),
       scope: { type: scope, range },
-      summary: parsed.summary,
+      summary: parsed.sentences && parsed.sentences.length > 0 ? parsed.sentences.join('') : (parsed.summary ?? ''),
       highlights: parsed.highlights,
       entryIds,
       modelUsed: model,
       createdAt: now,
       stale: false,
+      detailLevel: detailLevel ?? 3,
     }
     return ag
   },

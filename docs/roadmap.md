@@ -1,6 +1,6 @@
 # AiJi · 开发路线图
 
-> 最后更新：2026-07-16。MVP 范围见 PRD `docs/superpowers/specs/2026-07-15-aiji-design.md`（§7.3）。
+> 最后更新：2026-07-17。MVP 范围见 PRD `docs/superpowers/specs/2026-07-15-aiji-design.md`（§7.3）。
 > 本文件固化「已完成 / 在做 / 后置」三态，方便用户 + 未来 agent 查。状态变就更新本文。
 
 ## 当前状态：MVP 功能完备
@@ -60,3 +60,32 @@
 - **A1**：移动端 PWA（iOS Safari / Android Chrome）能否稳定采麦克风/摄像头。桌面已通过；移动端真机随视频功能一起验。
 - **A2**：浏览器本地能否存视频（IndexedDB/OPFS 不被清/不爆配额，iOS 尤甚）。随 A1。
 - A1/A2 不过 → 走 Capacitor 原生壳（架构已留退路：Domain+Port 不绑 PWA API，移动端只换 CapturePort/StoragePort 的 Capacitor 适配器，UI/Domain/管线不动）或砍视频。
+
+## Wave 3 已完成（2026-07-17，7 条用户反馈，验收 LGTM）
+
+摘要倒序+5 级详细度 · 采集工具栏合并+语音不夺屏 · 标题可编辑 · 清空/草稿 · 搜索上移顶栏 · 提醒独立 tab · dev key 默认填充。缺陷 D1/D2/D3 全修。详见 `docs/acceptance/defects.md`。
+
+附带修复：STT 繁体→简体（WebSpeech 在部分系统忽略 `lang='zh-CN'` 仍出繁体，`webCapture.ts` 的 `onInterim`/`onFinal` 统一 `t2s` 转简体；同时修好保存的 transcript，因 `stopRecording` 存的是 `finalized+interim`）。
+
+## Wave 4 候选（用户提议，2026-07-17，待规划）
+
+> 用户手机实测后新提，未排期、未设计。需先逐条过产品铁律（§1）再 fan-out。
+
+| 项 | 描述 | 依赖/风险 |
+|---|---|---|
+| 单条导出/分享 | 单条记录支持导出 + 分享（现仅有全局 .zip 导出 F2） | 详情页加 share sheet（文本/图片）；无 schema 风险 |
+| 同类小类聚合 | 大类内同 sub-category/facet 的条目聚一块（如同一项目不同时间的进展聚在一起） | categories 屏分组逻辑改；facet 已有（project/person/place/event） |
+| 草稿视图 | 类别地图加「草稿」入口，点击恢复继续记 | Draft 表已就绪（Wave 3 S3）；需列表 UI + 恢复进 capture |
+| 回收站（30 天找回） | 软删 + 30 天可恢复 | **新 schema**：Entry 加 `status:'deleted'`+`deletedAt`，Dexie 加清理任务；现 status 无 deleted 态 |
+| 更多视图（类别地图多视图化） | categories 屏从单列表升级为多视图（按类别/按时间/按 facet…） | categories 屏重构；视图切换 UI |
+| 心情视图 | 「类别地图」加 mood 视图（按 facets.mood 聚类） | ⚠️ **触碰 §1 铁律「情绪不是轴」**——见下 |
+
+### ⚠️ 待用户决策：心情视图是否违反「情绪不是轴」铁律？
+
+CLAUDE.md §1：情绪只是可选侧面，**不当独立导航轴、不当强制采集字段**。用户 2026-07-15 两度纠正过此事。
+
+「心情视图」两种解读，需用户拍板：
+1. **facet 透镜之一**（推荐，不违规）：mood 作为 facets 的一个可选视图镜头（与 project/person/place 视图并列），用户主动切入才看，不强制、不进主导航。≈「情绪是可选侧面」的合法体现。
+2. **导航轴**（违规）：mood 作为常驻侧栏/主分类轴。违反 §1。
+
+若采 (1)，「心情视图」只是「更多视图」里 facet-lens 的一种，可与 project/person/place 视图一起做。需用户确认后进 Wave 4 设计。

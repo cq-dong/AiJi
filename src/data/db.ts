@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Aggregate, Category, Entry, EntryAi, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, Category, Draft, Entry, EntryAi, Reminder, Settings, Tag } from '@/domain/types'
 
 // IndexedDB schema (PRD §7.3). UI 层先用 mock 适配器，schema 已就位待接入。
 export class AiJiDB extends Dexie {
@@ -13,6 +13,8 @@ export class AiJiDB extends Dexie {
   settings!: Table<Settings, number>
   // AI 提醒（Phase 9 Batch 2b）：foreground-only notifications (Q1), dueAt is absolute ISO (Q2).
   reminders!: Table<Reminder, string>
+  // Wave 3: single-row capture draft (key=1). Lets users pause mid-entry + resume.
+  drafts!: Table<Draft, number>
 
   constructor() {
     super('aiji')
@@ -44,6 +46,18 @@ export class AiJiDB extends Dexie {
       aggregates: 'id, scope.type, scope.range, stale',
       settings: '++id',
       reminders: 'id, dueAt, status, entryId',
+    })
+    // v4: add drafts table (single-row, keyPath id). Wave 3 capture draft.
+    // .stores() is NOT incremental — every store redeclared verbatim.
+    this.version(4).stores({
+      entries: 'id, createdAt, updatedAt, status',
+      entryAi: 'id, entryId, version',
+      categories: 'slug, usageCount',
+      tags: 'slug, usageCount',
+      aggregates: 'id, scope.type, scope.range, stale',
+      settings: '++id',
+      reminders: 'id, dueAt, status, entryId',
+      drafts: 'id',
     })
   }
 }

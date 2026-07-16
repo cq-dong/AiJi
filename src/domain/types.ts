@@ -111,6 +111,20 @@ export interface Aggregate {
   modelUsed: string
   createdAt: string
   stale: boolean
+  // Wave 3: detail level the digest was generated at (1-5). Absent on pre-Wave3
+  // rows → treated as 3 (standard). Changing settings.aggregateDetailLevel marks
+  // existing aggregates stale so recompute regenerates at the new verbosity.
+  detailLevel?: number
+}
+
+// Wave 3: single-row persistent capture draft (key=1). Lets a user pause mid-entry
+// and resume after a refresh / app restart. title is UI-only (not on Entry domain).
+export interface Draft {
+  id: 1
+  parts: EntryPart[]
+  title?: string
+  location?: GeoPoint
+  updatedAt: string
 }
 
 export interface Settings {
@@ -124,4 +138,7 @@ export interface Settings {
   recordLocation: boolean
   dailyReminder: boolean
   theme: 'light' | 'dark' | 'system'
+  // Wave 3: aggregate digest verbosity (1-5, default 3). Stored on Aggregate so
+  // changing this marks existing digests stale → recompute at new verbosity.
+  aggregateDetailLevel: 1 | 2 | 3 | 4 | 5
 }

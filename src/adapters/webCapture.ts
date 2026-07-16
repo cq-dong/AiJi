@@ -1,3 +1,4 @@
+import Chinese from 'chinese-s2t'
 import type { CapturePort } from '@/ports'
 import type { GeoPoint } from '@/domain/types'
 
@@ -89,14 +90,15 @@ export const webCapture: CapturePort = {
       recognition.lang = 'zh-CN'
       recognition.continuous = true
       recognition.interimResults = true
+      // WebSpeech 在部分系统上忽略 lang='zh-CN' 仍输出繁体（引擎回退系统语种），统一 t2s 转简体。
       recognition.onresult = (ev) => {
         let interim = ''
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
           const r = ev.results[i]
-          if (r.isFinal) onFinal?.(r[0].transcript)
+          if (r.isFinal) onFinal?.(Chinese.t2s(r[0].transcript))
           else interim += r[0].transcript
         }
-        if (interim) onInterim?.(interim)
+        if (interim) onInterim?.(Chinese.t2s(interim))
       }
       recognition.onerror = () => { /* swallow; recording continues without live preview */ }
       try { recognition.start() } catch { /* already running or unsupported */ }

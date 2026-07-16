@@ -143,3 +143,65 @@ export function periodLabel(scope: AggregateScopeType, ref: Date, isCurrent: boo
   const base = `${fmtMD(start)}–${fmtMD(end)}`
   return isCurrent ? `本周 · ${base}` : base
 }
+
+// ── 反向时间序列（Wave 3 user feedback #1）──────────────────────────────
+// 日=14 / 周=8 / 月=6：从今日起向后走，产出 range key + 友好标签。range 字符串
+// 与 store.scopeRange 逐字一致（day='2026-07-16' / week='2026-W28' / month='2026-07'）。
+export const SCOPE_COUNT: Record<AggregateScopeType, number> = {
+  day: 14,
+  week: 8,
+  month: 6,
+}
+
+export interface PeriodInfo {
+  range: string // store key: '2026-07-16' / '2026-W28' / '2026-07'
+  label: string // 短标签：今日/昨日/本周/上周/本月/上月 或日期
+  dateLabel: string // 日期细节：7/16 / 7/10–7/16 / 2026年7月
+  ref: Date
+  isCurrent: boolean
+}
+
+// 短标签 + 日期标签：offset=0 当前，1 上一期（昨日/上周/上月），更早用日期。
+function periodLabels(
+  scope: AggregateScopeType,
+  ref: Date,
+  isCurrent: boolean,
+  offset: number,
+): { label: string; dateLabel: string } {
+  if (scope === 'day') {
+    const date = fmtMD(ref)
+    if (isCurrent) return { label: '今日', dateLabel: date }
+    if (offset === 1) return { label: '昨日', dateLabel: date }
+    return { label: date, dateLabel: date }
+  }
+  if (scope === 'month') {
+    const base = `${ref.getFullYear()}年${ref.getMonth() + 1}月`
+    if (isCurrent) return { label: '本月', dateLabel: base }
+    if (offset === 1) return { label: '上月', dateLabel: base }
+    return { label: base, dateLabel: base }
+  }
+  // week — 7-day window ending at ref（沿用 seed 的 7/9–7/15 约定）。
+  const end = startOfDay(ref)
+  const start = new Date(end)
+  start.setDate(start.getDate() - 6)
+  const base = `${fmtMD(start)}–${fmtMD(end)}`
+  if (isCurrent) return { label: '本周', dateLabel: base }
+  if (offset === 1) return { label: '上周', dateLabel: base }
+  return { label: base, dateLabel: base }
+}
+
+// 从今日向后走 N 期，产出 PeriodInfo[]（newest-on-top）。基于 shiftRef 逐期回退。
+export function lastRanges(scope: AggregateScopeType, count: number = SCOPE_COUNT[scope]): PeriodInfo[] {
+  const now = new Date()
+  const currentRange = scopeRange(scope, now)
+  const result: PeriodInfo[] = []
+  let ref = new Date(now)
+  for (let i = 0; i < count; i++) {
+    const range = scopeRange(scope, ref)
+    const isCurrent = range === currentRange
+    const { label, dateLabel } = periodLabels(scope, ref, isCurrent, i)
+    result.push({ range, label, dateLabel, ref: new Date(ref), isCurrent })
+    ref = shiftRef(scope, ref, -1)
+  }
+  return result
+}

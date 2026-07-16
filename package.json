@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.2",
+    "chinese-s2t": "^1.0.0",
     "clsx": "^2.1.1",
     "dexie": "^4.4.4",
     "dexie-react-hooks": "^4.4.0",

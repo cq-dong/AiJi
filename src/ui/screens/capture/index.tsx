@@ -8,12 +8,15 @@ import {
   CaptureHeader,
   CaptureKeyframes,
   CaptureToolbar,
+  DraftHintBanner,
   EmptyCompose,
   FlowPart,
+  InterimBubble,
   NoMicPanel,
   SaveBar,
   TextEntrySheet,
-  VoicePanel,
+  Toast,
+  VoiceBar,
 } from './widgets'
 
 type View = 'compose' | 'camera'
@@ -27,19 +30,29 @@ export default function Capture() {
   const finalized = useUiStore((s) => s.capture.finalized)
   const interim = useUiStore((s) => s.capture.interim)
   const location = useUiStore((s) => s.capture.location)
+  const title = useUiStore((s) => s.capture.title)
+  const hydrated = useUiStore((s) => s.hydrated)
   const startRecording = useUiStore((s) => s.startRecording)
   const stopRecording = useUiStore((s) => s.stopRecording)
   const beginSave = useUiStore((s) => s.beginSave)
   const finishSave = useUiStore((s) => s.finishSave)
   const addPart = useUiStore((s) => s.addPart)
   const allowMic = useUiStore((s) => s.allowMic)
+  const clearDraft = useUiStore((s) => s.clearDraft)
+  const saveDraft = useUiStore((s) => s.saveDraft)
 
   const [view, setView] = useState<View>('compose')
-  const [cameraMode, setCameraMode] = useState<'photo' | 'video'>('photo')
   const [elapsed, setElapsed] = useState(0)
   const [textDraft, setTextDraft] = useState('')
   const [textOpen, setTextOpen] = useState(false)
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
+  const [toast, setToast] = useState<string | null>(null)
+  // Wave 3 #4: draft hint banner — shows when parts are restored from a
+  // persisted draft on hydrate. Initialized from current parts (common case:
+  // hydrate completed before navigating to /capture). Also checks once more
+  // after hydrated transitions to true to catch the loadDraft async race.
+  const [showDraftHint, setShowDraftHint] = useState(() => parts.length > 0)
+  const draftChecked = useRef(parts.length > 0)
 
   // Mirror into a ref so the unmount cleanup revokes the latest object URLs.
   const urlsRef = useRef<Record<string, string>>({})
@@ -62,6 +75,21 @@ export default function Capture() {
     }, 1200)
     return () => window.clearTimeout(id)
   }, [saving, finishSave, navigate])
+
+  // Draft hint: if parts were empty on mount, check again after hydrate
+  // completes (loadDraft runs async inside hydrate, so parts may arrive
+  // a tick after hydrated becomes true). Only checks once — user-added parts
+  // during a fresh session won't trigger the hint.
+  useEffect(() => {
+    if (draftChecked.current || !hydrated) return
+    const id = window.setTimeout(() => {
+      if (useUiStore.getState().capture.parts.length > 0) {
+        setShowDraftHint(true)
+      }
+      draftChecked.current = true
+    }, 150)
+    return () => window.clearTimeout(id)
+  }, [hydrated])
 
   // Persist a media blob + add the part. Keeps a local object URL for live preview.
   const addMediaPart = (part: EntryPart, blob: Blob) => {
@@ -103,8 +131,7 @@ export default function Capture() {
   }
   const handleStopVoice = () => { void stopRecording() }
 
-  const openPhoto = () => { setCameraMode('photo'); setView('camera') }
-  const openVideo = () => { setCameraMode('video'); setView('camera') }
+  const openCamera = () => setView('camera')
 
   const handleGallery = async () => {
     const r = await di.capture.pickMedia()
@@ -115,28 +142,56 @@ export default function Capture() {
     )
   }
 
+  // Wave 3 #3: title editing — update store.capture.title directly (no setTitle
+  // action; UI-only field). Empty string on blur → set undefined (display "新条目").
+  const handleTitleChange = (v: string | undefined) => {
+    useUiStore.setState((s) => ({ capture: { ...s.capture, title: v } }))
+  }
+
+  // Wave 3 #4: 清空 — confirm before clearing (draft in memory + Dexie).
+  const handleClear = () => {
+    if (parts.length === 0) return
+    if (window.confirm('清空当前草稿？')) {
+      clearDraft()
+      setShowDraftHint(false)
+      setToast('已清空')
+    }
+  }
+
+  // Wave 3 #4: 存草稿 — persist parts+title+location to Dexie, brief toast.
+  const handleSaveDraft = () => {
+    saveDraft()
+    setToast('已存草稿')
+  }
+
   const handleSave = () => beginSave()
 
   const showHeader = view === 'compose'
   const showEmpty = parts.length === 0 && !recording && !micDenied
+  const liveTranscript = (finalized + interim).trim()
 
   return (
     <div className="relative flex h-full w-full flex-col bg-page">
       <CaptureKeyframes />
 
       {showHeader && (
-        <CaptureHeader partCount={parts.length} location={location} onClose={() => navigate('/')} />
+        <CaptureHeader
+          partCount={parts.length}
+          location={location}
+          title={title}
+          onTitleChange={handleTitleChange}
+          onClose={() => navigate('/')}
+        />
+      )}
+
+      {/* Wave 3 #4: draft restored hint */}
+      {view === 'compose' && showDraftHint && parts.length > 0 && (
+        <DraftHintBanner onDismiss={() => setShowDraftHint(false)} />
       )}
 
       <main className="relative flex-1 overflow-y-auto">
         {view === 'compose' && (
-          recording ? (
-            <VoicePanel
-              elapsed={elapsed}
-              liveTranscript={(finalized + interim).trim()}
-              onStop={handleStopVoice}
-            />
-          ) : micDenied ? (
+          micDenied && !recording ? (
             <NoMicPanel
               onUseText={() => { allowMic(); setTextOpen(true) }}
               onRetry={() => { allowMic(); void startRecording() }}
@@ -153,31 +208,42 @@ export default function Capture() {
                   onRemove={() => removePart(i)}
                 />
               ))}
+              {/* Wave 3 #2: interim transcription bubble — stays inline during recording */}
+              {recording && <InterimBubble liveTranscript={liveTranscript} />}
             </div>
           )
         )}
 
         {view === 'camera' && (
           <CameraView
-            mode={cameraMode}
             onPart={addMediaPart}
             onClose={() => setView('compose')}
           />
         )}
       </main>
 
-      {view === 'compose' && !recording && !micDenied && (
-        <footer className="flex shrink-0 flex-col gap-3 border-t border-brd bg-card px-4 pb-5 pt-3">
-          <CaptureToolbar
-            onText={() => setTextOpen(true)}
-            onVoice={handleVoice}
-            onPhoto={openPhoto}
-            onVideo={openVideo}
-            onGallery={handleGallery}
-            disabled={saving}
-          />
-          <SaveBar saving={saving} disabled={parts.length === 0} onSave={handleSave} />
-        </footer>
+      {view === 'compose' && (
+        recording ? (
+          // Wave 3 #2: compact recording bar at footer — parts list stays visible
+          <VoiceBar elapsed={elapsed} onStop={handleStopVoice} />
+        ) : !micDenied && (
+          <footer className="flex shrink-0 flex-col gap-3 border-t border-brd bg-card px-4 pb-5 pt-3">
+            <CaptureToolbar
+              onText={() => setTextOpen(true)}
+              onVoice={handleVoice}
+              onCamera={openCamera}
+              onGallery={handleGallery}
+              disabled={saving}
+            />
+            <SaveBar
+              saving={saving}
+              disabled={parts.length === 0}
+              onClear={handleClear}
+              onSaveDraft={handleSaveDraft}
+              onSave={handleSave}
+            />
+          </footer>
+        )
       )}
 
       <TextEntrySheet
@@ -187,6 +253,8 @@ export default function Capture() {
         onAdd={submitText}
         onCancel={closeTextSheet}
       />
+
+      {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { db } from '@/data/db'
 import type { StoragePort } from '@/ports'
-import type { Aggregate, AggregateScopeType, Reminder } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Draft, Reminder } from '@/domain/types'
 import {
   seedAggregates,
   seedCategories,
@@ -151,5 +151,14 @@ export const dexieStorage: StoragePort = {
     await db.entries.delete(id)
     // 删该条目的所有 AI 版本（entryAi byEntry index）。
     await db.entryAi.where('entryId').equals(id).delete()
+  },
+  async saveDraft(d: Draft): Promise<void> {
+    await db.drafts.put(d, 1)
+  },
+  async loadDraft(): Promise<Draft | undefined> {
+    return db.drafts.get(1)
+  },
+  async clearDraft(): Promise<void> {
+    await db.drafts.delete(1)
   },
 }
