@@ -259,3 +259,85 @@ export async function exportZip(): Promise<void> {
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
+
+// ── Wave 4: per-entry export + share ──────────────────────────────────────
+// Reuses buildEntryMarkdown + buildZip (global export internals). detail screen TopBar
+// 「更多」wires to exportEntryZip (download single-entry .zip) + shareEntry (Web Share text).
+
+function entryContext(id: string) {
+  const { entries, aiByEntry, categories, tags } = useUiStore.getState()
+  const entry = entries.find((e) => e.id === id)
+  if (!entry) return undefined
+  const catLabel = (slug: string) => categories.find((c) => c.slug === slug)?.label ?? slug
+  const tagLabel = (slug: string) => tags.find((t) => t.slug === slug)?.label ?? slug
+  return { entry, ai: aiByEntry[id], catLabel, tagLabel }
+}
+
+// Single-entry .zip: entries/<id>.md + media/<ref>.<ext> + manifest.json. Mirrors global exportZip.
+export async function exportEntryZip(id: string): Promise<void> {
+  const ctx = entryContext(id)
+  if (!ctx) return
+  const { entry, ai, catLabel, tagLabel } = ctx
+  const enc = new TextEncoder()
+  const files: ZipFile[] = [
+    { name: `entries/${entry.id}.md`, data: enc.encode(buildEntryMarkdown(entry, ai, catLabel, tagLabel)) },
+  ]
+  const mediaRefs = new Set<string>()
+  for (const p of entry.parts) {
+    if (p.type === 'audio' || p.type === 'video') mediaRefs.add(p.ref)
+  }
+  for (const ref of mediaRefs) {
+    try {
+      const blob = await di.storage.getMedia(ref)
+      if (!blob) continue
+      files.push({ name: `media/${ref}.${extFromType(blob.type)}`, data: new Uint8Array(await blob.arrayBuffer()) })
+    } catch (e) {
+      console.error('[exportEntryZip] getMedia failed for ' + ref, e)
+    }
+  }
+  files.push({
+    name: 'manifest.json',
+    data: enc.encode(JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), entryId: id, schema: 'single-entry zip (markdown + media)' }, null, 2)),
+  })
+  const zip = buildZip(files)
+  const blob = new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `aiji-entry-${entry.id}.zip`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// Web Share API available (mobile share sheet). UI gates the 分享 button on this.
+export function canShareEntry(): boolean {
+  return typeof (navigator as unknown as { share?: unknown }).share === 'function'
+}
+
+// Share a single entry as text (markdown). navigator.share → system share sheet;
+// clipboard.writeText fallback (desktop / unsupported). Returns how it was shared.
+export async function shareEntry(id: string): Promise<{ shared: boolean; method: 'share' | 'clipboard' | 'none' }> {
+  const ctx = entryContext(id)
+  if (!ctx) return { shared: false, method: 'none' }
+  const { entry, ai, catLabel, tagLabel } = ctx
+  const md = buildEntryMarkdown(entry, ai, catLabel, tagLabel)
+  const fallbackTitle = (entry.parts.find((p) => p.type === 'text')?.content ?? '').slice(0, 16)
+  const title = ai?.titleSuggestion || fallbackTitle || 'AiJi 条目'
+  const nav = navigator as unknown as { share?: (opts: { title: string; text: string }) => Promise<void> }
+  if (typeof nav.share === 'function') {
+    try {
+      await nav.share({ title, text: md })
+      return { shared: true, method: 'share' }
+    } catch {
+      // user dismissed the share sheet — fall through to clipboard
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(md)
+    return { shared: true, method: 'clipboard' }
+  } catch {
+    return { shared: false, method: 'none' }
+  }
+}

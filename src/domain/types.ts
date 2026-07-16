@@ -54,6 +54,11 @@ export interface Entry {
   location?: GeoPoint // 记录地点（settings.recordLocation 开时，采集时取一次）
   status: EntryStatus
   aiId?: string // 指向当前 EntryAi
+  // Wave 4: 30-day trash (soft delete). Set to ISO timestamp when trashed; absent = active.
+  // listEntries filters these out; trash view surfaces them; hydrate purges >30d hard.
+  // Kept separate from EntryStatus (AI-processing state) so recover = clear field, no
+  // need to remember pre-delete status.
+  deletedAt?: string
 }
 
 export interface EntryAi {
@@ -117,13 +122,15 @@ export interface Aggregate {
   detailLevel?: number
 }
 
-// Wave 3: single-row persistent capture draft (key=1). Lets a user pause mid-entry
-// and resume after a refresh / app restart. title is UI-only (not on Entry domain).
+// Wave 4: multi-row persistent capture drafts. Lets a user pause multiple in-progress
+// entries and resume any later from the drafts view. title is UI-only (not on Entry).
+// Wave 3 used single-row key=1; v5 upgrade clears stale rows (dev data, acceptable loss).
 export interface Draft {
-  id: 1
+  id: string
   parts: EntryPart[]
   title?: string
   location?: GeoPoint
+  createdAt: string
   updatedAt: string
 }
 

@@ -1,6 +1,6 @@
 import { db } from '@/data/db'
 import type { StoragePort } from '@/ports'
-import type { Aggregate, AggregateScopeType, Draft, Reminder } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Draft, Entry, Reminder } from '@/domain/types'
 import {
   seedAggregates,
   seedCategories,
@@ -43,8 +43,10 @@ export const dexieStorage: StoragePort = {
   async listEntries() {
     await ensureSeeded()
     const all = await db.entries.toArray()
+    // Wave 4: trashed entries (deletedAt set) live in the trash view, not the main list.
+    const active = all.filter((e) => !e.deletedAt)
     // 跨 +08:00 / Z ISO 必须用时序比较，字符串序非时序（见 D4）。
-    return all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    return active.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   },
   async getEntry(id) {
     await ensureSeeded()
@@ -149,16 +151,55 @@ export const dexieStorage: StoragePort = {
   },
   async deleteEntry(id: string): Promise<void> {
     await db.entries.delete(id)
-    // 删该条目的所有 AI 版本（entryAi byEntry index）。
+    // 删该条目的所有 AI 版本（entryAi byEntry index）+ 关联提醒（reminders byEntry index）。
     await db.entryAi.where('entryId').equals(id).delete()
+    await db.reminders.where('entryId').equals(id).delete()
   },
   async saveDraft(d: Draft): Promise<void> {
-    await db.drafts.put(d, 1)
+    // Wave 4: multi-row. d.id is string; put by keyPath (no explicit key).
+    await db.drafts.put(d)
   },
-  async loadDraft(): Promise<Draft | undefined> {
-    return db.drafts.get(1)
+  async listDrafts(): Promise<Draft[]> {
+    await ensureSeeded()
+    const all = await db.drafts.toArray()
+    // 最近更新在上 — 草稿视图倒序。
+    return all.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
   },
-  async clearDraft(): Promise<void> {
-    await db.drafts.delete(1)
+  async getDraft(id: string): Promise<Draft | undefined> {
+    await ensureSeeded()
+    return db.drafts.get(id)
+  },
+  async deleteDraft(id: string): Promise<void> {
+    await db.drafts.delete(id)
+  },
+  async listTrashed(): Promise<Entry[]> {
+    await ensureSeeded()
+    const all = await db.entries.toArray()
+    // Trashed = deletedAt set. 最近删除在上（30 天倒计时从 deletedAt 起算）。
+    const trashed = all.filter((e) => e.deletedAt)
+    return trashed.sort((a, b) => new Date(b.deletedAt!).getTime() - new Date(a.deletedAt!).getTime())
+  },
+  async trashEntry(id: string): Promise<void> {
+    const e = await db.entries.get(id)
+    if (!e) return
+    await db.entries.put({ ...e, deletedAt: new Date().toISOString() })
+  },
+  async recoverEntry(id: string): Promise<void> {
+    const e = await db.entries.get(id)
+    if (!e || !e.deletedAt) return
+    // undefined props are dropped by structured clone → deletedAt absent on next read.
+    await db.entries.put({ ...e, deletedAt: undefined })
+  },
+  async purgeExpired(): Promise<number> {
+    // 30-day window: entries trashed before cutoff are hard-deleted (+ cascade AI + reminders).
+    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
+    const all = await db.entries.toArray()
+    const expired = all.filter((e) => e.deletedAt && new Date(e.deletedAt).getTime() < cutoff)
+    for (const e of expired) {
+      await db.entries.delete(e.id)
+      await db.entryAi.where('entryId').equals(e.id).delete()
+      await db.reminders.where('entryId').equals(e.id).delete()
+    }
+    return expired.length
   },
 }

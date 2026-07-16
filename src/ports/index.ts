@@ -31,11 +31,21 @@ export interface StoragePort {
   // the store action re-maps affected entries' AI category to '' (未分类) first.
   deleteCategory(slug: string): Promise<void>
   deleteEntry(id: string): Promise<void>
-  // Capture draft (Wave 3): single-row at key=1. saveDraft persists mid-entry
-  // parts/title/location so a refresh or app restart can resume. clearDraft on save.
+  // Capture drafts (Wave 4: multi-row). saveDraft upserts by d.id (string);
+  // listDrafts feeds the drafts view; getDraft(id) resumes a specific one;
+  // deleteDraft(id) on discard or after the draft becomes a saved entry.
   saveDraft(d: Draft): Promise<void>
-  loadDraft(): Promise<Draft | undefined>
-  clearDraft(): Promise<void>
+  listDrafts(): Promise<Draft[]>
+  getDraft(id: string): Promise<Draft | undefined>
+  deleteDraft(id: string): Promise<void>
+  // 30-day trash (Wave 4). trashEntry soft-deletes (sets deletedAt); recoverEntry
+  // clears it; listTrashed surfaces recoverable entries; purgeExpired hard-deletes
+  // entries whose deletedAt is older than 30 days (cascades entryAi + reminders).
+  // deleteEntry (above) stays a hard, immediate delete — trash "删除 forever" + purge use it.
+  listTrashed(): Promise<Entry[]>
+  trashEntry(id: string): Promise<void>
+  recoverEntry(id: string): Promise<void>
+  purgeExpired(): Promise<number>
 }
 
 export interface CapturePort {

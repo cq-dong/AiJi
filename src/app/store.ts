@@ -14,6 +14,9 @@ interface CaptureDraft {
   interim: string // current partial segment (live preview)
   location?: GeoPoint // recordLocation 开时，采集开始时取一次（best-effort，未解析则 undefined）
   title?: string // Wave 3: user-editable compose title (UI-only, not on Entry domain)
+  // Wave 4: if this capture resumed a persisted draft, the draft's id — so finishSave /
+  // clearDraft can delete that draft row (multi-draft: each draft is its own row).
+  resumedDraftId?: string
 }
 
 interface UiState {
@@ -27,6 +30,8 @@ interface UiState {
   settings: Settings // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
   aggregates: Aggregate[] // 首屏 seed 兜底，hydrate 从 Dexie 载入；recomputeAggregate 后更新
   reminders: Reminder[] // 首屏 seed 兜底，hydrate 从 Dexie 载入；scheduleReminders 扫 pending 到点 fire
+  drafts: Draft[] // Wave 4: multi-row capture drafts；hydrate 从 Dexie 载入；草稿视图消费
+  trashed: Entry[] // Wave 4: 软删条目（deletedAt set）；hydrate 从 Dexie 载入 + purge >30d；回收站视图消费
   recalculating: Record<string, boolean> // key=`${scope}:${range}`；recomputeAggregate in-flight 标记，UI 据此显 spinner（与 stale 分离，失败不永转）
   justSaved: boolean // 刚保存 → 首页 toast + 置顶处理中卡片
   hydrate: () => Promise<void>
@@ -38,9 +43,17 @@ interface UiState {
   allowMic: () => void
   addPart: (p: EntryPart) => void
   clearDraft: () => void
-  // Wave 3: persist/resume mid-entry draft across refresh + app restart.
+  // Wave 4: multi-draft. saveDraft persists current capture (new row or resumed). loadDraft(id?)
+  // resumes a specific draft (drafts view click), or the latest on hydrate (auto-restore safety).
+  // deleteDraft discards one. finishSave / clearDraft drop the resumed draft row.
   saveDraft: () => void
-  loadDraft: () => Promise<void>
+  loadDraft: (id?: string) => Promise<void>
+  deleteDraft: (id: string) => Promise<void>
+  // Wave 4: 30-day trash. trashEntry soft-deletes (entry → trashed state, deletedAt set);
+  // recoverEntry restores (clears deletedAt). deleteEntry (below, Wave 1) is the hard
+  // permanent delete — trash "删除 forever" + hydrate purge (>30d) use it.
+  trashEntry: (id: string) => Promise<void>
+  recoverEntry: (id: string) => Promise<void>
   clearJustSaved: () => void
   setOnline: (v: boolean) => void
   setSettings: (patch: Partial<Settings>) => void
@@ -122,11 +135,13 @@ function markMissed(r: Reminder): void {
 // 扫 reminders state：pending 的 → 未来 setTimeout 到点；overdue <1h 补 fire；>1h 标 missed。
 // 去重守卫：已在 timeout 表的 id 跳过（confirm/snooze 先 clearScheduledTimeout 再调本函数）。
 function scheduleReminders(): void {
-  const { reminders } = useUiStore.getState()
+  const { reminders, trashed } = useUiStore.getState()
+  const trashedIds = new Set(trashed.map((e) => e.id))
   const now = Date.now()
   for (const r of reminders) {
     if (r.status !== 'pending' && r.status !== 'snoozed') continue
     if (scheduledTimeouts.has(r.id)) continue
+    if (trashedIds.has(r.entryId)) continue // Wave 4: 条目在回收站 → 不调度其提醒（recover 后 scheduleReminders 重 arm）
     const due = new Date(r.dueAt).getTime()
     const diff = due - now
     if (diff <= 0) {
@@ -156,28 +171,34 @@ export const useUiStore = create<UiState>((set, get) => ({
   settings: seedSettings,
   aggregates: seedAggregates,
   reminders: seedReminders,
+  drafts: [],
+  trashed: [],
   recalculating: {},
   justSaved: false,
   hydrate: async () => {
     if (get().hydrated) return
     try {
-      const [entries, settings, categories, tags, aggregates, reminders] = await Promise.all([
+      // Wave 4: 先 purge >30d 软删条目（硬删 + cascade AI/提醒），再读列表（listTrashed 不返过期）。
+      try { await di.storage.purgeExpired() } catch (e) { console.error('[store] purgeExpired failed', e) }
+      const [entries, settings, categories, tags, aggregates, reminders, drafts, trashed] = await Promise.all([
         di.storage.listEntries(),
         di.storage.getSettings(),
         di.storage.listCategories(),
         di.storage.listTags(),
         di.storage.listAggregates(),
         di.storage.listReminders(),
+        di.storage.listDrafts(),
+        di.storage.listTrashed(),
       ])
       // 载入每条条目的 AI（seed 条目 + 真实保存条目）。getEntryAi 返回最高 version。
       const aiPairs = await Promise.all(
         entries.map((e) => di.storage.getEntryAi(e.id).then((ai) => (ai ? [e.id, ai] as const : null))),
       )
       const aiByEntry = { ...Object.fromEntries(aiPairs.filter(Boolean) as [string, EntryAi][]) }
-      set({ entries, settings, categories, tags, aggregates, reminders, aiByEntry, hydrated: true })
+      set({ entries, settings, categories, tags, aggregates, reminders, drafts, trashed, aiByEntry, hydrated: true })
       // 载入后扫 pending 提醒：未来调度到点；overdue <1h 补 fire、≥1h 标 missed（Q3）。
       scheduleReminders()
-      // Wave 3: 恢复上次未保存的采集草稿（跨刷新/重启续记）。
+      // Wave 4: 恢复最近草稿（跨刷新/重启续记）。多草稿里取最新一条载入 capture（仅当 capture 空）。
       await get().loadDraft()
     } catch (e) {
       // 载入失败：保持 seed 兜底，标记已尝试避免反复重试（存储失败不阻断 UI）
@@ -232,8 +253,13 @@ export const useUiStore = create<UiState>((set, get) => ({
       location: s.capture.location,
     }
     set({ capture: emptyDraft, entries: [entry, ...s.entries], justSaved: true })
-    // Wave 3: 保存成功 → 清掉持久化草稿（若之前存过），避免下次进 capture 又恢复已保存内容。
-    void di.storage.clearDraft().catch((e) => console.error('[store] clearDraft failed', e))
+    // Wave 4: 保存成功 → 若本条目续自某草稿，删该草稿行（多草稿，每条独立），避免草稿视图残留已转正条目。
+    const draftId = s.capture.resumedDraftId
+    if (draftId) {
+      void di.storage.deleteDraft(draftId)
+        .then(() => set((st) => ({ drafts: st.drafts.filter((d) => d.id !== draftId) })))
+        .catch((e) => console.error('[store] deleteDraft(resumed) failed', e))
+    }
     // 落库：异步写 Dexie，失败只记日志不伤 UI（处理管线断网不丢后续补）
     void di.storage.saveEntry(entry).catch((e) => console.error('[store] saveEntry failed', e))
     // 分类入队（火忘）：AI 失败只伤 AI 层（条目标 failed，UI 可重试），采集存储已落库不受影响
@@ -243,32 +269,91 @@ export const useUiStore = create<UiState>((set, get) => ({
   allowMic: () => set((s) => ({ capture: { ...s.capture, micDenied: false } })),
   addPart: (p) => set((s) => ({ capture: { ...s.capture, parts: [...s.capture.parts, p] } })),
   clearDraft: () => {
-    // 内存草稿清空 + 删 Dexie 持久化草稿（避免清空后下次又恢复）。
+    // 内存草稿清空 + 若续自某草稿则删该 Dexie 行（避免清空后下次又恢复）。
+    const draftId = get().capture.resumedDraftId
     set({ capture: emptyDraft })
-    void di.storage.clearDraft().catch((e) => console.error('[store] clearDraft failed', e))
+    if (draftId) {
+      void di.storage.deleteDraft(draftId)
+        .then(() => set((st) => ({ drafts: st.drafts.filter((d) => d.id !== draftId) })))
+        .catch((e) => console.error('[store] clearDraft deleteDraft failed', e))
+    }
   },
   saveDraft: () => {
-    // 持久化当前 parts/title/location 到 Dexie drafts（单行覆盖，key=1）。
-    // recording/saving/micDenied 不存（运行期态，不需跨会话）。
+    // Wave 4: 持久化当前 parts/title/location 为一条草稿。续自已有草稿则更新该行；否则新建（id=draft-<uuid>）。
+    // 设 resumedDraftId 以便后续 save/clear/finishSave 命中同一条。recording/saving/micDenied 不存（运行期态）。
     const c = get().capture
     if (c.parts.length === 0) return
+    const now = new Date().toISOString()
+    const id = c.resumedDraftId ?? `draft-${crypto.randomUUID()}`
+    const existing = get().drafts.find((d) => d.id === id)
     const draft: Draft = {
-      id: 1,
+      id,
       parts: c.parts,
       title: c.title,
       location: c.location,
-      updatedAt: new Date().toISOString(),
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
     }
-    void di.storage.saveDraft(draft).catch((e) => console.error('[store] saveDraft failed', e))
+    set((s) => ({ capture: { ...s.capture, resumedDraftId: id } }))
+    void di.storage.saveDraft(draft)
+      .then(() => {
+        set((s) => {
+          const rest = s.drafts.filter((d) => d.id !== id)
+          return { drafts: [draft, ...rest].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()) }
+        })
+      })
+      .catch((e) => console.error('[store] saveDraft failed', e))
   },
-  loadDraft: async () => {
-    // 仅在当前 capture 为空时恢复，避免覆盖用户本会话已记的 parts。
+  loadDraft: async (id) => {
+    // id 给定：从草稿视图点某条 → 载入该条（覆盖当前 capture，用户显式选择续这条）。
+    // id 缺省：hydrate 自动恢复最新一条（多草稿取 listDrafts[0]），仅当 capture 空（不覆盖本会话已记）。
     const c = get().capture
-    if (c.parts.length > 0) return
-    const d = await di.storage.loadDraft()
-    if (d && d.parts.length > 0) {
-      set({ capture: { ...emptyDraft, parts: d.parts, title: d.title, location: d.location } })
+    let d: Draft | undefined
+    if (id) {
+      d = await di.storage.getDraft(id)
+    } else {
+      if (c.parts.length > 0) return
+      d = (await di.storage.listDrafts())[0]
     }
+    if (d && d.parts.length > 0) {
+      set({ capture: { ...emptyDraft, parts: d.parts, title: d.title, location: d.location, resumedDraftId: d.id } })
+    }
+  },
+  deleteDraft: async (id) => {
+    // 丢弃一条草稿。若该草稿正被 capture 续着（resumedDraftId===id），同步清 capture。
+    await di.storage.deleteDraft(id)
+    set((s) => {
+      const cap = s.capture.resumedDraftId === id ? emptyDraft : s.capture
+      return { drafts: s.drafts.filter((d) => d.id !== id), capture: cap }
+    })
+  },
+  trashEntry: async (id) => {
+    // 软删：从 entries 移到 trashed（deletedAt=now）。关联 pending/snoozed 提醒先 cancel timeout（条目进回收站不 fire）。
+    await di.storage.trashEntry(id)
+    const linked = get().reminders.filter((r) => r.entryId === id)
+    linked.forEach((r) => { if (r.status === 'pending' || r.status === 'snoozed') clearScheduledTimeout(r.id) })
+    set((s) => {
+      const moved = s.entries.find((e) => e.id === id)
+      if (!moved) return s
+      const trashed = [{ ...moved, deletedAt: new Date().toISOString() }, ...s.trashed]
+      return {
+        entries: s.entries.filter((e) => e.id !== id),
+        trashed: trashed.sort((a, b) => new Date(b.deletedAt!).getTime() - new Date(a.deletedAt!).getTime()),
+      }
+    })
+  },
+  recoverEntry: async (id) => {
+    // 从回收站恢复：清 deletedAt，移回 entries（按 createdAt 时序位）。重 arm 关联提醒（scheduleReminders）。
+    await di.storage.recoverEntry(id)
+    set((s) => {
+      const found = s.trashed.find((e) => e.id === id)
+      if (!found) return s
+      const rest = { ...found }
+      delete rest.deletedAt
+      const entries = [...s.entries, rest].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      return { trashed: s.trashed.filter((e) => e.id !== id), entries }
+    })
+    scheduleReminders()
   },
   clearJustSaved: () => set({ justSaved: false }),
   setOnline: (v) => set({ online: v }),
@@ -503,6 +588,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     await di.storage.deleteEntry(id)
     set((s) => ({
       entries: s.entries.filter((e) => e.id !== id),
+      trashed: s.trashed.filter((e) => e.id !== id),
       aiByEntry: Object.fromEntries(Object.entries(s.aiByEntry).filter(([k]) => k !== id)),
       reminders: s.reminders.filter((r) => r.entryId !== id),
     }))
