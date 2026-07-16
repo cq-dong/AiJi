@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Button, EmptyState, cn } from '@/ui/components'
+import { Button, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
 import type { EntryAi, EntryStatus } from '@/domain/types'
@@ -62,48 +62,15 @@ function TodoConfirm({ title }: { title: string }) {
   )
 }
 
-function DemoToggle({ value, onChange }: { value: AiState; onChange: (s: AiState) => void }) {
-  const segs: { key: AiState; label: string }[] = [
-    { key: 'ready', label: '完成' },
-    { key: 'processing', label: '处理中' },
-    { key: 'failed', label: '失败' },
-  ]
-  return (
-    <div className="flex items-center gap-2 rounded-card border border-brd bg-card p-2">
-      <span className="text-[11px] text-t3">预览</span>
-      <div className="flex flex-1 rounded-btn bg-page p-0.5">
-        {segs.map((s) => (
-          <button
-            key={s.key}
-            type="button"
-            onClick={() => onChange(s.key)}
-            className={cn(
-              'flex-1 rounded-[10px] py-1.5 text-[11px] font-medium transition',
-              value === s.key ? 'bg-card text-ink shadow-sm' : 'text-t3',
-            )}
-          >
-            {s.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [override, setOverride] = useState<AiState | null>(null)
   // 深链兜底：直接访问 /detail/{id}（刷新）时 store 可能还没 hydrate 完，
   // aiByEntry[id] 可能缺。异步从 di.storage.getEntryAi 载入到本地 state，
   // 渲染时优先用 store 的、回落到异步载入的。
   const [asyncAi, setAsyncAi] = useState<EntryAi | undefined>(undefined)
   const [aiLoading, setAiLoading] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
-
-  useEffect(() => {
-    setOverride(null)
-  }, [id])
 
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
@@ -157,7 +124,7 @@ export default function Detail() {
 
   const entry = found
   const ai = aiFromStore ?? asyncAi
-  const baseState: AiState = override ?? statusToAiState(entry.status)
+  const baseState: AiState = statusToAiState(entry.status)
   // 重处理中：乐观显示 processing（processEntry 不即改 status，需本地旗标过渡；
   // store 在完成时 bump updatedAt，上面 effect 据此清旗标，state 回落到真值）。
   // entry 标记 ready 但 AI 尚在异步载入（深链 race）→ 也显示 processing skeleton，
@@ -186,8 +153,6 @@ export default function Detail() {
       )}
 
       <p className="text-[11px] text-t3">◎ 地点：未记录（设置中可开启）</p>
-
-      <DemoToggle value={state} onChange={setOverride} />
     </div>
   )
 }

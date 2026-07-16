@@ -33,7 +33,6 @@ function HubIcon() {
 
 export default function Categories() {
   const navigate = useNavigate()
-  const [demoEmpty, setDemoEmpty] = useState(false)
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
 
   const entries = useUiStore((s) => s.entries)
@@ -51,7 +50,7 @@ export default function Categories() {
     [categories, entries, aiByEntry],
   )
   const totalCount = cards.reduce((n, c) => n + c.liveCount, 0)
-  const isEmpty = demoEmpty || categories.length === 0
+  const isEmpty = categories.length === 0
   // selectedSlug may point to a slug that no longer exists after store hydrate
   // (LLM emerged/merged categories). Fall through to grid in that case.
   const selected = selectedSlug
@@ -61,23 +60,12 @@ export default function Categories() {
   return (
     <div className="px-4 pt-4 pb-6">
       {isEmpty ? (
-        <>
-          <div className="flex items-start justify-end">
-            <button
-              type="button"
-              onClick={() => setDemoEmpty((v) => !v)}
-              className="mt-1 shrink-0 text-[11px] text-pri active:opacity-70"
-            >
-              返回
-            </button>
-          </div>
-          <EmptyState
-            icon={<HubIcon />}
-            title="类别会随你记的内容自动涌现"
-            subtitle="先记几条，AI 会帮你归类"
-            action={<Button size="sm" onClick={() => navigate('/capture')}>记一笔</Button>}
-          />
-        </>
+        <EmptyState
+          icon={<HubIcon />}
+          title="类别会随你记的内容自动涌现"
+          subtitle="先记几条，AI 会帮你归类"
+          action={<Button size="sm" onClick={() => navigate('/capture')}>记一笔</Button>}
+        />
       ) : selected ? (
         <CategoryDetail
           category={selected}
@@ -88,20 +76,11 @@ export default function Categories() {
         />
       ) : (
         <>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h1 className="text-[24px] font-bold leading-tight text-ink">类别地图</h1>
-              <p className="mt-1 text-[12px] text-t3">
-                {categories.length} 个涌现类别 · {totalCount} 条 · LLM 自动发现
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setDemoEmpty((v) => !v)}
-              className="mt-1 shrink-0 text-[11px] text-pri active:opacity-70"
-            >
-              演示空态
-            </button>
+          <div>
+            <h1 className="text-[24px] font-bold leading-tight text-ink">类别地图</h1>
+            <p className="mt-1 text-[12px] text-t3">
+              {categories.length} 个涌现类别 · {totalCount} 条 · LLM 自动发现
+            </p>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
             {cards.map(({ category, snippet, liveCount }) => (
