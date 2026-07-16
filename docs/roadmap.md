@@ -3,9 +3,9 @@
 > 最后更新：2026-07-16。MVP 范围见 PRD `docs/superpowers/specs/2026-07-15-aiji-design.md`（§7.3）。
 > 本文件固化「已完成 / 在做 / 后置」三态，方便用户 + 未来 agent 查。状态变就更新本文。
 
-## 当前状态：MVP ~90%+
+## 当前状态：MVP 功能完备
 
-核心闭环已跑通并验收：**记 → 采音/文本 → STT → 落库(Dexie+OPFS) → AI 分类/聚合 → 各屏查看 → 导出/分享**。
+核心闭环 + AI 提醒已跑通并验收：**记 → 采音/文本 → STT → 落库(Dexie+OPFS) → AI 分类/聚合 → 各屏查看 → 导出/分享**，外加 **AI 提醒**（前台 Notification 定时：LLM 识意图 → 用户确认 → 调度 → 到点 fire / 错过补推·标 missed）。
 
 架构分层全部到位：UI(React) / app(Zustand+TanQuery) / Domain(纯 TS) / 5 端口(Capture/Stt/Storage/Llm/SecretStore) / PWA 适配(DexieStorage · webCapture · DashScope STT · DeepSeek Llm · localStorage secrets) / 处理管线（保存即落库 → AI 入队 → 分类 → 聚合，断网不丢，LLM 失败只伤 AI 层）。
 
@@ -29,20 +29,22 @@
 - PWA 离线壳（vite-plugin-pwa + manifest + 192/512 icons + autoUpdate SW，`e019ffb`）
 - A1：视频采集探针页 `public/video-probe.html`（getUserMedia+MediaRecorder，桌面录 5s 通过，`cc31712`）
 
-## 在做：Batch 2b · AI 提醒（MVP 最后一个大功能）
+## 已完成：Batch 2b · AI 提醒（MVP 功能完备）
 
-> 详见 `docs/acceptance/phase9-batch2b.md`。用户已拍板 Q1-Q4：前台 only / LLM 解析时间用户确认 / 错过补推·>1h 标 missed / 首次确认请求权限。
+> 详见 `docs/acceptance/phase9-batch2b.md`。用户拍板 Q1-Q4：前台 only / LLM 解析时间用户确认 / 错过补推·>1h 标 missed / 首次确认请求权限。
 
 | 子任务 | 内容 | 状态 |
 |---|---|---|
 | B1-B3 | Reminder 类型 + Dexie v3 + StoragePort 4 方法 + seed | done（`7e7259f`） |
 | B4 | LLM 识别提醒意图 → `reminderSuggestion`（绝对 ISO + label） | done（`8538a6a`） |
-| B5+B8 | store 调度（reminders state / hydrate / scheduleReminders / confirm·dismiss·snooze）+ Notification 适配 + di 接线 | running |
-| B6 | detail TodoConfirm 确认提醒卡（预填 dueAt+label，可改） | pending（等 B5+B8） |
-| B7 | settings 提醒与待办 sheet（list pending / dismiss / snooze 10min） | pending（等 B5+B8） |
-| 收尾 | 联合浏览器验收（确认→Notification fire / reload 不丢 / 错过策略）→ push | 等 B6/B7 |
+| B5+B8 | store 调度（reminders state / hydrate / scheduleReminders / confirm·dismiss·snooze）+ Notification 适配 + di 接线 | done（`8dc081a`） |
+| B6 | detail 确认提醒卡（预填 dueAt+label，可改） | done（`49ff619`） |
+| B7 | settings 提醒与待办 sheet（list pending / dismiss / snooze 10min） | done（`903042e`） |
+| 收尾 | 联合浏览器验收（确认→Notification fire / reload 不丢 / 错过策略） | done · LGTM（2026-07-16） |
 
-B5+B8 一返回 → 合并 → 派 B6 ‖ B7 并行 → 验收 → push。push 后 MVP 功能即完备。
+验收 LGTM（2026-07-16）：6 项行为测试（卡片渲染 / 确认流 / Notification fire / reload 持久 / 错过策略 / snooze+dismiss）+ 4 项 store 不变量（timeout 去重 / fire 前 re-check / Q3 阈值 / processEntry 不自动建）全 pass，无 console error。
+
+**已知小问题（后置打磨）**：确认提醒后 reload，detail 的确认卡会重现（`reminderSuggestion` 未在确认时清掉 + `reminderHidden` 是本地 state 不持久）→ 重确认会建重复 Reminder。minor，用户可点「忽略」消解；留待打磨。
 
 ## 后置 / 不做（用户已决策，2026-07-16）
 
