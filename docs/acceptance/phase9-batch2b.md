@@ -17,10 +17,13 @@
 - **B4 LLM 检测提醒**：`src/adapters/deepSeekLlm.ts` `classify()` prompt 扩展——从正文
   识别时间型提醒意图（「明天下午3点提醒我X」「周五记得Y」）→ 出 `reminderSuggestion`
   （dueAt 解析成绝对 ISO，label 摘要）。few-shot 一例。LLM 不做调度，只建议。
-- **B5 store + 调度**：`src/app/store.ts` — `processEntry` 成功后若 `reminderSuggestion`
-  存在，写一条 pending Reminder（B3）。加 `reminders` state + `scheduleReminders()`
-  （app open 时扫 pending + dueAt在未来 → setTimeout 到点 fire Notification；到点 overdue
-  pending → 标记 missed 或即 fire，见 Q3）。Notification 权限请求见 Q4。
+- **B5 store + 调度**：`src/app/store.ts` — 加 `reminders: Reminder[]` state + `hydrate`
+  载入 reminders（`di.storage.listReminders`）+ `scheduleReminders()`（app open/hydrate 时扫
+  pending：dueAt 在未来 → setTimeout 到点 fire Notification；overdue pending → <1h 补 fire、
+  >1h 标 missed，见 Q3）。**processEntry 不自动建 Reminder**（Q2：用户在 B6 TodoConfirm 确认）——
+  `reminderSuggestion` 留在 EntryAi 上。加 `confirmReminder(entryId, dueAt, label)` action（B6 调用：
+  建 pending Reminder + 调度 + 首次请求 Notification.permission，Q4）+ `dismissReminder(id)` /
+  `snoozeReminder(id, minutes)` 供 B7。
 - **B6 detail TodoConfirm**：`src/ui/screens/detail/` — LLM 建议 reminder 时显示「确认提醒」
   卡（预填 dueAt+label，用户可改时间/标签）→ 确认存 Reminder + 调度；忽略则丢弃 suggestion。
 - **B7 settings 提醒与待办 sheet**：`src/ui/screens/settings/` — 现 ChevronRow 占位 →
