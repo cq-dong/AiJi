@@ -13,6 +13,11 @@ export interface AudioPart {
   ref: string // OPFS blob ref (mock: placeholder)
   durationSec: number
   transcript?: string
+  // D5: capture-time MIME (e.g. 'audio/webm'). OPFS files are stored under an
+  // extension-less ref → getFile().type==="" on read-back, so the blob loses its
+  // type. Carrying mime on the part lets export derive the right extension without
+  // relying on OPFS filename→type inference. Absent on pre-D5 parts (→ fallback).
+  mime?: string
 }
 
 export interface VideoPart {
@@ -20,6 +25,8 @@ export interface VideoPart {
   ref: string
   durationSec: number
   transcript?: string
+  // D5: capture-time MIME (see AudioPart.mime). 'image/jpeg' for photos.
+  mime?: string
 }
 
 export type EntryPart = TextPart | AudioPart | VideoPart

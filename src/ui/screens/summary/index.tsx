@@ -155,13 +155,18 @@ export default function Summary() {
             )
           }
           if (showSkeleton) {
+            // D4: bind recalculating to the LIVE flag (was hardcoded `true` → perpetual
+            // "正在重新生成" after an LLM failure, since the store catch clears the flag
+            // but the placeholder kept lying that it's recalculating). Wire onRegen so a
+            // failed period shows 重新生成 (retry) instead of a dead spinner.
             return (
               <DigestCard
                 key={key}
                 aggregate={placeholderAggregate(scope, p.range)}
                 entryAi={entryAi}
                 categories={categories}
-                recalculating
+                recalculating={isRecalculating}
+                onRegen={() => void recomputeAggregate(scope, p.range, detailLevel)}
                 label={p.label}
                 rangeLabel={p.dateLabel}
               />

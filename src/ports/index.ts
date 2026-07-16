@@ -56,7 +56,7 @@ export interface CapturePort {
   startAudio(opts: { onInterim?: (text: string) => void; onFinal?: (text: string) => void }): Promise<void>
   // Returns the recorded blob so the store can persist it (StoragePort.saveMedia).
   // blob undefined when MediaRecorder unsupported (degrades to transcript-only).
-  stopAudio(): Promise<{ ref: string; durationSec: number; blob?: Blob }>
+  stopAudio(): Promise<{ ref: string; durationSec: number; blob?: Blob; mime: string }>
   hasMicPermission(): Promise<boolean>
   requestMicPermission(): Promise<boolean>
   // Geolocation for recordLocation setting (Wave 1 core). Null if denied/unsupported.
@@ -68,15 +68,15 @@ export interface CapturePort {
   /** Open the camera. Attaches the live stream to `preview` (if given). Returns false if denied/unsupported. */
   startCamera(opts: { preview?: HTMLVideoElement; facingMode?: 'user' | 'environment'; withAudio?: boolean }): Promise<boolean>
   /** Grab a single still frame from the active camera stream. Null if no active camera. */
-  capturePhoto(): Promise<{ ref: string; blob: Blob } | null>
+  capturePhoto(): Promise<{ ref: string; blob: Blob; mime: string } | null>
   /** Begin recording video (+audio) from the active camera stream. */
   startVideo(): Promise<void>
   /** Stop recording; returns blob + ref + duration. Null if nothing was recording. */
-  stopVideo(): Promise<{ ref: string; blob: Blob; durationSec: number } | null>
+  stopVideo(): Promise<{ ref: string; blob: Blob; durationSec: number; mime: string } | null>
   /** Stop the camera, release tracks, detach preview. Safe to call when not running. */
   stopCamera(): Promise<void>
   /** Open the system file picker (image/video). Returns null when the user cancels. */
-  pickMedia(): Promise<{ ref: string; blob: Blob; kind: 'image' | 'video'; durationSec: number } | null>
+  pickMedia(): Promise<{ ref: string; blob: Blob; kind: 'image' | 'video'; durationSec: number; mime: string } | null>
 }
 
 export interface SttPort {

@@ -222,19 +222,21 @@ export async function exportZip(): Promise<void> {
     files.push({ name: `entries/${e.id}.md`, data: enc.encode(md) })
   }
 
-  // media/<ref>.<ext> — binary media blobs from OPFS
-  const mediaRefs = new Set<string>()
+  // media/<ref>.<ext> — binary media blobs from OPFS. D5: prefer the part's capture-time
+  // mime (OPFS stores refs extension-less → getFile().type==="" on read-back, so blob.type
+  // alone would force every audio to .bin). Map ref→mime so dedup still works.
+  const mediaMimes = new Map<string, string>()
   for (const e of entries) {
     for (const p of e.parts) {
-      if (p.type === 'audio' || p.type === 'video') mediaRefs.add(p.ref)
+      if (p.type === 'audio' || p.type === 'video') mediaMimes.set(p.ref, p.mime ?? '')
     }
   }
-  for (const ref of mediaRefs) {
+  for (const [ref, mime] of mediaMimes) {
     try {
       const blob = await di.storage.getMedia(ref)
       if (!blob) continue
       const buf = new Uint8Array(await blob.arrayBuffer())
-      files.push({ name: `media/${ref}.${extFromType(blob.type)}`, data: buf })
+      files.push({ name: `media/${ref}.${extFromType(mime || blob.type)}`, data: buf })
     } catch (e) {
       console.error('[exportZip] getMedia failed for ' + ref, e)
     }
@@ -292,15 +294,15 @@ export async function exportEntryZip(id: string): Promise<void> {
   const files: ZipFile[] = [
     { name: `entries/${entry.id}.md`, data: enc.encode(buildEntryMarkdown(entry, ai, catLabel, tagLabel)) },
   ]
-  const mediaRefs = new Set<string>()
+  const mediaMimes = new Map<string, string>()
   for (const p of entry.parts) {
-    if (p.type === 'audio' || p.type === 'video') mediaRefs.add(p.ref)
+    if (p.type === 'audio' || p.type === 'video') mediaMimes.set(p.ref, p.mime ?? '')
   }
-  for (const ref of mediaRefs) {
+  for (const [ref, mime] of mediaMimes) {
     try {
       const blob = await di.storage.getMedia(ref)
       if (!blob) continue
-      files.push({ name: `media/${ref}.${extFromType(blob.type)}`, data: new Uint8Array(await blob.arrayBuffer()) })
+      files.push({ name: `media/${ref}.${extFromType(mime || blob.type)}`, data: new Uint8Array(await blob.arrayBuffer()) })
     } catch (e) {
       console.error('[exportEntryZip] getMedia failed for ' + ref, e)
     }

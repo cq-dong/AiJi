@@ -596,7 +596,7 @@ export function CameraView({
     try {
       if (mode === 'photo') {
         const r = await di.capture.capturePhoto()
-        if (r) onPart({ type: 'video', ref: r.ref, durationSec: 0 }, r.blob)
+        if (r) onPart({ type: 'video', ref: r.ref, durationSec: 0, mime: r.mime }, r.blob)
         void di.capture.stopCamera()
         onClose()
       } else {
@@ -606,7 +606,7 @@ export function CameraView({
         } else {
           const r = await di.capture.stopVideo()
           setRecording(false)
-          if (r) onPart({ type: 'video', ref: r.ref, durationSec: Math.max(1, Math.round(r.durationSec)) }, r.blob)
+          if (r) onPart({ type: 'video', ref: r.ref, durationSec: Math.max(1, Math.round(r.durationSec)), mime: r.mime }, r.blob)
           void di.capture.stopCamera()
           onClose()
         }

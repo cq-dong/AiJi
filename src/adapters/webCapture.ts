@@ -120,11 +120,14 @@ export const webCapture: CapturePort = {
     try { recognition?.stop() } catch { /* noop */ }
     recognition = null
     let blob: Blob | undefined
+    let mime = 'audio/webm'
     if (recorder && recorder.state !== 'inactive') {
+      // D5: capture the MIME here (recorder.mimeType is live) so the store can persist
+      // it on the AudioPart — OPFS round-trip would otherwise lose it (extension-less ref).
+      mime = recorder.mimeType || 'audio/webm'
       blob = await new Promise<Blob | undefined>((resolve) => {
         recorder!.onstop = () => {
-          const type = recorder!.mimeType || 'audio/webm'
-          resolve(chunks.length > 0 ? new Blob(chunks, { type }) : undefined)
+          resolve(chunks.length > 0 ? new Blob(chunks, { type: mime }) : undefined)
         }
         recorder!.stop()
       })
@@ -134,7 +137,7 @@ export const webCapture: CapturePort = {
     recorder = null
     stream = null
     chunks = []
-    return { ref, durationSec, blob }
+    return { ref, durationSec, blob, mime }
   },
 
   async startCamera({ preview, facingMode = 'environment', withAudio = true }) {
@@ -177,7 +180,7 @@ export const webCapture: CapturePort = {
       canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9),
     )
     if (!blob) return null
-    return { ref: `photo-${crypto.randomUUID()}`, blob }
+    return { ref: `photo-${crypto.randomUUID()}`, blob, mime: blob.type }
   },
 
   async startVideo() {
@@ -198,17 +201,17 @@ export const webCapture: CapturePort = {
   async stopVideo() {
     if (!camRecorder || camRecorder.state === 'inactive') return null
     const durationSec = Math.max(0.1, (Date.now() - camStartedAt) / 1000)
+    const mime = camRecorder.mimeType || 'video/webm'
     const blob: Blob | undefined = await new Promise<Blob | undefined>((resolve) => {
       camRecorder!.onstop = () => {
-        const type = camRecorder!.mimeType || 'video/webm'
-        resolve(camChunks.length > 0 ? new Blob(camChunks, { type }) : undefined)
+        resolve(camChunks.length > 0 ? new Blob(camChunks, { type: mime }) : undefined)
       }
       camRecorder!.stop()
     })
     camRecorder = null
     camChunks = []
     if (!blob) return null
-    return { ref: `video-${crypto.randomUUID()}`, blob, durationSec }
+    return { ref: `video-${crypto.randomUUID()}`, blob, durationSec, mime }
   },
 
   async stopCamera() {
@@ -264,6 +267,6 @@ export const webCapture: CapturePort = {
         v.onerror = () => { URL.revokeObjectURL(url); resolve(0) }
       })
     }
-    return { ref: `${kind === 'image' ? 'photo' : 'video'}-${crypto.randomUUID()}`, blob: file, kind, durationSec }
+    return { ref: `${kind === 'image' ? 'photo' : 'video'}-${crypto.randomUUID()}`, blob: file, kind, durationSec, mime: file.type }
   },
 }

@@ -143,7 +143,7 @@ export default function Capture() {
     const r = await di.capture.pickMedia()
     if (!r) return
     addMediaPart(
-      { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)) },
+      { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)), mime: r.mime },
       r.blob,
     )
   }
