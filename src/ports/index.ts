@@ -1,7 +1,7 @@
 // Port interfaces (PRD §7.3). PWA-agnostic; adapters implement these.
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
-import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, Reminder, Settings, Tag } from '@/domain/types'
 
 export interface StoragePort {
   listEntries(): Promise<Entry[]>
@@ -22,6 +22,11 @@ export interface StoragePort {
   // saveMedia: persist (or overwrite) a blob. getMedia: read back; undefined if absent or OPFS unsupported.
   saveMedia(ref: string, blob: Blob): Promise<void>
   getMedia(ref: string): Promise<Blob | undefined>
+  // Reminders (Phase 9 Batch 2b). foreground-only (Q1), dueAt is absolute ISO (Q2).
+  listReminders(): Promise<Reminder[]>
+  getReminder(id: string): Promise<Reminder | undefined>
+  saveReminder(r: Reminder): Promise<void>
+  deleteReminder(id: string): Promise<void>
 }
 
 export interface CapturePort {
