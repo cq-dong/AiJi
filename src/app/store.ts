@@ -221,7 +221,18 @@ export const useUiStore = create<UiState>((set, get) => ({
           tags,
         }))
       }
-      // 分类成功 → fire-and-forget 触发当日聚合重算（stale → LLM 重新生成今日摘要）
+      // 分类成功 → 先把当日聚合置 stale，再触发重算。processEntry 必须置 stale 才能穿过
+      // recomputeAggregate 的 skip-when-fresh 守卫——新条目 genuinely 让当日摘要过期。
+      // （scope-switch 路径不置 stale → 守卫正确跳过新鲜聚合，省付费 LLM 调用。）
+      const dayRange = scopeRange('day', new Date())
+      const existingDay = await di.storage.getAggregate('day', dayRange)
+      if (existingDay && !existingDay.stale) {
+        const staleAg: Aggregate = { ...existingDay, stale: true }
+        await di.storage.saveAggregate(staleAg)
+        set((s) => ({
+          aggregates: s.aggregates.map((a) => (a.id === existingDay.id ? staleAg : a)),
+        }))
+      }
       void get().recomputeAggregate('day').catch((e) => console.error('[store] recomputeAggregate failed', e))
     } catch (e) {
       console.error('[store] processEntry failed', e)
