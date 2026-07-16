@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, EntryPart, Settings, Tag } from '@/domain/types'
-import { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedSettings, seedTags } from '@/data/seed'
+import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, EntryPart, Reminder, Settings, Tag } from '@/domain/types'
+import { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedReminders, seedSettings, seedTags } from '@/data/seed'
 import { di } from './di'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：首屏 seed 兜底即时渲染，
@@ -24,6 +24,7 @@ interface UiState {
   hydrated: boolean // 是否已从 Dexie 载入
   settings: Settings // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
   aggregates: Aggregate[] // 首屏 seed 兜底，hydrate 从 Dexie 载入；recomputeAggregate 后更新
+  reminders: Reminder[] // 首屏 seed 兜底，hydrate 从 Dexie 载入；scheduleReminders 扫 pending 到点 fire
   justSaved: boolean // 刚保存 → 首页 toast + 置顶处理中卡片
   hydrate: () => Promise<void>
   startRecording: () => Promise<void>
@@ -41,6 +42,10 @@ interface UiState {
   setSttConfig: (model: string, key: string) => void
   processEntry: (entryId: string) => Promise<void>
   recomputeAggregate: (scope: AggregateScopeType, range?: string) => Promise<void>
+  // Phase 9 Batch 2b · 提醒。processEntry 不自动建 Reminder（Q2：用户在 B6 TodoConfirm 确认）。
+  confirmReminder: (entryId: string, dueAt: string, label: string) => Promise<void>
+  dismissReminder: (id: string) => Promise<void>
+  snoozeReminder: (id: string, minutes: number) => Promise<void>
 }
 
 const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '' }
@@ -69,6 +74,64 @@ function entriesInRange(entries: Entry[], scope: AggregateScopeType, range: stri
   return entries.filter((e) => scopeRange(scope, new Date(e.createdAt)) === range)
 }
 
+// ── 提醒调度（Phase 9 Batch 2b · B5）─────────────────────────────────────
+// 前台 only（Q1）：setTimeout 到点 fire Notification；无 push server。
+// module-level timeout 句柄表，key=reminder.id，供 dismiss/snooze cancel。
+const scheduledTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+// Q4：仅在首次 confirmReminder 时请求权限一次（permission !== 'default' 后不再弹）。
+let permissionRequested = false
+
+function clearScheduledTimeout(id: string): void {
+  const h = scheduledTimeouts.get(id)
+  if (h !== undefined) {
+    clearTimeout(h)
+    scheduledTimeouts.delete(id)
+  }
+}
+
+// 到点 fire：通知 + 置 fired + 落库 + 更新 state + 清 timeout 表。
+function fireReminder(r: Reminder): void {
+  clearScheduledTimeout(r.id)
+  di.notifications.notify('AiJi 提醒', r.label, r.id)
+  const fired: Reminder = { ...r, status: 'fired' }
+  void di.storage.saveReminder(fired).catch((e) => console.error('[store] saveReminder(fired) failed', e))
+  useUiStore.setState((s) => ({ reminders: s.reminders.map((x) => (x.id === r.id ? fired : x)) }))
+}
+
+// Q3：>1h overdue pending → 标 missed 不打扰。
+function markMissed(r: Reminder): void {
+  clearScheduledTimeout(r.id)
+  const missed: Reminder = { ...r, status: 'missed' }
+  void di.storage.saveReminder(missed).catch((e) => console.error('[store] saveReminder(missed) failed', e))
+  useUiStore.setState((s) => ({ reminders: s.reminders.map((x) => (x.id === r.id ? missed : x)) }))
+}
+
+// 扫 reminders state：pending 的 → 未来 setTimeout 到点；overdue <1h 补 fire；>1h 标 missed。
+// 去重守卫：已在 timeout 表的 id 跳过（confirm/snooze 先 clearScheduledTimeout 再调本函数）。
+function scheduleReminders(): void {
+  const { reminders } = useUiStore.getState()
+  const now = Date.now()
+  for (const r of reminders) {
+    if (r.status !== 'pending') continue
+    if (scheduledTimeouts.has(r.id)) continue
+    const due = new Date(r.dueAt).getTime()
+    const diff = due - now
+    if (diff <= 0) {
+      // overdue（含到点 0ms）
+      if (-diff < 3_600_000) fireReminder(r) // <1h 补推（Q3）
+      else markMissed(r) // ≥1h 标错过
+    } else {
+      // 未来：setTimeout 到点；fire 前 re-check（可能已被 dismiss/snooze）
+      const h = setTimeout(() => {
+        const cur = useUiStore.getState().reminders.find((x) => x.id === r.id)
+        if (cur && cur.status === 'pending') fireReminder(cur)
+        else scheduledTimeouts.delete(r.id)
+      }, diff)
+      scheduledTimeouts.set(r.id, h)
+    }
+  }
+}
+
 export const useUiStore = create<UiState>((set, get) => ({
   capture: emptyDraft,
   online: true,
@@ -79,23 +142,27 @@ export const useUiStore = create<UiState>((set, get) => ({
   hydrated: false,
   settings: seedSettings,
   aggregates: seedAggregates,
+  reminders: seedReminders,
   justSaved: false,
   hydrate: async () => {
     if (get().hydrated) return
     try {
-      const [entries, settings, categories, tags, aggregates] = await Promise.all([
+      const [entries, settings, categories, tags, aggregates, reminders] = await Promise.all([
         di.storage.listEntries(),
         di.storage.getSettings(),
         di.storage.listCategories(),
         di.storage.listTags(),
         di.storage.listAggregates(),
+        di.storage.listReminders(),
       ])
       // 载入每条条目的 AI（seed 条目 + 真实保存条目）。getEntryAi 返回最高 version。
       const aiPairs = await Promise.all(
         entries.map((e) => di.storage.getEntryAi(e.id).then((ai) => (ai ? [e.id, ai] as const : null))),
       )
       const aiByEntry = { ...Object.fromEntries(aiPairs.filter(Boolean) as [string, EntryAi][]) }
-      set({ entries, settings, categories, tags, aggregates, aiByEntry, hydrated: true })
+      set({ entries, settings, categories, tags, aggregates, reminders, aiByEntry, hydrated: true })
+      // 载入后扫 pending 提醒：未来调度到点；overdue <1h 补 fire、≥1h 标 missed（Q3）。
+      scheduleReminders()
     } catch (e) {
       // 载入失败：保持 seed 兜底，标记已尝试避免反复重试（存储失败不阻断 UI）
       console.error('[store] hydrate failed', e)
@@ -285,5 +352,44 @@ export const useUiStore = create<UiState>((set, get) => ({
         }))
       }
     }
+  },
+  // ── 提醒 actions（Phase 9 Batch 2b · B5）──────────────────────────────
+  confirmReminder: async (entryId, dueAt, label) => {
+    // Q4：首次确认提醒时请求 Notification.permission（情境相关，不无脑弹）。
+    // permissionRequested flag 保证只问一次；denied 后不再骚扰，notify 走 toast 降级。
+    if (!permissionRequested) {
+      permissionRequested = true
+      void di.notifications.requestPermission()
+    }
+    const r: Reminder = {
+      id: crypto.randomUUID(),
+      entryId,
+      dueAt,
+      label,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    }
+    await di.storage.saveReminder(r)
+    set((s) => ({ reminders: [r, ...s.reminders] }))
+    scheduleReminders()
+  },
+  dismissReminder: async (id) => {
+    clearScheduledTimeout(id)
+    await di.storage.deleteReminder(id)
+    set((s) => ({ reminders: s.reminders.filter((x) => x.id !== id) }))
+  },
+  snoozeReminder: async (id, minutes) => {
+    // status stays 'pending'（ReminderStatus union 含 'snoozed' 但 B5 逻辑用 pending 统一调度）。
+    clearScheduledTimeout(id)
+    const cur = get().reminders.find((x) => x.id === id)
+    if (!cur) return
+    const snoozed: Reminder = {
+      ...cur,
+      dueAt: new Date(Date.now() + minutes * 60_000).toISOString(),
+      status: 'pending',
+    }
+    await di.storage.saveReminder(snoozed)
+    set((s) => ({ reminders: s.reminders.map((x) => (x.id === id ? snoozed : x)) }))
+    scheduleReminders()
   },
 }))
