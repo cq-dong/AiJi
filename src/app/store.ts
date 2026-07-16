@@ -253,8 +253,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     try {
       // 传 existing?.id → 适配器复用同主键 → saveAggregate put 原地替换，避免孤儿 stale 行（重载后重复卡片）。
-      // LlmPort 接口未声明可选 id（保持加性、不动 ports），故就地窄转换调用。
-      const ag = await (di.llm.aggregate as (entryIds: string[], scope: AggregateScopeType, id?: string) => Promise<Aggregate>)(entryIds, scope, existing?.id)
+      const ag = await di.llm.aggregate(entryIds, scope, existing?.id)
       await di.storage.saveAggregate(ag)
       set((s) => {
         // Replace any existing aggregate for this scope+range, else prepend.

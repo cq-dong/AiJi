@@ -41,7 +41,7 @@ export interface SttPort {
 
 export interface LlmPort {
   classify(entryId: string): Promise<EntryAi>
-  aggregate(entryIds: string[], scope: AggregateScopeType): Promise<Aggregate>
+  aggregate(entryIds: string[], scope: AggregateScopeType, id?: string): Promise<Aggregate>
 }
 
 export interface SecretStorePort {
