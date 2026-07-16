@@ -8,6 +8,21 @@ import { PartView } from './PartView'
 import { AiPanel, type AiState } from './AiPanel'
 import { formatTitle } from './helpers'
 
+// ISO 8601 → datetime-local input format (YYYY-MM-DDTHH:MM, local time)
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// datetime-local input value → ISO 8601 string
+function localInputToIso(local: string): string {
+  const d = new Date(local)
+  if (Number.isNaN(d.getTime())) return new Date().toISOString()
+  return d.toISOString()
+}
+
 function statusToAiState(s: EntryStatus): AiState {
   if (s === 'processing') return 'processing'
   if (s === 'failed') return 'failed'
@@ -62,6 +77,66 @@ function TodoConfirm({ title }: { title: string }) {
   )
 }
 
+function ReminderConfirm({
+  entryId,
+  suggestion,
+  onDismissed,
+}: {
+  entryId: string
+  suggestion: { dueAt: string; label: string }
+  onDismissed: () => void
+}) {
+  const [dueAt, setDueAt] = useState(() => isoToLocalInput(suggestion.dueAt))
+  const [label, setLabel] = useState(suggestion.label)
+  const [confirming, setConfirming] = useState(false)
+
+  const handleConfirm = async () => {
+    setConfirming(true)
+    try {
+      await useUiStore.getState().confirmReminder(entryId, localInputToIso(dueAt), label)
+      onDismissed()
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  const inputCls =
+    'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
+
+  return (
+    <div className="flex flex-col gap-3 rounded-card bg-priS p-4">
+      <div className="flex items-center gap-2">
+        <span className="size-2 rounded-full bg-pri" />
+        <p className="text-[12px] font-bold text-pri">AI 建议 · 提醒</p>
+      </div>
+      <div className="flex flex-col gap-2">
+        <label className="text-[11px] text-t2">提醒时间</label>
+        <input
+          type="datetime-local"
+          value={dueAt}
+          onChange={(e) => setDueAt(e.target.value)}
+          className={inputCls}
+        />
+        <label className="text-[11px] text-t2">提醒内容</label>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className={inputCls}
+        />
+      </div>
+      <div className="flex items-center gap-2 pt-1">
+        <Button type="button" size="sm" variant="primary" onClick={handleConfirm} disabled={confirming}>
+          确认提醒
+        </Button>
+        <Button type="button" size="sm" variant="ghost" className="text-t3" onClick={onDismissed}>
+          忽略
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -71,6 +146,8 @@ export default function Detail() {
   const [asyncAi, setAsyncAi] = useState<EntryAi | undefined>(undefined)
   const [aiLoading, setAiLoading] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
+  // B6: 本地旗标——确认/忽略后隐藏提醒卡。keyed by entry id，不持久化。
+  const [reminderHidden, setReminderHidden] = useState<Record<string, boolean>>({})
 
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
@@ -150,6 +227,14 @@ export default function Detail() {
 
       {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event) && (
         <TodoConfirm title={ai.titleSuggestion ?? ''} />
+      )}
+
+      {state === 'ready' && ai?.reminderSuggestion && !reminderHidden[entry.id] && (
+        <ReminderConfirm
+          entryId={entry.id}
+          suggestion={ai.reminderSuggestion}
+          onDismissed={() => setReminderHidden((h) => ({ ...h, [entry.id]: true }))}
+        />
       )}
 
       <p className="text-[11px] text-t3">◎ 地点：未记录（设置中可开启）</p>
