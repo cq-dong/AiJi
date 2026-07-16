@@ -4,6 +4,7 @@ import { Card, cn } from '@/ui/components'
 interface CategoryCardProps {
   category: Category
   snippet: string
+  liveCount: number
   onClick?: () => void
 }
 
@@ -15,7 +16,7 @@ const DOT: Record<NonNullable<Category['accent']>, string> = {
 }
 
 // Per Figma 5:2 — a small accent dot (not a bar) sits beside the label.
-export function CategoryCard({ category, snippet, onClick }: CategoryCardProps) {
+export function CategoryCard({ category, snippet, liveCount, onClick }: CategoryCardProps) {
   const dot = category.accent ? DOT[category.accent] : 'bg-catIdea'
   return (
     <Card
@@ -32,7 +33,7 @@ export function CategoryCard({ category, snippet, onClick }: CategoryCardProps) 
         <span className={cn('size-3 rounded-full', dot)} />
         <span className="text-[15px] font-bold text-ink">{category.label}</span>
       </div>
-      <p className="text-[12px] font-medium text-t3">{category.usageCount} 条</p>
+      <p className="text-[12px] font-medium text-t3">{liveCount} 条</p>
       <p className="text-[12px] text-t2 line-clamp-1">{snippet || '——'}</p>
     </Card>
   )

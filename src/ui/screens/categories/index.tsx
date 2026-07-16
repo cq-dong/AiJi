@@ -46,10 +46,11 @@ export default function Categories() {
       categories.map((c) => ({
         category: c,
         snippet: latestSummaryFor(c.slug, entries, aiByEntry),
+        liveCount: entries.filter((e) => aiByEntry[e.id]?.category === c.slug).length,
       })),
     [categories, entries, aiByEntry],
   )
-  const totalCount = categories.reduce((n, c) => n + c.usageCount, 0)
+  const totalCount = cards.reduce((n, c) => n + c.liveCount, 0)
   const isEmpty = demoEmpty || categories.length === 0
   // selectedSlug may point to a slug that no longer exists after store hydrate
   // (LLM emerged/merged categories). Fall through to grid in that case.
@@ -103,11 +104,12 @@ export default function Categories() {
             </button>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            {cards.map(({ category, snippet }) => (
+            {cards.map(({ category, snippet, liveCount }) => (
               <CategoryCard
                 key={category.slug}
                 category={category}
                 snippet={snippet}
+                liveCount={liveCount}
                 onClick={() => setSelectedSlug(category.slug)}
               />
             ))}
