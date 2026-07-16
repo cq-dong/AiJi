@@ -6,10 +6,11 @@ interface SearchResultCardProps {
   entry: Entry
   ai?: EntryAi
   category?: Category
+  now: Date
   onClick?: () => void
 }
 
-export function SearchResultCard({ entry, ai, category, onClick }: SearchResultCardProps) {
+export function SearchResultCard({ entry, ai, category, now, onClick }: SearchResultCardProps) {
   const title = ai?.titleSuggestion
   return (
     <Card
@@ -24,7 +25,7 @@ export function SearchResultCard({ entry, ai, category, onClick }: SearchResultC
       <div className="mt-1 flex items-center gap-2">
         {category && <Chip tone={accentTone(category.accent)}>{category.label}</Chip>}
         <span className="text-[11px] text-t3">
-          {formatRelativeTime(entry.createdAt)} · {modality(entry)}
+          {formatRelativeTime(entry.createdAt, now)} · {modality(entry)}
         </span>
       </div>
     </Card>

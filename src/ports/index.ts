@@ -8,8 +8,11 @@ export interface StoragePort {
   getEntry(id: string): Promise<Entry | undefined>
   saveEntry(entry: Entry): Promise<void>
   getEntryAi(entryId: string): Promise<EntryAi | undefined>
+  saveEntryAi(ai: EntryAi): Promise<void>
   listCategories(): Promise<Category[]>
+  saveCategory(cat: Category): Promise<void>
   listTags(): Promise<Tag[]>
+  saveTag(tag: Tag): Promise<void>
   listAggregates(): Promise<Aggregate[]>
   getSettings(): Promise<Settings>
   saveSettings(s: Settings): Promise<void>

@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Mic } from 'lucide-react'
 import { Button, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
-import { seedCategories, seedEntryAi } from '@/data/seed'
 import type { Entry } from '@/domain/types'
 import { dateKey, groupLabel, todayKeyFrom, topDateLabel } from './helpers'
 import { HomeHeader } from './HomeHeader'
@@ -24,6 +23,8 @@ export default function Home() {
   const entries = useUiStore((s) => s.entries)
   const justSaved = useUiStore((s) => s.justSaved)
   const clearJustSaved = useUiStore((s) => s.clearJustSaved)
+  const categories = useUiStore((s) => s.categories)
+  const aiByEntry = useUiStore((s) => s.aiByEntry)
 
   const demo = isDemo(searchParams.get('demo'))
   const todayKey = todayKeyFrom(entries)
@@ -67,8 +68,8 @@ export default function Home() {
       .map((k) => ({ key: k, label: groupLabel(k, todayKey), entries: map.get(k)! }))
   })()
 
-  const catMap = new Map(seedCategories.map((c) => [c.slug, c]))
-  const aiMap = new Map(seedEntryAi.map((a) => [a.entryId, a]))
+  const catMap = new Map(categories.map((c) => [c.slug, c]))
+  const aiMap = new Map(Object.entries(aiByEntry))
 
   const banner = showFail ? (
     <FailBanner onRetry={() => setSearchParams({})} />

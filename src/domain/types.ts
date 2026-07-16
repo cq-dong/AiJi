@@ -93,6 +93,8 @@ export interface Aggregate {
 export interface Settings {
   llmProvider: string
   apiKeyRef?: string
+  llmUrl?: string // BYOK endpoint (OpenAI-compatible chat completions)
+  llmModel?: string // e.g. 'deepseek-v4-flash'
   sttProvider: string
   recordLocation: boolean
   dailyReminder: boolean

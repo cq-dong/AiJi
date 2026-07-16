@@ -9,14 +9,26 @@ import {
   seedTags,
 } from '@/data/seed'
 
-// PWA StoragePort 适配：entries + settings 走 Dexie（首屏空库时 entries 从 seed 灌入；
-// settings 落库到单行 key=1，seed 兜底首启）。entryAi/categories/aggregates/tags 仍取 seed——
-// 其写入路径（LLM）未落地，待 LlmPort 接入时再路由到 Dexie。
+// PWA StoragePort 适配：entries/settings/entryAi/categories/tags 走 Dexie（首屏空库时从 seed 灌入；
+// settings 落库到单行 key=1，seed 兜底首启）。aggregates 仍取 seed——其重算路径（聚合）未落地。
+// entries 落库由 store.finishSave；entryAi/categories/tags 落库由处理管线（LlmPort 分类 + 涌现）。
 let seeded = false
 async function ensureSeeded(): Promise<void> {
   if (seeded) return
-  if ((await db.entries.count()) > 0) { seeded = true; return }
-  await db.entries.bulkPut(seedEntries)
+  const entriesEmpty = (await db.entries.count()) === 0
+  if (entriesEmpty) {
+    // 首启：灌完整原型数据集（条目 + 其 AI + 类别/标签库）。
+    await db.entries.bulkPut(seedEntries)
+    await db.categories.bulkPut(seedCategories)
+    await db.tags.bulkPut(seedTags)
+    await db.entryAi.bulkPut(seedEntryAi)
+  } else {
+    // 存量库（用户在过往阶段存过真实条目）：e1-e12 在 Phase 2 首启已灌入 Dexie，
+    // 故 seedEntryAi(ai1-ai12, entryId=e1-e12) 与之匹配不孤儿——补灌 categories/tags/entryAi。
+    if ((await db.categories.count()) === 0) await db.categories.bulkPut(seedCategories)
+    if ((await db.tags.count()) === 0) await db.tags.bulkPut(seedTags)
+    if ((await db.entryAi.count()) === 0) await db.entryAi.bulkPut(seedEntryAi)
+  }
   seeded = true
 }
 
@@ -35,13 +47,27 @@ export const dexieStorage: StoragePort = {
     await db.entries.put(entry)
   },
   async getEntryAi(entryId) {
-    return seedEntryAi.find((a) => a.entryId === entryId)
+    await ensureSeeded()
+    const rows = await db.entryAi.where('entryId').equals(entryId).toArray()
+    if (rows.length === 0) return undefined
+    return rows.reduce((a, b) => (a.version > b.version ? a : b))
+  },
+  async saveEntryAi(ai) {
+    await db.entryAi.put(ai)
   },
   async listCategories() {
-    return seedCategories
+    await ensureSeeded()
+    return db.categories.toArray()
+  },
+  async saveCategory(cat) {
+    await db.categories.put(cat)
   },
   async listTags() {
-    return seedTags
+    await ensureSeeded()
+    return db.tags.toArray()
+  },
+  async saveTag(tag) {
+    await db.tags.put(tag)
   },
   async listAggregates() {
     return seedAggregates

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, EmptyState, cn } from '@/ui/components'
-import { seedEntryAi } from '@/data/seed'
 import { useUiStore } from '@/app/store'
-import type { EntryStatus } from '@/domain/types'
+import { di } from '@/app/di'
+import type { EntryAi, EntryStatus } from '@/domain/types'
 import { PartView } from './PartView'
 import { AiPanel, type AiState } from './AiPanel'
 import { formatTitle } from './helpers'
@@ -94,13 +94,36 @@ export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [override, setOverride] = useState<AiState | null>(null)
+  // 深链兜底：直接访问 /detail/{id}（刷新）时 store 可能还没 hydrate 完，
+  // aiByEntry[id] 可能缺。异步从 di.storage.getEntryAi 载入到本地 state，
+  // 渲染时优先用 store 的、回落到异步载入的。
+  const [asyncAi, setAsyncAi] = useState<EntryAi | undefined>(undefined)
+  const [aiLoading, setAiLoading] = useState(false)
 
   useEffect(() => {
     setOverride(null)
   }, [id])
 
   const entries = useUiStore((s) => s.entries)
+  const aiByEntry = useUiStore((s) => s.aiByEntry)
   const found = id ? entries.find((e) => e.id === id) : undefined
+  const aiFromStore = id ? aiByEntry[id] : undefined
+
+  // 若 store 的 aiByEntry[id] 缺，但 entry 存在，异步从 Dexie 载入 AI（深链兜底）。
+  useEffect(() => {
+    setAsyncAi(undefined)
+    if (!id || !found) return
+    if (aiFromStore) return
+    let cancelled = false
+    setAiLoading(true)
+    void (async () => {
+      const ai = await di.storage.getEntryAi(id)
+      if (cancelled) return
+      setAsyncAi(ai)
+      setAiLoading(false)
+    })()
+    return () => { cancelled = true }
+  }, [id, found, aiFromStore])
 
   if (!found) {
     return (
@@ -120,8 +143,11 @@ export default function Detail() {
   }
 
   const entry = found
-  const ai = seedEntryAi.find((a) => a.entryId === entry.id)
-  const state: AiState = override ?? statusToAiState(entry.status)
+  const ai = aiFromStore ?? asyncAi
+  const baseState: AiState = override ?? statusToAiState(entry.status)
+  // entry 标记 ready 但 AI 尚在异步载入（深链 race）→ 显示 processing skeleton，
+  // 别闪「暂无 AI 处理结果」。
+  const state: AiState = baseState === 'ready' && !ai && aiLoading ? 'processing' : baseState
 
   return (
     <div className="flex flex-col gap-3 px-4 pb-8">

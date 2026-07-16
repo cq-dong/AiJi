@@ -1,17 +1,15 @@
-import type { EntryPart } from '@/domain/types'
-import { seedCategories, seedTags } from '@/data/seed'
+import type { Category, EntryPart, Tag } from '@/domain/types'
 
 export type ChipTone = 'default' | 'idea' | 'project' | 'pending' | 'fail'
 
-const CAT_BY_SLUG = new Map(seedCategories.map((c) => [c.slug, c]))
-const TAG_BY_SLUG = new Map(seedTags.map((t) => [t.slug, t]))
-
-export function categoryLabel(slug: string): string {
-  return CAT_BY_SLUG.get(slug)?.label ?? slug
+// 接受 store 数据作参数（屏实现传 useUiStore 的 categories/tags）。
+// 不再依赖模块顶层 seed Map——涌现类别/标签由 LLM 落库后经 store 派发，此处只做纯查表。
+export function categoryLabel(slug: string, categories: Category[]): string {
+  return categories.find((c) => c.slug === slug)?.label ?? slug
 }
 
-export function categoryTone(slug: string): ChipTone {
-  switch (CAT_BY_SLUG.get(slug)?.accent) {
+export function categoryTone(slug: string, categories: Category[]): ChipTone {
+  switch (categories.find((c) => c.slug === slug)?.accent) {
     case 'catIdea':
       return 'idea'
     case 'catProject':
@@ -25,8 +23,8 @@ export function categoryTone(slug: string): ChipTone {
   }
 }
 
-export function tagLabel(slug: string): string {
-  return TAG_BY_SLUG.get(slug)?.label ?? slug
+export function tagLabel(slug: string, tags: Tag[]): string {
+  return tags.find((t) => t.slug === slug)?.label ?? slug
 }
 
 function pad(n: number): string {

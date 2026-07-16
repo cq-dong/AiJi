@@ -1,5 +1,6 @@
-import type { EntryAi, Facets } from '@/domain/types'
+import type { Category, EntryAi, Facets, Tag } from '@/domain/types'
 import { Button, Card, Chip, Skeleton, Spinner } from '@/ui/components'
+import { useUiStore } from '@/app/store'
 import { categoryLabel, categoryTone, relativeTime, tagLabel, type ChipTone } from './helpers'
 
 export type AiState = 'ready' | 'processing' | 'failed'
@@ -24,7 +25,7 @@ function FacetChips({ facets }: { facets: Facets }) {
   )
 }
 
-function ReadyBody({ ai }: { ai: EntryAi }) {
+function ReadyBody({ ai, categories, tags }: { ai: EntryAi; categories: Category[]; tags: Tag[] }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[11px] text-t3">
@@ -32,14 +33,14 @@ function ReadyBody({ ai }: { ai: EntryAi }) {
       </p>
       <div className="flex items-center gap-2">
         <span className="text-[11px] text-t3">类别</span>
-        <Chip tone={categoryTone(ai.category)}>{categoryLabel(ai.category)}</Chip>
+        <Chip tone={categoryTone(ai.category, categories)}>{categoryLabel(ai.category, categories)}</Chip>
       </div>
       {ai.tags.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-[11px] text-t3">标签</span>
           {ai.tags.map((t) => (
             <Chip key={t} tone="default">
-              {tagLabel(t)}
+              {tagLabel(t, tags)}
             </Chip>
           ))}
         </div>
@@ -103,13 +104,16 @@ function FailedBody() {
 }
 
 export function AiPanel({ state, ai }: { state: AiState; ai?: EntryAi }) {
+  // 读侧从 store 取类别/标签（含涌现），不再依赖 seed 静态数组。
+  const categories = useUiStore((s) => s.categories)
+  const tags = useUiStore((s) => s.tags)
   return (
     <Card className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h2 className="text-[13px] font-bold text-ink">AI 处理</h2>
         <Chip tone="pending">上送云端</Chip>
       </div>
-      {state === 'ready' && ai && <ReadyBody ai={ai} />}
+      {state === 'ready' && ai && <ReadyBody ai={ai} categories={categories} tags={tags} />}
       {state === 'ready' && !ai && <p className="text-[12px] text-t3">暂无 AI 处理结果</p>}
       {state === 'processing' && <ProcessingBody />}
       {state === 'failed' && <FailedBody />}

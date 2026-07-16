@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import type { Entry, EntryAi } from '@/domain/types'
 import { Chip, cn } from '@/ui/components'
 import { firstText, modalityLabel, timeLabel } from './helpers'
@@ -32,12 +33,24 @@ export function TimelineCard({ entry, ai, catLabel, catAccent }: CardProps) {
 }
 
 function ReadyCard({ entry, ai, catLabel, catAccent }: CardProps) {
+  const navigate = useNavigate()
   const title = ai?.titleSuggestion || firstText(entry.parts) || '未命名'
   const preview = firstText(entry.parts)
   const bar = catAccent ? BAR[catAccent] : 'bg-t3'
   const tone = catAccent ? CHIP_TONE[catAccent] : 'default'
   return (
-    <article className="relative h-[120px] overflow-hidden rounded-card border border-brd bg-card">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => navigate(`/detail/${entry.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          navigate(`/detail/${entry.id}`)
+        }
+      }}
+      className="relative h-[120px] cursor-pointer overflow-hidden rounded-card border border-brd bg-card"
+    >
       <span className={cn('absolute left-0 top-0 bottom-0 w-1', bar)} />
       <div className="flex h-full flex-col py-[13px] pl-[19px] pr-3">
         <div>
@@ -62,11 +75,23 @@ function ReadyCard({ entry, ai, catLabel, catAccent }: CardProps) {
 }
 
 function ProcessingCard({ entry, catAccent }: CardProps) {
+  const navigate = useNavigate()
   const title = firstText(entry.parts) || '未命名'
   const bar = catAccent ? BAR[catAccent] : 'bg-catPending'
   const { leftText, rightLabel, rightClass } = statusMeta(entry.status)
   return (
-    <article className="relative h-[96px] overflow-hidden rounded-card border border-brd bg-card">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={() => navigate(`/detail/${entry.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          navigate(`/detail/${entry.id}`)
+        }
+      }}
+      className="relative h-[96px] cursor-pointer overflow-hidden rounded-card border border-brd bg-card"
+    >
       <span className={cn('absolute left-0 top-0 bottom-0 w-1', bar)} />
       <div className="flex h-full flex-col py-[13px] pl-[19px] pr-3">
         <h3 className="line-clamp-1 text-[14px] font-medium leading-tight text-ink">{title}</h3>

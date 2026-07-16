@@ -1,10 +1,10 @@
 import { create } from 'zustand'
-import type { Entry, EntryPart, Settings } from '@/domain/types'
-import { seedEntries, seedSettings } from '@/data/seed'
+import type { Category, Entry, EntryAi, EntryPart, Settings, Tag } from '@/domain/types'
+import { seedCategories, seedEntries, seedEntryAi, seedSettings, seedTags } from '@/data/seed'
 import { di } from './di'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：首屏 seed 兜底即时渲染，
-// hydrate() 异步从 Dexie 载入真实条目（含历史保存）替换；finishSave 同时落库。
+// hydrate() 异步从 Dexie 载入真实条目（含历史保存）替换；finishSave 同时落库 + 入队分类。
 interface CaptureDraft {
   parts: EntryPart[]
   recording: boolean
@@ -18,6 +18,9 @@ interface UiState {
   capture: CaptureDraft
   online: boolean
   entries: Entry[] // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
+  aiByEntry: Record<string, EntryAi> // 首屏 seed 兜底，hydrate 从 Dexie 载入；processEntry 成功后补
+  categories: Category[] // 首屏 seed 兜底，hydrate 从 Dexie 载入（含涌现类别）
+  tags: Tag[] // 首屏 seed 兜底，hydrate 从 Dexie 载入（含涌现标签）
   hydrated: boolean // 是否已从 Dexie 载入
   settings: Settings // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
   justSaved: boolean // 刚保存 → 首页 toast + 置顶处理中卡片
@@ -33,6 +36,8 @@ interface UiState {
   clearJustSaved: () => void
   setOnline: (v: boolean) => void
   setSettings: (patch: Partial<Settings>) => void
+  setLlmConfig: (url: string, model: string, key: string) => void
+  processEntry: (entryId: string) => Promise<void>
 }
 
 const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '' }
@@ -41,17 +46,27 @@ export const useUiStore = create<UiState>((set, get) => ({
   capture: emptyDraft,
   online: true,
   entries: seedEntries,
+  aiByEntry: Object.fromEntries(seedEntryAi.map((a) => [a.entryId, a])),
+  categories: seedCategories,
+  tags: seedTags,
   hydrated: false,
   settings: seedSettings,
   justSaved: false,
   hydrate: async () => {
     if (get().hydrated) return
     try {
-      const [entries, settings] = await Promise.all([
+      const [entries, settings, categories, tags] = await Promise.all([
         di.storage.listEntries(),
         di.storage.getSettings(),
+        di.storage.listCategories(),
+        di.storage.listTags(),
       ])
-      set({ entries, settings, hydrated: true })
+      // 载入每条条目的 AI（seed 条目 + 真实保存条目）。getEntryAi 返回最高 version。
+      const aiPairs = await Promise.all(
+        entries.map((e) => di.storage.getEntryAi(e.id).then((ai) => (ai ? [e.id, ai] as const : null))),
+      )
+      const aiByEntry = { ...Object.fromEntries(aiPairs.filter(Boolean) as [string, EntryAi][]) }
+      set({ entries, settings, categories, tags, aiByEntry, hydrated: true })
     } catch (e) {
       // 载入失败：保持 seed 兜底，标记已尝试避免反复重试（存储失败不阻断 UI）
       console.error('[store] hydrate failed', e)
@@ -105,6 +120,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({ capture: emptyDraft, entries: [entry, ...s.entries], justSaved: true })
     // 落库：异步写 Dexie，失败只记日志不伤 UI（处理管线断网不丢后续补）
     void di.storage.saveEntry(entry).catch((e) => console.error('[store] saveEntry failed', e))
+    // 分类入队（火忘）：AI 失败只伤 AI 层（条目标 failed，UI 可重试），采集存储已落库不受影响
+    void get().processEntry(entry.id)
   },
   denyMic: () => set((s) => ({ capture: { ...s.capture, micDenied: true, recording: false } })),
   allowMic: () => set((s) => ({ capture: { ...s.capture, micDenied: false } })),
@@ -116,5 +133,39 @@ export const useUiStore = create<UiState>((set, get) => ({
     const next = { ...get().settings, ...patch }
     set({ settings: next })
     void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+  },
+  setLlmConfig: (url, model, key) => {
+    const cur = get().settings
+    const next = { ...cur, llmUrl: url, llmModel: model, apiKeyRef: key ? 'llm:key' : cur.apiKeyRef }
+    set({ settings: next })
+    void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+    if (key) void di.secrets.set('llm:key', key).catch((e) => console.error('[store] setLlmKey failed', e))
+  },
+  processEntry: async (entryId) => {
+    try {
+      const ai = await di.llm.classify(entryId)
+      await di.storage.saveEntryAi(ai)
+      // 涌现：分类可能新建了类别/标签（适配器已落库），重载让 home chip / detail 标签能解析。
+      const [categories, tags] = await Promise.all([di.storage.listCategories(), di.storage.listTags()])
+      const entry = await di.storage.getEntry(entryId)
+      if (entry) {
+        const updated: Entry = { ...entry, status: 'ready', aiId: ai.id, updatedAt: new Date().toISOString() }
+        await di.storage.saveEntry(updated)
+        set((s) => ({
+          entries: s.entries.map((e) => (e.id === entryId ? updated : e)),
+          aiByEntry: { ...s.aiByEntry, [entryId]: ai },
+          categories,
+          tags,
+        }))
+      }
+    } catch (e) {
+      console.error('[store] processEntry failed', e)
+      const entry = await di.storage.getEntry(entryId)
+      if (entry) {
+        const updated: Entry = { ...entry, status: 'failed', updatedAt: new Date().toISOString() }
+        await di.storage.saveEntry(updated)
+        set((s) => ({ entries: s.entries.map((e) => (e.id === entryId ? updated : e)) }))
+      }
+    }
   },
 }))

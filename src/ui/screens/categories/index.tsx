@@ -1,20 +1,22 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, EmptyState } from '@/ui/components'
-import { seedCategories, seedEntryAi } from '@/data/seed'
 import { useUiStore } from '@/app/store'
-import type { Entry } from '@/domain/types'
+import type { Entry, EntryAi } from '@/domain/types'
 import { CategoryCard } from './CategoryCard'
 
 // Snippet = the latest entry's AI summary within this category.
 // Walk entries (which carry createdAt), keep those whose AI is filed under `slug`,
 // pick the newest, and return its summary.
-function latestSummaryFor(slug: string, entries: Entry[]): string {
-  const aiByEntry = new Map(seedEntryAi.map((a) => [a.entryId, a]))
+function latestSummaryFor(
+  slug: string,
+  entries: Entry[],
+  aiByEntry: Record<string, EntryAi>,
+): string {
   const latest = entries
-    .filter((e) => aiByEntry.get(e.id)?.category === slug)
+    .filter((e) => aiByEntry[e.id]?.category === slug)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
-  return latest ? (aiByEntry.get(latest.id)?.summary ?? '') : ''
+  return latest ? (aiByEntry[latest.id]?.summary ?? '') : ''
 }
 
 function HubIcon() {
@@ -33,12 +35,19 @@ export default function Categories() {
   const [demoEmpty, setDemoEmpty] = useState(false)
 
   const entries = useUiStore((s) => s.entries)
+  const categories = useUiStore((s) => s.categories)
+  const aiByEntry = useUiStore((s) => s.aiByEntry)
+
   const cards = useMemo(
-    () => seedCategories.map((c) => ({ category: c, snippet: latestSummaryFor(c.slug, entries) })),
-    [entries],
+    () =>
+      categories.map((c) => ({
+        category: c,
+        snippet: latestSummaryFor(c.slug, entries, aiByEntry),
+      })),
+    [categories, entries, aiByEntry],
   )
-  const totalCount = seedCategories.reduce((n, c) => n + c.usageCount, 0)
-  const isEmpty = demoEmpty || seedCategories.length === 0
+  const totalCount = categories.reduce((n, c) => n + c.usageCount, 0)
+  const isEmpty = demoEmpty || categories.length === 0
 
   return (
     <div className="px-4 pt-4 pb-6">
@@ -47,7 +56,7 @@ export default function Categories() {
           <h1 className="text-[24px] font-bold leading-tight text-ink">类别地图</h1>
           {!isEmpty && (
             <p className="mt-1 text-[12px] text-t3">
-              {seedCategories.length} 个涌现类别 · {totalCount} 条 · LLM 自动发现
+              {categories.length} 个涌现类别 · {totalCount} 条 · LLM 自动发现
             </p>
           )}
         </div>

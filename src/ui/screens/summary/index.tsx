@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import { seedAggregates, seedCategories, seedEntryAi } from '@/data/seed'
+import { useMemo, useState } from 'react'
+import { seedAggregates } from '@/data/seed'
+import { useUiStore } from '@/app/store'
 import { DigestCard } from './DigestCard'
 
 type Scope = 'day' | 'week' | 'month'
@@ -17,6 +18,10 @@ export default function Summary() {
   const [topRecalc, setTopRecalc] = useState<boolean>(
     seedAggregates[0]?.stale ?? false,
   )
+
+  const aiByEntry = useUiStore((s) => s.aiByEntry)
+  const categories = useUiStore((s) => s.categories)
+  const entryAi = useMemo(() => Object.values(aiByEntry), [aiByEntry])
 
   // scope tab 真正驱动内容：只渲染匹配当前范围的聚合（seed 无 month 聚合 → 空）
   const visible = seedAggregates.filter((ag) => ag.scope.type === scope)
@@ -57,8 +62,8 @@ export default function Summary() {
               <DigestCard
                 key={ag.id}
                 aggregate={ag}
-                entryAi={seedEntryAi}
-                categories={seedCategories}
+                entryAi={entryAi}
+                categories={categories}
                 recalculating={recalculating}
                 onToggle={isTop ? () => setTopRecalc((v) => !v) : undefined}
               />

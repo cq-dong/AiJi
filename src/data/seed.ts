@@ -118,6 +118,8 @@ export const seedAggregates: Aggregate[] = [
 export const seedSettings = {
   llmProvider: 'DeepSeek · BYOK',
   apiKeyRef: undefined,
+  llmUrl: 'https://api.deepseek.com/v1/chat/completions',
+  llmModel: 'deepseek-v4-flash',
   sttProvider: 'Whisper 云端',
   recordLocation: false,
   dailyReminder: false,

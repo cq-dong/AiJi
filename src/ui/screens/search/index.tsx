@@ -1,21 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, EmptyState } from '@/ui/components'
-import { seedCategories, seedTags } from '@/data/seed'
 import { useUiStore } from '@/app/store'
 import { SearchBar } from './SearchBar'
 import { SearchResultCard } from './SearchResultCard'
-import { searchEntries, type SearchResult } from './helpers'
-
-const SUGGESTIONS = [
-  ...seedCategories.slice(0, 4).map((c) => c.label),
-  ...seedTags.slice(0, 2).map((t) => t.label),
-]
-
-const FILTER_CHIPS = [
-  { slug: 'all', label: '全部' },
-  ...seedCategories.map((c) => ({ slug: c.slug, label: c.label })),
-]
+import { searchEntries, todayRefFrom, type SearchResult } from './helpers'
 
 function DocIcon() {
   return (
@@ -29,14 +18,14 @@ function DocIcon() {
   )
 }
 
-function EmptySearch({ onPick }: { onPick: (s: string) => void }) {
+function EmptySearch({ onPick, suggestions }: { onPick: (s: string) => void; suggestions: string[] }) {
   return (
     <div className="mt-2">
       <p className="text-[13px] font-medium text-ink">最近搜索</p>
       <p className="mt-3 text-[12px] text-t3">还没有搜索记录</p>
       <p className="mt-6 text-[12px] text-t3">试试</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        {SUGGESTIONS.map((s) => (
+        {suggestions.map((s) => (
           <button
             key={s}
             type="button"
@@ -59,11 +48,33 @@ export default function Search() {
   const hasQuery = query.trim().length > 0
 
   const entries = useUiStore((s) => s.entries)
+  const categories = useUiStore((s) => s.categories)
+  const tags = useUiStore((s) => s.tags)
+  const aiByEntry = useUiStore((s) => s.aiByEntry)
+
+  const suggestions = useMemo(
+    () => [
+      ...categories.slice(0, 4).map((c) => c.label),
+      ...tags.slice(0, 2).map((t) => t.label),
+    ],
+    [categories, tags],
+  )
+
+  const filterChips = useMemo(
+    () => [
+      { slug: 'all', label: '全部' },
+      ...categories.map((c) => ({ slug: c.slug, label: c.label })),
+    ],
+    [categories],
+  )
+
+  const todayRef = useMemo(() => todayRefFrom(entries), [entries])
+
   const results = useMemo<SearchResult[]>(() => {
-    const all = searchEntries(query, entries)
+    const all = searchEntries(query, entries, categories, tags, aiByEntry)
     if (activeCat === 'all') return all
     return all.filter((r) => r.ai?.category === activeCat)
-  }, [query, activeCat, entries])
+  }, [query, activeCat, entries, categories, tags, aiByEntry])
 
   return (
     <div className="px-4 pb-6 pt-4">
@@ -71,7 +82,7 @@ export default function Search() {
 
       {hasQuery && (
         <div className="mt-3 flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
-          {FILTER_CHIPS.map((c) => (
+          {filterChips.map((c) => (
             <button
               key={c.slug}
               type="button"
@@ -90,7 +101,7 @@ export default function Search() {
       )}
 
       <div className="mt-4 flex flex-col gap-3">
-        {!hasQuery && <EmptySearch onPick={setQuery} />}
+        {!hasQuery && <EmptySearch onPick={setQuery} suggestions={suggestions} />}
 
         {hasQuery && results.length === 0 && (
           <EmptyState
@@ -107,6 +118,7 @@ export default function Search() {
               entry={r.entry}
               ai={r.ai}
               category={r.category}
+              now={todayRef}
               onClick={() => navigate(`/detail/${r.entry.id}`)}
             />
           ))}
