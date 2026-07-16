@@ -150,6 +150,12 @@ function buildZip(files: ZipFile[]): Uint8Array {
 // Derive file extension from blob.type (MIME). Unknown → .bin
 function extFromType(type: string): string {
   const t = type.toLowerCase()
+  if (t.includes('png')) return 'png'
+  if (t.includes('jpeg') || t.includes('jpg')) return 'jpg'
+  if (t.includes('webp')) return 'webp'
+  if (t.includes('gif')) return 'gif'
+  if (t.includes('heic') || t.includes('heif')) return 'heic'
+  if (t.includes('bmp')) return 'bmp'
   if (t.includes('webm')) return 'webm'
   if (t.includes('mp4')) return 'mp4'
   if (t.includes('mpeg')) return 'mp3'
@@ -199,6 +205,9 @@ function buildEntryMarkdown(
 }
 
 export async function exportZip(): Promise<void> {
+  // Cold-load guard: the user may trigger export before hydrate finishes (e.g. a
+  // deep-linked settings action on a fresh load). Snapshot would be empty → empty zip.
+  if (!useUiStore.getState().hydrated) await useUiStore.getState().hydrate()
   const { entries, aiByEntry, categories, tags } = useUiStore.getState()
   const catLabel = (slug: string) => categories.find((c) => c.slug === slug)?.label ?? slug
   const tagLabel = (slug: string) => tags.find((t) => t.slug === slug)?.label ?? slug
@@ -275,6 +284,7 @@ function entryContext(id: string) {
 
 // Single-entry .zip: entries/<id>.md + media/<ref>.<ext> + manifest.json. Mirrors global exportZip.
 export async function exportEntryZip(id: string): Promise<void> {
+  if (!useUiStore.getState().hydrated) await useUiStore.getState().hydrate()
   const ctx = entryContext(id)
   if (!ctx) return
   const { entry, ai, catLabel, tagLabel } = ctx

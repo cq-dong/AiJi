@@ -1,13 +1,13 @@
+import { isoWeekBounds, scopeRange, shiftRef, startOfDay } from '@/domain/dateRange'
 import type { Aggregate, AggregateScopeType, Category, EntryAi } from '@/domain/types'
+
+// A3: scopeRange/shiftRef/isoWeekBounds/startOfDay come from @/domain/dateRange so the
+// week key used to file entries and the label rendered to users share one correct ISO
+// algorithm. Re-exported here for screen-local callers that already import from this module.
+export { scopeRange, shiftRef }
 
 // Seed "today" — anchors relative labels (本周/今日) and 7-day windows.
 const TODAY = new Date('2026-07-15T00:00:00+08:00')
-
-function startOfDay(d: Date): Date {
-  const x = new Date(d)
-  x.setHours(0, 0, 0, 0)
-  return x
-}
 
 function sameDay(a: Date, b: Date): boolean {
   return startOfDay(a).getTime() === startOfDay(b).getTime()
@@ -40,9 +40,7 @@ export function scopeDisplay(ag: Aggregate): ScopeDisplay {
       range: fmtMD(created),
     }
   }
-  const end = startOfDay(created)
-  const start = new Date(end)
-  start.setDate(start.getDate() - 6)
+  const { start, end } = isoWeekBounds(created)
   const includesToday =
     start.getTime() <= TODAY.getTime() && TODAY.getTime() <= end.getTime()
   return {
@@ -101,32 +99,9 @@ export function aggregateChips(
     })
 }
 
-// ── 期间导航（1b 根因：过去时段从未被 recompute 命中）──────────────────────
-// range 字符串必须与 store.scopeRange 逐字一致，"当前"才对得上 store 无 range 的
-// recomputeAggregate(scope) 调用（W28/W27/2026-07-15 等都靠此匹配）。
-export function scopeRange(scope: AggregateScopeType, ref: Date): string {
-  const y = ref.getFullYear()
-  const m = String(ref.getMonth() + 1).padStart(2, '0')
-  const d = String(ref.getDate()).padStart(2, '0')
-  if (scope === 'day') return `${y}-${m}-${d}`
-  if (scope === 'month') return `${y}-${m}`
-  const tmp = new Date(Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate()))
-  const dayNum = (tmp.getUTCDay() + 6) % 7
-  tmp.setUTCDate(tmp.getUTCDate() - dayNum + 3)
-  const isoYear = tmp.getUTCFullYear()
-  const firstThursday = new Date(Date.UTC(isoYear, 0, 4))
-  const week = 1 + Math.round(((tmp.getTime() - firstThursday.getTime()) / 86400000 - 3) / 7)
-  return `${isoYear}-W${String(week).padStart(2, '0')}`
-}
-
-// Shift a reference date by N whole periods (day=±1d, week=±7d, month=±1 month).
-export function shiftRef(scope: AggregateScopeType, ref: Date, periods: number): Date {
-  const next = new Date(ref)
-  if (scope === 'day') next.setDate(next.getDate() + periods)
-  else if (scope === 'month') next.setMonth(next.getMonth() + periods)
-  else next.setDate(next.getDate() + periods * 7)
-  return next
-}
+// ── 期间导航 ──────────────────────────────────────────────────────────────
+// scopeRange / shiftRef 由 @/domain/dateRange 提供（A3：store 与本文件共用同一
+// 正确 ISO 周算法，range key 与标签不再漂移）。上方 re-export 给屏内引用。
 
 // Friendly navigator label for the selected period, anchored at ref.
 export function periodLabel(scope: AggregateScopeType, ref: Date, isCurrent: boolean): string {
@@ -137,9 +112,7 @@ export function periodLabel(scope: AggregateScopeType, ref: Date, isCurrent: boo
     const base = `${ref.getFullYear()}年${ref.getMonth() + 1}月`
     return isCurrent ? `本月 · ${base}` : base
   }
-  const end = startOfDay(ref)
-  const start = new Date(end)
-  start.setDate(start.getDate() - 6)
+  const { start, end } = isoWeekBounds(ref)
   const base = `${fmtMD(start)}–${fmtMD(end)}`
   return isCurrent ? `本周 · ${base}` : base
 }
@@ -180,10 +153,8 @@ function periodLabels(
     if (offset === 1) return { label: '上月', dateLabel: base }
     return { label: base, dateLabel: base }
   }
-  // week — 7-day window ending at ref（沿用 seed 的 7/9–7/15 约定）。
-  const end = startOfDay(ref)
-  const start = new Date(end)
-  start.setDate(start.getDate() - 6)
+  // week — ISO Mon–Sun of ref's week（与 scopeRange 的 ISO 周键逐字对应，A3）。
+  const { start, end } = isoWeekBounds(ref)
   const base = `${fmtMD(start)}–${fmtMD(end)}`
   if (isCurrent) return { label: '本周', dateLabel: base }
   if (offset === 1) return { label: '上周', dateLabel: base }

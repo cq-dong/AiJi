@@ -70,14 +70,13 @@ function streamAsr(pcm: Int16Array, apiKey: string, model: string): Promise<stri
       if (settled) return
       settled = true
       clearTimeout(timer)
+      // 所有 settle 路径（含成功 task-finished）都关 ws——原成功路径不 close 依赖服务端关，socket 可能 linger。
+      try { ws.close() } catch { /* noop */ }
       fn()
     }
     const timeoutMs = Math.min(120000, Math.max(30000, (pcm.length / TARGET_RATE) * 5000))
     const timer = setTimeout(() => {
-      settle(() => {
-        try { ws.close() } catch { /* noop */ }
-        reject(new Error('STT 超时'))
-      })
+      settle(() => reject(new Error('STT 超时')))
     }, timeoutMs)
 
     ws.onopen = () => {

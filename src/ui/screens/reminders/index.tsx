@@ -110,23 +110,30 @@ export default function Reminders() {
             <EmptyPlaceholder text="暂无已提醒记录" />
           ) : (
             fired.map((r) => (
-              <button
+              <div
                 key={r.id}
-                type="button"
-                onClick={() => navigate(`/detail/${r.entryId}`)}
                 className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3"
               >
-                <div className="flex flex-col items-start gap-1">
-                  <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
-                  <span className="text-[13px] text-ink">{r.label}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-chip bg-priS px-2 py-0.5 text-[11px] font-medium text-t2">
-                    {STATUS_LABELS[r.status]}
-                  </span>
-                  <span className="text-[16px] text-t3">›</span>
-                </div>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/detail/${r.entryId}`)}
+                  className="flex flex-1 items-center justify-between text-left"
+                >
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
+                    <span className="text-[13px] text-ink">{r.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-chip bg-priS px-2 py-0.5 text-[11px] font-medium text-t2">
+                      {STATUS_LABELS[r.status]}
+                    </span>
+                    <span className="text-[16px] text-t3">›</span>
+                  </div>
+                </button>
+                <Button variant="ghost" size="sm" className="ml-2 text-t3" onClick={() => void dismissReminder(r.id)}>
+                  清除
+                </Button>
+              </div>
             ))
           )}
         </div>
@@ -140,23 +147,30 @@ export default function Reminders() {
             <EmptyPlaceholder text="暂无错过记录" />
           ) : (
             missed.map((r) => (
-              <button
+              <div
                 key={r.id}
-                type="button"
-                onClick={() => navigate(`/detail/${r.entryId}`)}
                 className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3"
               >
-                <div className="flex flex-col items-start gap-1">
-                  <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
-                  <span className="text-[13px] text-ink">{r.label}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-chip bg-priS px-2 py-0.5 text-[11px] font-medium text-catFail">
-                    {STATUS_LABELS[r.status]}
-                  </span>
-                  <span className="text-[16px] text-t3">›</span>
-                </div>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/detail/${r.entryId}`)}
+                  className="flex flex-1 items-center justify-between text-left"
+                >
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
+                    <span className="text-[13px] text-ink">{r.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-chip bg-priS px-2 py-0.5 text-[11px] font-medium text-catFail">
+                      {STATUS_LABELS[r.status]}
+                    </span>
+                    <span className="text-[16px] text-t3">›</span>
+                  </div>
+                </button>
+                <Button variant="ghost" size="sm" className="ml-2 text-t3" onClick={() => void dismissReminder(r.id)}>
+                  清除
+                </Button>
+              </div>
             ))
           )}
         </div>

@@ -78,9 +78,19 @@ export const webCapture: CapturePort = {
 
     chunks = []
     if (typeof MediaRecorder !== 'undefined') {
-      recorder = new MediaRecorder(stream)
-      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
-      recorder.start()
+      try {
+        recorder = new MediaRecorder(stream)
+        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+        recorder.start()
+      } catch (e) {
+        // L2: MediaRecorder 构造失败（Safari MIME 边界等）→ 释放已 getUserMedia 的 mic stream 免泄漏
+        // （否则 throw 传播到 store catch 只设 recording:false，stopAudio 早返不发 track.stop → mic 灯长亮）。
+        // 降级：WebSpeech live 预览仍可用（独立于 stream），stopAudio 返 blob=undefined（transcript-only）。
+        console.error('[webCapture] MediaRecorder construction failed', e)
+        stream?.getTracks().forEach((t) => t.stop())
+        stream = null
+        recorder = null
+      }
     }
     startedAt = Date.now()
 
@@ -218,17 +228,28 @@ export const webCapture: CapturePort = {
     input.accept = 'image/*,video/*'
     input.style.display = 'none'
     document.body.appendChild(input)
+    let onFocus: (() => void) | null = null
     const picked = new Promise<globalThis.File | null>((resolve) => {
-      input.onchange = () => resolve(input.files?.[0] ?? null)
-      // No cancel event on file inputs; we resolve null on a subsequent focus, but
-      // simplest: leave the promise pending if cancelled — caller times out via the
-      // next interaction. To keep it tractable we resolve null on window focus + delay.
-      const onFocus = () => { window.setTimeout(() => { if (!input.files?.length) resolve(null); window.removeEventListener('focus', onFocus) }, 300) }
+      let settled = false
+      let hardTimer: ReturnType<typeof setTimeout> | undefined
+      const done = (v: globalThis.File | null) => {
+        if (settled) return
+        settled = true
+        if (hardTimer) clearTimeout(hardTimer)
+        resolve(v)
+      }
+      input.onchange = () => done(input.files?.[0] ?? null)
+      // L3: 移动端文件选择器取消不触发 onchange 也不稳定触发 window.focus → picked 永挂、
+      // handleGallery 卡死、input 泄漏 DOM。focus 兜底（桌面取消回焦点）+ 30s 硬超时 backstop（移动取消常无 focus 信号）。
+      onFocus = () => { window.setTimeout(() => { if (!input.files?.length) done(null) }, 300) }
       window.addEventListener('focus', onFocus)
+      hardTimer = setTimeout(() => done(null), 30_000)
     })
     input.click()
     const file = await picked
-    document.body.removeChild(input)
+    // L3: resolve 后立刻摘 onFocus listener（原 onchange 成功路径不摘，依赖后续 focus 触发清理 → 移动端可能永挂）。
+    if (onFocus) window.removeEventListener('focus', onFocus)
+    if (input.parentNode) document.body.removeChild(input)
     if (!file) return null
     const kind: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image'
     let durationSec = 0

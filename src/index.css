@@ -4,6 +4,31 @@
 @tailwind components;
 @tailwind utilities;
 
+/* A1: 主题色 token（tailwind 颜色引用 rgb(var(--c-*) / <alpha>)）。
+   :root 浅色 / .dark 深色。App.tsx 按 settings.theme 在 documentElement 上 toggle .dark。 */
+:root {
+  color-scheme: light;
+  --c-page: 247 247 250; /* #f7f7fa */
+  --c-card: 255 255 255; /* #fff */
+  --c-ink: 20 20 26; /* #14141a */
+  --c-t2: 107 107 117; /* #6b6b75 */
+  --c-t3: 154 154 165; /* #9a9aa5 */
+  --c-pri: 79 70 229; /* #4f46e5 */
+  --c-priS: 238 237 253; /* #eeedfd */
+  --c-brd: 236 236 239; /* #ececef */
+}
+.dark {
+  color-scheme: dark;
+  --c-page: 17 17 21;
+  --c-card: 27 27 33;
+  --c-ink: 240 240 245;
+  --c-t2: 161 161 170;
+  --c-t3: 120 120 132;
+  --c-pri: 129 122 245;
+  --c-priS: 41 39 71;
+  --c-brd: 43 43 51;
+}
+
 @layer base {
   html,
   body,
@@ -12,6 +37,8 @@
   }
   body {
     margin: 0;
+    /* 桌面预览时 frame 外区域与 page 同色（深浅随 .dark） */
+    background-color: rgb(var(--c-page) / 1);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }

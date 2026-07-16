@@ -59,6 +59,13 @@ export default function Capture() {
   urlsRef.current = mediaUrls
   useEffect(() => () => { Object.values(urlsRef.current).forEach((u) => URL.revokeObjectURL(u)) }, [])
 
+  // L1: 卸载时若在录音/相机 → 停 tracks，免麦克风指示灯/相机常驻（用户按 X 关、navigate 离开均触发 unmount）。
+  // stopRecording 把在录音频 finalize 成 part 落到 store（post-unmount set 仍生效），stopCamera 释放相机流。
+  useEffect(() => () => {
+    if (useUiStore.getState().capture.recording) void useUiStore.getState().stopRecording()
+    void di.capture.stopCamera()
+  }, [])
+
   // Count-up timer while voice-recording.
   useEffect(() => {
     if (!recording) { setElapsed(0); return }
@@ -66,14 +73,13 @@ export default function Capture() {
     return () => window.clearInterval(id)
   }, [recording])
 
-  // Saving: after a short beat, finish + return home.
+  // Saving: persist + return home. (B3: 去掉原 1200ms 人工延迟——延迟期间条目只在 Zustand 内存，
+  // 刷新/崩溃丢文本 part + 已 saveMedia 的 blob 成孤儿。finishSave (D7) 已 await saveEntry 落库；
+  // saving 态在 await 期间自然驱动 SaveBar spinner，是真实落库耗时而非假延迟。)
   useEffect(() => {
     if (!saving) return
-    const id = window.setTimeout(() => {
-      finishSave()
-      navigate('/')
-    }, 1200)
-    return () => window.clearTimeout(id)
+    void finishSave()
+    navigate('/')
   }, [saving, finishSave, navigate])
 
   // Draft hint: if parts were empty on mount, check again after hydrate

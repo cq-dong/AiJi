@@ -39,6 +39,20 @@ async function ensureSeeded(): Promise<void> {
   seeded = true
 }
 
+// D5: 硬删路径（trash 永久删除 + 30 天 purge）清 OPFS 媒体 blob，免配额累积（iOS 尤甚）。
+// 软删（trashEntry）不调——恢复需要媒体。best-effort：OPFS 不支持/ref 不存在 → 静默。
+async function removeMediaForEntry(e: Entry): Promise<void> {
+  for (const p of e.parts) {
+    if (p.type !== 'audio' && p.type !== 'video') continue
+    try {
+      const root = await navigator.storage?.getDirectory?.()
+      if (root) await root.removeEntry(p.ref).catch(() => {})
+    } catch {
+      // OPFS unsupported — best-effort
+    }
+  }
+}
+
 export const dexieStorage: StoragePort = {
   async listEntries() {
     await ensureSeeded()
@@ -59,7 +73,12 @@ export const dexieStorage: StoragePort = {
     await ensureSeeded()
     const rows = await db.entryAi.where('entryId').equals(entryId).toArray()
     if (rows.length === 0) return undefined
-    return rows.reduce((a, b) => (a.version > b.version ? a : b))
+    // D1: 严格 > 在等版本上随机取（Dexie toArray 主键序）。改 >= + createdAt tie-break，
+    // 始终返回最高版本 + 最新创建的 EntryAi。配合 deepSeekLlm.classify 版本递增，重处理不再返过期 AI。
+    return rows.reduce((a, b) => {
+      if (b.version !== a.version) return b.version > a.version ? b : a
+      return new Date(b.createdAt).getTime() > new Date(a.createdAt).getTime() ? b : a
+    })
   },
   async saveEntryAi(ai) {
     await db.entryAi.put(ai)
@@ -97,9 +116,10 @@ export const dexieStorage: StoragePort = {
     await db.aggregates.put(ag)
   },
   async getSettings() {
-    // Single-row settings at key 1. Fall back to seed on first run / empty DB.
+    // D2: 合并 seedSettings defaults——旧用户行缺 Wave 3 加的 aggregateDetailLevel 等字段时，
+    // seed 兜底（不返 undefined 谎称类型）。row 不存在时 {...seed, ...{}} = seed。
     const row = await db.settings.get(1)
-    return row ?? seedSettings
+    return { ...seedSettings, ...row }
   },
   async saveSettings(s) {
     // Upsert the single settings row at fixed key 1 (++id never fires — explicit key).
@@ -130,6 +150,15 @@ export const dexieStorage: StoragePort = {
       return undefined // not found (seed parts) or OPFS unsupported
     }
   },
+  async deleteMedia(ref: string): Promise<void> {
+    try {
+      const root = await navigator.storage?.getDirectory?.()
+      if (!root) return
+      await root.removeEntry(ref)
+    } catch {
+      // OPFS unsupported / ref absent — best-effort
+    }
+  },
   async listReminders(): Promise<Reminder[]> {
     await ensureSeeded()
     const all = await db.reminders.toArray()
@@ -150,8 +179,10 @@ export const dexieStorage: StoragePort = {
     await db.categories.delete(slug)
   },
   async deleteEntry(id: string): Promise<void> {
+    // D5: 先取 entry 清 OPFS 媒体，再删 Dexie 行 + 级联 AI/reminders。
+    const e = await db.entries.get(id)
+    if (e) await removeMediaForEntry(e)
     await db.entries.delete(id)
-    // 删该条目的所有 AI 版本（entryAi byEntry index）+ 关联提醒（reminders byEntry index）。
     await db.entryAi.where('entryId').equals(id).delete()
     await db.reminders.where('entryId').equals(id).delete()
   },
@@ -196,6 +227,7 @@ export const dexieStorage: StoragePort = {
     const all = await db.entries.toArray()
     const expired = all.filter((e) => e.deletedAt && new Date(e.deletedAt).getTime() < cutoff)
     for (const e of expired) {
+      await removeMediaForEntry(e)
       await db.entries.delete(e.id)
       await db.entryAi.where('entryId').equals(e.id).delete()
       await db.reminders.where('entryId').equals(e.id).delete()

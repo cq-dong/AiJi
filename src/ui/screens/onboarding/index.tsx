@@ -30,6 +30,8 @@ export default function Onboarding() {
   }
 
   const onStart = () => {
+    // A2: 标记已 onboarding —— 之后再开不再重定向到这里（router OnboardingGate 据此放行）。
+    useUiStore.getState().setSettings({ onboarded: true })
     const key = apiKey.trim()
     if (key) {
       useUiStore.getState().setLlmConfig(
@@ -63,7 +65,7 @@ export default function Onboarding() {
       <div className="mt-6">
         <label className="text-[11px] font-medium text-t3">API Key</label>
         <input
-          type="text"
+          type="password"
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           placeholder="粘贴你的 DeepSeek / OpenAI API Key"

@@ -1,7 +1,9 @@
 import { lazy, Suspense } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import type { ReactNode } from 'react'
 import { BareLayout, MainLayout } from '@/ui/layout/AppShell'
 import { Spinner } from '@/ui/components'
+import { useUiStore } from '@/app/store'
 
 const Home = lazy(() => import('@/ui/screens/home'))
 const Categories = lazy(() => import('@/ui/screens/categories'))
@@ -23,10 +25,24 @@ function Loading() {
   )
 }
 
+// A2: 首次运行 gating。hydrate 完成后若未 onboarding 过且不在 /onboarding → 重定向。
+// hydrate 前不重定向（seed.onboarded=false 会误闪 onboarding，hydrate 后存量用户行 onboarded
+// 若缺也视作未完成——引入 gating 的预期是存量用户首次也见一次 onboarding）。
+function OnboardingGate({ children }: { children: ReactNode }) {
+  const hydrated = useUiStore((s) => s.hydrated)
+  const onboarded = useUiStore((s) => s.settings.onboarded)
+  const location = useLocation()
+  if (hydrated && !onboarded && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />
+  }
+  return <>{children}</>
+}
+
 export function AppRouter() {
   return (
     <Suspense fallback={<Loading />}>
-      <Routes>
+      <OnboardingGate>
+        <Routes>
         <Route element={<MainLayout />}>
           <Route index element={<Home />} />
           <Route path="categories" element={<Categories />} />
@@ -43,7 +59,8 @@ export function AppRouter() {
           <Route path="trash" element={<Trash />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </OnboardingGate>
     </Suspense>
   )
 }

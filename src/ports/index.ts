@@ -18,10 +18,12 @@ export interface StoragePort {
   saveAggregate(ag: Aggregate): Promise<void>
   getSettings(): Promise<Settings>
   saveSettings(s: Settings): Promise<void>
-  // Media blobs (audio/video) persist to OPFS (PRD §7.2 媒体后置→A2)。ref = EntryPart.ref.
-  // saveMedia: persist (or overwrite) a blob. getMedia: read back; undefined if absent or OPFS unsupported.
+  // Media blobs (audio/video) persist to OPFS (PRD §7.2 媒体后置→A2)。ref = EntryPart.ref。
+  // saveMedia: persist (or overwrite) a blob. getMedia: read back; undefined if absent or OPFS unsupported。
+  // deleteMedia (D5): hard-delete paths (trash 永久删除 + 30 天 purge) 调用，清 OPFS blob 免配额累积。
   saveMedia(ref: string, blob: Blob): Promise<void>
   getMedia(ref: string): Promise<Blob | undefined>
+  deleteMedia(ref: string): Promise<void>
   // Reminders (Phase 9 Batch 2b). foreground-only (Q1), dueAt is absolute ISO (Q2).
   listReminders(): Promise<Reminder[]>
   getReminder(id: string): Promise<Reminder | undefined>
@@ -99,4 +101,6 @@ export interface LlmPort {
 export interface SecretStorePort {
   get(key: string): Promise<string | undefined>
   set(key: string, value: string): Promise<void>
+  // D8: 清空 BYOK key 时删 localStorage 行——否则旧 key 残留、UI 仍显「已配置」。
+  delete(key: string): Promise<void>
 }

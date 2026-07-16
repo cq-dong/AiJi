@@ -145,6 +145,8 @@ export interface Settings {
   recordLocation: boolean
   dailyReminder: boolean
   theme: 'light' | 'dark' | 'system'
+  // A2: 首次运行 onboarding gating。onboarding 完成 → true；absent/undefined 视为未完成（存量用户首次也会见一次 onboarding，符合引入 gating 的预期）。
+  onboarded?: boolean
   // Wave 3: aggregate digest verbosity (1-5, default 3). Stored on Aggregate so
   // changing this marks existing digests stale → recompute at new verbosity.
   aggregateDetailLevel: 1 | 2 | 3 | 4 | 5

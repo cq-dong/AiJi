@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Aggregate, AggregateScopeType, Category, Draft, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import { scopeRange } from '@/domain/dateRange'
 import { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedReminders, seedSettings, seedTags } from '@/data/seed'
 import { di } from './di'
 
@@ -38,7 +39,7 @@ interface UiState {
   startRecording: () => Promise<void>
   stopRecording: () => Promise<void>
   beginSave: () => void
-  finishSave: () => void
+  finishSave: () => Promise<void>
   denyMic: () => void
   allowMic: () => void
   addPart: (p: EntryPart) => void
@@ -76,23 +77,9 @@ interface UiState {
 
 const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined, title: undefined }
 
-// Compute the range string (dateKey) for a given scope anchored at a reference date.
-// day → '2026-07-15' · week → '2026-W28' · month → '2026-07'.
-function scopeRange(scope: AggregateScopeType, ref: Date): string {
-  const y = ref.getFullYear()
-  const m = String(ref.getMonth() + 1).padStart(2, '0')
-  const d = String(ref.getDate()).padStart(2, '0')
-  if (scope === 'day') return `${y}-${m}-${d}`
-  if (scope === 'month') return `${y}-${m}`
-  // ISO week: Thursday-based to avoid year-boundary edge cases.
-  const tmp = new Date(Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate()))
-  const dayNum = (tmp.getUTCDay() + 6) % 7
-  tmp.setUTCDate(tmp.getUTCDate() - dayNum + 3)
-  const isoYear = tmp.getUTCFullYear()
-  const firstThursday = new Date(Date.UTC(isoYear, 0, 4))
-  const week = 1 + Math.round(((tmp.getTime() - firstThursday.getTime()) / 86400000 - 3) / 7)
-  return `${isoYear}-W${String(week).padStart(2, '0')}`
-}
+// range key (dateKey) for a scope+ref comes from @/domain/dateRange (A3: same ISO-week
+// algorithm the summary navigator uses, so filed entries match the period card).
+// day → '2026-07-15' · week → '2026-W29' · month → '2026-07'.
 
 // Filter entries that fall within the given scope+range. Each entry's own
 // createdAt determines which day/week/month it belongs to; we match the range string.
@@ -239,7 +226,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     }))
   },
   beginSave: () => set((s) => ({ capture: { ...s.capture, recording: false, saving: true } })),
-  finishSave: () => {
+  finishSave: async () => {
     const s = get()
     const parts = s.capture.parts
     if (parts.length === 0) { set({ capture: emptyDraft, justSaved: false }); return }
@@ -260,8 +247,17 @@ export const useUiStore = create<UiState>((set, get) => ({
         .then(() => set((st) => ({ drafts: st.drafts.filter((d) => d.id !== draftId) })))
         .catch((e) => console.error('[store] deleteDraft(resumed) failed', e))
     }
-    // 落库：异步写 Dexie，失败只记日志不伤 UI（处理管线断网不丢后续补）
-    void di.storage.saveEntry(entry).catch((e) => console.error('[store] saveEntry failed', e))
+    // D7: 先 await saveEntry 再 processEntry —— 否则慢 IndexedDB 上 saveEntry 未提交时 processEntry 的
+    // getEntry 返 undefined → ready 更新静默跳过、无 catch 触发 → 条目卡 processing 永转圈。落库失败 →
+    // 标 failed（UI 显重试，不是永转 processing）。
+    try {
+      await di.storage.saveEntry(entry)
+    } catch (e) {
+      console.error('[store] saveEntry failed', e)
+      const failed: Entry = { ...entry, status: 'failed' }
+      set((st) => ({ entries: st.entries.map((x) => (x.id === entry.id ? failed : x)) }))
+      return
+    }
     // 分类入队（火忘）：AI 失败只伤 AI 层（条目标 failed，UI 可重试），采集存储已落库不受影响
     void get().processEntry(entry.id)
   },
@@ -364,17 +360,21 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
   setLlmConfig: (url, model, key) => {
     const cur = get().settings
-    const next = { ...cur, llmUrl: url, llmModel: model, apiKeyRef: key ? 'llm:key' : cur.apiKeyRef }
+    // D8: key 清空 → apiKeyRef 置 undefined + 删 localStorage 行。否则旧 key 残留、UI 仍显「已配置」、XSS 可读旧值。
+    const next = { ...cur, llmUrl: url, llmModel: model, apiKeyRef: key ? 'llm:key' : undefined }
     set({ settings: next })
     void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
     if (key) void di.secrets.set('llm:key', key).catch((e) => console.error('[store] setLlmKey failed', e))
+    else void di.secrets.delete('llm:key').catch((e) => console.error('[store] deleteLlmKey failed', e))
   },
   setSttConfig: (model, key) => {
     const cur = get().settings
-    const next = { ...cur, sttModel: model, sttKeyRef: key ? 'stt:key' : cur.sttKeyRef }
+    // D8: 同 setLlmConfig——清空时删 secret + 清 ref。
+    const next = { ...cur, sttModel: model, sttKeyRef: key ? 'stt:key' : undefined }
     set({ settings: next })
     void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
     if (key) void di.secrets.set('stt:key', key).catch((e) => console.error('[store] setSttKey failed', e))
+    else void di.secrets.delete('stt:key').catch((e) => console.error('[store] deleteSttKey failed', e))
   },
   processEntry: async (entryId) => {
     try {
@@ -457,6 +457,10 @@ export const useUiStore = create<UiState>((set, get) => ({
     // Wave 3: detailLevel 变了也算过期——避免级别改了却显示旧级别摘要。
     if (existing && !existing.stale && (existing.detailLevel ?? 3) === lvl) return
     const recalcingKey = `${scope}:${dateKey}`
+    // D9: in-flight 守卫——processEntry 与 summary onRegen 并发调同 scope+range 时，第二个直接 return，
+    // 不发第二次付费 LLM 调用（结果会互相踩）。summary sweep 的 RECOMPUTE_CONCURRENCY=2 只限单 source 内并发，
+    // 不防跨 source；此守卫补上跨 source。in-flight 完成后会 set 聚合结果，跳过者自然看到更新。
+    if (get().recalculating[recalcingKey]) return
     // recalculating 与 stale 分离：in-flight 标记驱动 UI spinner；失败时清 in-flight、留 stale → 显「重新生成」而非永转（1b 修）。
     set((s) => ({ recalculating: { ...s.recalculating, [recalcingKey]: true } }))
     const prevStale = existing?.stale ?? false
@@ -512,14 +516,19 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     await di.storage.saveReminder(r)
     // 确认即消费 suggestion：清掉 EntryAi 上的 reminderSuggestion，避免 reload 后卡片重现 → 重确认建重复 Reminder。
-    // fire-and-forget：Reminder 已落库（关键步），清 suggestion 是 cosmetic——写失败不应让 confirmReminder reject（否则用户重试会建重复）。
+    // D11: await saveEntryAi（不再 fire-and-forget）——否则在途 processEntry 的 saveEntryAi(含原 suggestion) 会覆盖
+    // cleared 版本 → suggestion 复活 → reload 后 ReminderConfirm 卡重现 → 可重确认建重复 Reminder。写失败只记日志
+    // 不让 confirmReminder reject（Reminder 已落库是关键步，suggestion 清除是 cosmetic；reject 反致用户重试建重复）。
     // 深链直达 detail 时 hydrate 可能尚未载入 aiByEntry → 从 Dexie 取，确保 suggestion 仍被清掉。
     const ai = get().aiByEntry[entryId] ?? (await di.storage.getEntryAi(entryId))
     if (ai?.reminderSuggestion) {
       const cleared: EntryAi = { ...ai, reminderSuggestion: undefined }
-      void di.storage.saveEntryAi(cleared)
-        .then(() => set((s) => ({ aiByEntry: { ...s.aiByEntry, [entryId]: cleared } })))
-        .catch((e) => console.error('[store] clear reminderSuggestion failed', e))
+      try {
+        await di.storage.saveEntryAi(cleared)
+        set((s) => ({ aiByEntry: { ...s.aiByEntry, [entryId]: cleared } }))
+      } catch (e) {
+        console.error('[store] clear reminderSuggestion failed', e)
+      }
     }
     set((s) => ({ reminders: [r, ...s.reminders] }))
     scheduleReminders()

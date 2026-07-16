@@ -78,6 +78,22 @@ ${content}
   ]
 }
 
+// thinking:{type:'disabled'} 是 DeepSeek 私有参数；严格 OpenAI 兼容服务（Azure/vLLM/llama.cpp）
+// 会返 400。仅在 endpoint/model 指示 DeepSeek 时发送——port 契约称「OpenAI 兼容」才名副其实。
+function isDeepSeek(url: string, model: string): boolean {
+  return /deepseek/i.test(url) || /deepseek/i.test(model)
+}
+
+function asStringArray(v: unknown): string[] | undefined {
+  return Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : undefined
+}
+
+function asStringRecord(v: unknown): Record<string, unknown> | undefined {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined
+}
+
+// 轻校验：LLM 响应是外部边界，畸形 JSON 不应静默流入 EntryAi.facets（审计 minor / S3）。
+// 不做完整 schema 校验，只把字段类型守到契约内，畸形部分降级为 undefined 而非 as 强转。
 function parseJson(raw: string): ClassifyResult {
   let s = raw.trim()
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
@@ -85,7 +101,24 @@ function parseJson(raw: string): ClassifyResult {
   const start = s.indexOf('{')
   const end = s.lastIndexOf('}')
   if (start === -1 || end === -1 || end <= start) throw new Error('LLM 未返回 JSON')
-  return JSON.parse(s.slice(start, end + 1)) as ClassifyResult
+  const parsed = JSON.parse(s.slice(start, end + 1))
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('LLM 未返回 JSON 对象')
+  }
+  const p = parsed as Record<string, unknown>
+  const reminder = asStringRecord(p.reminderSuggestion)
+  return {
+    categorySlug: typeof p.categorySlug === 'string' ? p.categorySlug : '',
+    categoryLabel: typeof p.categoryLabel === 'string' ? p.categoryLabel : undefined,
+    tags: asStringArray(p.tags),
+    facets: asStringRecord(p.facets) as ClassifyResult['facets'],
+    titleSuggestion: typeof p.titleSuggestion === 'string' ? p.titleSuggestion : undefined,
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    reminderSuggestion:
+      reminder && typeof reminder.dueAt === 'string' && typeof reminder.label === 'string'
+        ? { dueAt: reminder.dueAt, label: reminder.label }
+        : undefined,
+  }
 }
 
 interface AggregateResult {
@@ -152,7 +185,16 @@ function parseAggregateJson(raw: string): AggregateResult {
   const start = s.indexOf('{')
   const end = s.lastIndexOf('}')
   if (start === -1 || end === -1 || end <= start) throw new Error('LLM 未返回 JSON')
-  return JSON.parse(s.slice(start, end + 1)) as AggregateResult
+  const parsed = JSON.parse(s.slice(start, end + 1))
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('LLM 未返回 JSON 对象')
+  }
+  const p = parsed as Record<string, unknown>
+  return {
+    sentences: asStringArray(p.sentences),
+    summary: typeof p.summary === 'string' ? p.summary : undefined,
+    highlights: asStringArray(p.highlights),
+  }
 }
 
 export const deepSeekLlm: LlmPort = {
@@ -169,10 +211,11 @@ export const deepSeekLlm: LlmPort = {
     const categories = await di.storage.listCategories()
     const tags = await di.storage.listTags()
     // thinking 关闭：v4-flash/pro 默认走 reasoning_content（content 空），关掉后 JSON 直出 content，适配器才读得到。
+    // DeepSeek 私有参数——非 DeepSeek endpoint 不发（isDeepSeek 守门），免得严格 OpenAI 兼容服务返 400。
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages: buildPrompt(content, toLocalIso(entry.createdAt), categories, tags), max_tokens: 512, temperature: 0.3, thinking: { type: 'disabled' } }),
+      body: JSON.stringify({ model, messages: buildPrompt(content, toLocalIso(entry.createdAt), categories, tags), max_tokens: 512, temperature: 0.3, ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}) }),
     })
     if (!res.ok) {
       const t = await res.text().catch(() => '')
@@ -183,10 +226,12 @@ export const deepSeekLlm: LlmPort = {
     if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
     const parsed = parseJson(raw)
     const now = new Date().toISOString()
+    // tags 去重（LLM 偶返重复 slug，审计 minor）
+    const dedupTags = [...new Set(parsed.tags ?? [])]
 
     // 涌现：新标签落库（label=slug，用户后续可策展重命名）
     const tagSlugs = new Set(tags.map((t) => t.slug))
-    for (const slug of parsed.tags ?? []) {
+    for (const slug of dedupTags) {
       if (!tagSlugs.has(slug)) {
         await di.storage.saveTag({ slug, label: slug, usageCount: 0, createdAt: now })
         tagSlugs.add(slug)
@@ -204,12 +249,16 @@ export const deepSeekLlm: LlmPort = {
       })
     }
 
+    // D1: 版本递增——重处理生成更新版本，配合 dexieStorage.getEntryAi 的 createdAt tie-break，
+    // detail「重处理」不再返回过期 AI。
+    const priorAi = await di.storage.getEntryAi(entryId)
+
     const ai: EntryAi = {
       id: crypto.randomUUID(),
       entryId,
-      version: 1,
+      version: (priorAi?.version ?? 0) + 1,
       category: parsed.categorySlug,
-      tags: parsed.tags ?? [],
+      tags: dedupTags,
       facets: parsed.facets ?? {},
       titleSuggestion: parsed.titleSuggestion,
       summary: parsed.summary,
@@ -239,16 +288,19 @@ export const deepSeekLlm: LlmPort = {
     )
     const valid = entries.flatMap((e) => (e === null ? [] : [e]))
     if (valid.length === 0) throw new Error('条目无文本可聚合')
+    // D4: 存前 clamp 到 1-5——否则 detailLevel=99 生成 level-5 prompt 但 Aggregate.detailLevel=99，
+    // stale guard 99===99 跳过重算，元数据与内容不一致。clamp 后 prompt 与 stored 一致。
+    const clampedLevel = Math.min(5, Math.max(1, detailLevel ?? 3))
 
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: buildAggregatePrompt(valid, scope, detailLevel ?? 3),
+        messages: buildAggregatePrompt(valid, scope, clampedLevel),
         max_tokens: 768,
         temperature: 0.4,
-        thinking: { type: 'disabled' },
+        ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}),
       }),
     })
     if (!res.ok) {
@@ -266,11 +318,12 @@ export const deepSeekLlm: LlmPort = {
       scope: { type: scope, range },
       summary: parsed.sentences && parsed.sentences.length > 0 ? parsed.sentences.join('') : (parsed.summary ?? ''),
       highlights: parsed.highlights,
-      entryIds,
+      // D3: 存校验子集（valid），非原始入参——否则 scan 与 getEntry 之间被删的 id 残留成幽灵。
+      entryIds: valid.map((v) => v.id),
       modelUsed: model,
       createdAt: now,
       stale: false,
-      detailLevel: detailLevel ?? 3,
+      detailLevel: clampedLevel,
     }
     return ag
   },

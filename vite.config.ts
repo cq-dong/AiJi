@@ -8,11 +8,15 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // B2: auto-inject SW registration script into index.html —— 原默认 false 导致 SW 生成但运行时无注册代码，
+      // 不满足 PWA installability criteria（Chrome/iOS 不弹「添加到主屏」）。
+      injectRegister: 'auto',
       manifest: {
         name: 'AiJi · AI 记',
         short_name: 'AiJi',
         description: '通用的「记」的工具',
-        theme_color: '#4f46e5',
+        // 与 meta theme-color (#f7f7fa) + background_color 对齐 —— 原此处 #4f46e5 与 meta 不一致（minor）。
+        theme_color: '#f7f7fa',
         background_color: '#f7f7fa',
         display: 'standalone',
         start_url: '/',

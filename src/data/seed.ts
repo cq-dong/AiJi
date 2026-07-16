@@ -140,4 +140,5 @@ export const seedSettings = {
   dailyReminder: false,
   theme: 'light' as const,
   aggregateDetailLevel: 3 as const,
+  onboarded: false,
 }

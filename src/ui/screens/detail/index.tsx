@@ -571,7 +571,7 @@ export default function Detail() {
         onDelete={() => setConfirmingDelete(true)}
       />
 
-      {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event) && !todoHidden[entry.id] && (
+      {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event) && !ai.reminderSuggestion && !todoHidden[entry.id] && (
         <TodoConfirm
           entryId={entry.id}
           title={ai.titleSuggestion ?? ''}

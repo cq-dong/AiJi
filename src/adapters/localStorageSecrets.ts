@@ -13,6 +13,17 @@ export const localStorageSecrets: SecretStorePort = {
     }
   },
   async set(key, value) {
-    localStorage.setItem(key, value)
+    try {
+      localStorage.setItem(key, value)
+    } catch {
+      // 与 get 对称：QuotaExceeded / 隐私模式 → 静默降级（AI 层无 key，采集存储不伤）
+    }
+  },
+  async delete(key) {
+    try {
+      localStorage.removeItem(key)
+    } catch {
+      // 同上
+    }
   },
 }
