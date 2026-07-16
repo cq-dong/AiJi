@@ -22,6 +22,15 @@ export class AiJiDB extends Dexie {
       aggregates: 'id, scope.type, stale',
       settings: '++id',
     })
+    // v2: add scope.range index for getAggregate(scope, range) lookups.
+    this.version(2).stores({
+      entries: 'id, createdAt, updatedAt, status',
+      entryAi: 'id, entryId, version',
+      categories: 'slug, usageCount',
+      tags: 'slug, usageCount',
+      aggregates: 'id, scope.type, scope.range, stale',
+      settings: '++id',
+    })
   }
 }
 

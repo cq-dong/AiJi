@@ -84,6 +84,7 @@ export interface Aggregate {
   id: string
   scope: { type: AggregateScopeType; range: string } // range: '2026-07-15' / '2026-W28' / '2026-07'
   summary: string
+  highlights?: string[] // optional LLM-highlighted key items
   entryIds: string[]
   modelUsed: string
   createdAt: string

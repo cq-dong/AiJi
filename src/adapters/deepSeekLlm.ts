@@ -1,5 +1,5 @@
 import type { LlmPort } from '@/ports'
-import type { Category, Entry, EntryAi, Facets, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, Facets, Tag } from '@/domain/types'
 import { di } from '@/app/di'
 
 // LlmPort PWA 适配：DeepSeek（OpenAI 兼容 chat）BYOK。key/url/model 从 Settings(llmUrl/llmModel)
@@ -65,6 +65,78 @@ function parseJson(raw: string): ClassifyResult {
   return JSON.parse(s.slice(start, end + 1)) as ClassifyResult
 }
 
+interface AggregateResult {
+  summary: string
+  highlights?: string[]
+}
+
+// Build the aggregate prompt: given N entries (text + their AI summaries), ask
+// the LLM to produce a period-level digest. few-shot one example.
+function buildAggregatePrompt(
+  entries: { id: string; text: string; aiSummary?: string }[],
+  scope: AggregateScopeType,
+) {
+  const scopeLabel = scope === 'day' ? '日' : scope === 'week' ? '周' : '月'
+  const system = `你是「AiJi」(AI 记) 的聚合摘要助手。给定一个${scopeLabel}内用户的若干条「记」条目（每条含原文与 AI 单条摘要），输出该${scopeLabel}的聚合摘要。
+
+铁律：
+1. 聚合摘要应覆盖该时段的主要主题与线索，2-4 句话，中文。
+2. highlights 为 2-4 条该时段的关键亮点（每条 ≤16 字），反映最重要的内容/想法/进展。
+3. 不要罗列每条条目，要提炼跨条目的共性与脉络。
+4. 情绪只是可选侧面——若整体情绪明显可提，但不当主轴。
+
+输出 JSON schema：
+{"summary":string,"highlights":string[]}
+
+只输出 JSON，不要 markdown 围栏、不要解释。`
+  const example = `示例：
+条目1：原文="把 CapturePort 抽成接口，PWA 和 Capacitor 各实现一个。" 摘要="抽 CapturePort 为接口，PWA/Capacitor 各实现"
+条目2：原文="地铁里想到如果记一条东西能顺便变成提醒就好了。" 摘要="希望记录时能顺带生成提醒"
+条目3：原文="读到一篇讲 second brain 的文章，核心是不要整理只要捕获。" 摘要="只捕获不整理，整理交给后端"
+输出：{"summary":"本周以 AiJi 项目推进为主轴：抽象端口、涌现分类逐步成形；穿插阅读笔记（second brain）与地铁灵感（记录变提醒）。整体偏专注。","highlights":["CapturePort 接口化","记录变提醒","Second brain 阅读"]}`
+
+  const items = entries
+    .map((e, i) => `条目${i + 1}：原文="${e.text}"${e.aiSummary ? ` 摘要="${e.aiSummary}"` : ''}`)
+    .join('\n')
+
+  const user = `时段：${scopeLabel}
+条目数：${entries.length}
+${items}
+
+输出 JSON。`
+  return [
+    { role: 'system', content: system + '\n\n' + example },
+    { role: 'user', content: user },
+  ]
+}
+
+function parseAggregateJson(raw: string): AggregateResult {
+  let s = raw.trim()
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fence) s = fence[1].trim()
+  const start = s.indexOf('{')
+  const end = s.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) throw new Error('LLM 未返回 JSON')
+  return JSON.parse(s.slice(start, end + 1)) as AggregateResult
+}
+
+// Compute the range string (dateKey) for a given scope anchored at a reference date.
+function scopeRange(scope: AggregateScopeType, ref: Date): string {
+  const y = ref.getFullYear()
+  const m = String(ref.getMonth() + 1).padStart(2, '0')
+  const d = String(ref.getDate()).padStart(2, '0')
+  if (scope === 'day') return `${y}-${m}-${d}`
+  if (scope === 'month') return `${y}-${m}`
+  // week: ISO week number + year
+  const tmp = new Date(Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate()))
+  const dayNum = (tmp.getUTCDay() + 6) % 7 // Mon=0
+  tmp.setUTCDate(tmp.getUTCDate() - dayNum + 3) // Thursday in this week
+  const isoYear = tmp.getUTCFullYear()
+  const firstThursday = new Date(Date.UTC(isoYear, 0, 4))
+  const week = 1 + Math.round(((tmp.getTime() - firstThursday.getTime()) / 86400000 - 3) / 7)
+  return `${isoYear}-W${String(week).padStart(2, '0')}`
+}
+
 export const deepSeekLlm: LlmPort = {
   async classify(entryId) {
     const settings = await di.storage.getSettings()
@@ -127,5 +199,59 @@ export const deepSeekLlm: LlmPort = {
       createdAt: now,
     }
     return ai
+  },
+  async aggregate(entryIds, scope) {
+    const settings = await di.storage.getSettings()
+    const apiKey = await di.secrets.get(SECRET_KEY)
+    const url = settings.llmUrl
+    const model = settings.llmModel || 'deepseek-v4-flash'
+    if (!apiKey || !url) throw new Error('LLM BYOK 未配置（url/key 缺失）')
+    if (entryIds.length === 0) throw new Error('无条目可聚合')
+
+    // Pull entries + their AI summaries to feed the prompt.
+    const entries = await Promise.all(
+      entryIds.map(async (id) => {
+        const entry = await di.storage.getEntry(id)
+        if (!entry) return null
+        const ai = await di.storage.getEntryAi(id)
+        return { id, text: entryText(entry), aiSummary: ai?.summary }
+      }),
+    )
+    const valid = entries.flatMap((e) => (e === null ? [] : [e]))
+    if (valid.length === 0) throw new Error('条目无文本可聚合')
+
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: buildAggregatePrompt(valid, scope),
+        max_tokens: 768,
+        temperature: 0.4,
+        thinking: { type: 'disabled' },
+      }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      throw new Error(`LLM HTTP ${res.status}: ${t.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    const raw = data?.choices?.[0]?.message?.content
+    if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
+    const parsed = parseAggregateJson(raw)
+    const now = new Date().toISOString()
+    const range = scopeRange(scope, new Date())
+
+    const ag: Aggregate = {
+      id: crypto.randomUUID(),
+      scope: { type: scope, range },
+      summary: parsed.summary,
+      highlights: parsed.highlights,
+      entryIds,
+      modelUsed: model,
+      createdAt: now,
+      stale: false,
+    }
+    return ag
   },
 }

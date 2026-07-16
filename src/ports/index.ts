@@ -1,7 +1,7 @@
 // Port interfaces (PRD §7.3). PWA-agnostic; adapters implement these.
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
-import type { Aggregate, Category, Entry, EntryAi, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, Settings, Tag } from '@/domain/types'
 
 export interface StoragePort {
   listEntries(): Promise<Entry[]>
@@ -14,6 +14,8 @@ export interface StoragePort {
   listTags(): Promise<Tag[]>
   saveTag(tag: Tag): Promise<void>
   listAggregates(): Promise<Aggregate[]>
+  getAggregate(scope: AggregateScopeType, range: string): Promise<Aggregate | undefined>
+  saveAggregate(ag: Aggregate): Promise<void>
   getSettings(): Promise<Settings>
   saveSettings(s: Settings): Promise<void>
   // Media blobs (audio/video) persist to OPFS (PRD §7.2 媒体后置→A2)。ref = EntryPart.ref.
@@ -39,6 +41,7 @@ export interface SttPort {
 
 export interface LlmPort {
   classify(entryId: string): Promise<EntryAi>
+  aggregate(entryIds: string[], scope: AggregateScopeType): Promise<Aggregate>
 }
 
 export interface SecretStorePort {

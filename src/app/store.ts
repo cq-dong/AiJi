@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { Category, Entry, EntryAi, EntryPart, Settings, Tag } from '@/domain/types'
-import { seedCategories, seedEntries, seedEntryAi, seedSettings, seedTags } from '@/data/seed'
+import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, EntryPart, Settings, Tag } from '@/domain/types'
+import { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedSettings, seedTags } from '@/data/seed'
 import { di } from './di'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：首屏 seed 兜底即时渲染，
@@ -23,6 +23,7 @@ interface UiState {
   tags: Tag[] // 首屏 seed 兜底，hydrate 从 Dexie 载入（含涌现标签）
   hydrated: boolean // 是否已从 Dexie 载入
   settings: Settings // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
+  aggregates: Aggregate[] // 首屏 seed 兜底，hydrate 从 Dexie 载入；recomputeAggregate 后更新
   justSaved: boolean // 刚保存 → 首页 toast + 置顶处理中卡片
   hydrate: () => Promise<void>
   startRecording: () => Promise<void>
@@ -39,9 +40,34 @@ interface UiState {
   setLlmConfig: (url: string, model: string, key: string) => void
   setSttConfig: (model: string, key: string) => void
   processEntry: (entryId: string) => Promise<void>
+  recomputeAggregate: (scope: AggregateScopeType, range?: string) => Promise<void>
 }
 
 const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '' }
+
+// Compute the range string (dateKey) for a given scope anchored at a reference date.
+// day → '2026-07-15' · week → '2026-W28' · month → '2026-07'.
+function scopeRange(scope: AggregateScopeType, ref: Date): string {
+  const y = ref.getFullYear()
+  const m = String(ref.getMonth() + 1).padStart(2, '0')
+  const d = String(ref.getDate()).padStart(2, '0')
+  if (scope === 'day') return `${y}-${m}-${d}`
+  if (scope === 'month') return `${y}-${m}`
+  // ISO week: Thursday-based to avoid year-boundary edge cases.
+  const tmp = new Date(Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate()))
+  const dayNum = (tmp.getUTCDay() + 6) % 7
+  tmp.setUTCDate(tmp.getUTCDate() - dayNum + 3)
+  const isoYear = tmp.getUTCFullYear()
+  const firstThursday = new Date(Date.UTC(isoYear, 0, 4))
+  const week = 1 + Math.round(((tmp.getTime() - firstThursday.getTime()) / 86400000 - 3) / 7)
+  return `${isoYear}-W${String(week).padStart(2, '0')}`
+}
+
+// Filter entries that fall within the given scope+range. Each entry's own
+// createdAt determines which day/week/month it belongs to; we match the range string.
+function entriesInRange(entries: Entry[], scope: AggregateScopeType, range: string): Entry[] {
+  return entries.filter((e) => scopeRange(scope, new Date(e.createdAt)) === range)
+}
 
 export const useUiStore = create<UiState>((set, get) => ({
   capture: emptyDraft,
@@ -52,22 +78,24 @@ export const useUiStore = create<UiState>((set, get) => ({
   tags: seedTags,
   hydrated: false,
   settings: seedSettings,
+  aggregates: seedAggregates,
   justSaved: false,
   hydrate: async () => {
     if (get().hydrated) return
     try {
-      const [entries, settings, categories, tags] = await Promise.all([
+      const [entries, settings, categories, tags, aggregates] = await Promise.all([
         di.storage.listEntries(),
         di.storage.getSettings(),
         di.storage.listCategories(),
         di.storage.listTags(),
+        di.storage.listAggregates(),
       ])
       // 载入每条条目的 AI（seed 条目 + 真实保存条目）。getEntryAi 返回最高 version。
       const aiPairs = await Promise.all(
         entries.map((e) => di.storage.getEntryAi(e.id).then((ai) => (ai ? [e.id, ai] as const : null))),
       )
       const aiByEntry = { ...Object.fromEntries(aiPairs.filter(Boolean) as [string, EntryAi][]) }
-      set({ entries, settings, categories, tags, aiByEntry, hydrated: true })
+      set({ entries, settings, categories, tags, aggregates, aiByEntry, hydrated: true })
     } catch (e) {
       // 载入失败：保持 seed 兜底，标记已尝试避免反复重试（存储失败不阻断 UI）
       console.error('[store] hydrate failed', e)
@@ -193,6 +221,8 @@ export const useUiStore = create<UiState>((set, get) => ({
           tags,
         }))
       }
+      // 分类成功 → fire-and-forget 触发当日聚合重算（stale → LLM 重新生成今日摘要）
+      void get().recomputeAggregate('day').catch((e) => console.error('[store] recomputeAggregate failed', e))
     } catch (e) {
       console.error('[store] processEntry failed', e)
       const entry = await di.storage.getEntry(entryId)
@@ -200,6 +230,45 @@ export const useUiStore = create<UiState>((set, get) => ({
         const updated: Entry = { ...entry, status: 'failed', updatedAt: new Date().toISOString() }
         await di.storage.saveEntry(updated)
         set((s) => ({ entries: s.entries.map((e) => (e.id === entryId ? updated : e)) }))
+      }
+    }
+  },
+  recomputeAggregate: async (scope, range) => {
+    const ref = new Date()
+    const dateKey = range ?? scopeRange(scope, ref)
+    const inRange = entriesInRange(get().entries, scope, dateKey)
+    if (inRange.length === 0) return
+    const entryIds = inRange.map((e) => e.id)
+    // Snapshot existing aggregate to restore on failure (avoid stuck-stale).
+    const existing = await di.storage.getAggregate(scope, dateKey)
+    const prevStale = existing?.stale ?? false
+    if (existing) {
+      const staleAg: Aggregate = { ...existing, stale: true }
+      await di.storage.saveAggregate(staleAg)
+      set((s) => ({
+        aggregates: s.aggregates.map((a) => (a.id === existing.id ? staleAg : a)),
+      }))
+    }
+    try {
+      const ag = await di.llm.aggregate(entryIds, scope)
+      await di.storage.saveAggregate(ag)
+      set((s) => {
+        // Replace any existing aggregate for this scope+range, else prepend.
+        const rest = s.aggregates.filter(
+          (a) => !(a.scope.type === scope && a.scope.range === dateKey),
+        )
+        return { aggregates: [ag, ...rest] }
+      })
+    } catch (e) {
+      // 聚合失败只伤 AI 层——条目已分类落库，存储不受影响。
+      // 恢复 existing 的 stale 状态（避免卡在「重新生成中」）。
+      console.error('[store] recomputeAggregate failed', e)
+      if (existing) {
+        const restored: Aggregate = { ...existing, stale: prevStale }
+        await di.storage.saveAggregate(restored)
+        set((s) => ({
+          aggregates: s.aggregates.map((a) => (a.id === existing.id ? restored : a)),
+        }))
       }
     }
   },

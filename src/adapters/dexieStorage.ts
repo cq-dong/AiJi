@@ -1,5 +1,6 @@
 import { db } from '@/data/db'
 import type { StoragePort } from '@/ports'
+import type { Aggregate, AggregateScopeType } from '@/domain/types'
 import {
   seedAggregates,
   seedCategories,
@@ -9,9 +10,10 @@ import {
   seedTags,
 } from '@/data/seed'
 
-// PWA StoragePort 适配：entries/settings/entryAi/categories/tags 走 Dexie（首屏空库时从 seed 灌入；
-// settings 落库到单行 key=1，seed 兜底首启）。aggregates 仍取 seed——其重算路径（聚合）未落地。
-// entries 落库由 store.finishSave；entryAi/categories/tags 落库由处理管线（LlmPort 分类 + 涌现）。
+// PWA StoragePort 适配：entries/settings/entryAi/categories/tags/aggregates 走 Dexie（首屏空库时从
+// seed 灌入；settings 落库到单行 key=1，seed 兜底首启）。aggregates 真读 Dexie，空库时 seed 兜底。
+// entries 落库由 store.finishSave；entryAi/categories/tags 落库由处理管线（LlmPort 分类 + 涌现）；
+// aggregates 落库由 store.recomputeAggregate（LlmPort 聚合 → saveAggregate）。
 let seeded = false
 async function ensureSeeded(): Promise<void> {
   if (seeded) return
@@ -29,6 +31,8 @@ async function ensureSeeded(): Promise<void> {
     if ((await db.tags.count()) === 0) await db.tags.bulkPut(seedTags)
     if ((await db.entryAi.count()) === 0) await db.entryAi.bulkPut(seedEntryAi)
   }
+  // aggregates 空库时灌 seed 兜底（真重算后会覆盖）。
+  if ((await db.aggregates.count()) === 0) await db.aggregates.bulkPut(seedAggregates)
   seeded = true
 }
 
@@ -70,7 +74,22 @@ export const dexieStorage: StoragePort = {
     await db.tags.put(tag)
   },
   async listAggregates() {
-    return seedAggregates
+    await ensureSeeded()
+    const all = await db.aggregates.toArray()
+    // Newest first — matches seed ordering and store expectations.
+    return all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  },
+  async getAggregate(scope: AggregateScopeType, range: string): Promise<Aggregate | undefined> {
+    await ensureSeeded()
+    // scope.range is a compound index — filter by type then range for an exact match.
+    const rows = await db.aggregates
+      .where('scope.type')
+      .equals(scope)
+      .toArray()
+    return rows.find((r) => r.scope.range === range)
+  },
+  async saveAggregate(ag: Aggregate): Promise<void> {
+    await db.aggregates.put(ag)
   },
   async getSettings() {
     // Single-row settings at key 1. Fall back to seed on first run / empty DB.

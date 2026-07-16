@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react'
-import { seedAggregates } from '@/data/seed'
+import { useEffect, useMemo, useState } from 'react'
+import type { AggregateScopeType } from '@/domain/types'
 import { useUiStore } from '@/app/store'
 import { DigestCard } from './DigestCard'
 
-type Scope = 'day' | 'week' | 'month'
+type Scope = AggregateScopeType
 
 const SCOPES: { key: Scope; label: string }[] = [
   { key: 'day', label: '日' },
@@ -13,18 +13,18 @@ const SCOPES: { key: Scope; label: string }[] = [
 
 export default function Summary() {
   const [scope, setScope] = useState<Scope>('week')
-  // Demo toggle: tap the top card to flip it between done / recalculating.
-  // Defaults to the seeded stale flag of the topmost aggregate.
-  const [topRecalc, setTopRecalc] = useState<boolean>(
-    seedAggregates[0]?.stale ?? false,
-  )
-
+  const aggregates = useUiStore((s) => s.aggregates)
+  const recomputeAggregate = useUiStore((s) => s.recomputeAggregate)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
   const categories = useUiStore((s) => s.categories)
   const entryAi = useMemo(() => Object.values(aiByEntry), [aiByEntry])
 
-  // scope tab 真正驱动内容：只渲染匹配当前范围的聚合（seed 无 month 聚合 → 空）
-  const visible = seedAggregates.filter((ag) => ag.scope.type === scope)
+  // 切 scope → fire-and-forget 触发该 scope 当前时段重算（stale 时 DigestCard 显「重新生成中」）
+  useEffect(() => {
+    void recomputeAggregate(scope)
+  }, [scope, recomputeAggregate])
+
+  const visible = aggregates.filter((ag) => ag.scope.type === scope)
 
   return (
     <div className="px-4 pb-4 pt-4">
@@ -55,20 +55,15 @@ export default function Summary() {
             本{scope === 'day' ? '日' : scope === 'week' ? '周' : '月'}暂无摘要
           </p>
         ) : (
-          visible.map((ag, i) => {
-            const isTop = i === 0
-            const recalculating = isTop ? topRecalc : ag.stale
-            return (
-              <DigestCard
-                key={ag.id}
-                aggregate={ag}
-                entryAi={entryAi}
-                categories={categories}
-                recalculating={recalculating}
-                onToggle={isTop ? () => setTopRecalc((v) => !v) : undefined}
-              />
-            )
-          })
+          visible.map((ag) => (
+            <DigestCard
+              key={ag.id}
+              aggregate={ag}
+              entryAi={entryAi}
+              categories={categories}
+              recalculating={ag.stale}
+            />
+          ))
         )}
       </div>
     </div>
