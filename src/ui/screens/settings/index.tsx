@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { exportZip } from '@/adapters/zipExport'
 import { Toggle } from './Toggle'
 
 type Theme = 'light' | 'dark' | 'system'
@@ -346,7 +347,13 @@ export default function Settings() {
           >
             导出 Markdown
           </Button>
-          <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn">
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-[38px] flex-1 rounded-btn"
+            disabled={!hasEntries}
+            onClick={() => void exportZip()}
+          >
             导出 .zip
           </Button>
         </div>
