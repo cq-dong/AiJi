@@ -31,3 +31,11 @@ dist-ssr
 
 # E2E acceptance screenshots (regenerable artifacts)
 .e2e_shots/
+
+# Claude Code session + browser automation artifacts (throwaway, not for repo)
+.claude/
+.playwright-mcp/
+
+# Throwaway STT/LLM probe scripts + test audio (exploration only, no keys)
+scripts/probe-*.mjs
+public/asr-test.wav

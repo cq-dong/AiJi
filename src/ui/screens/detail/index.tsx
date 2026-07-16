@@ -99,6 +99,7 @@ export default function Detail() {
   // 渲染时优先用 store 的、回落到异步载入的。
   const [asyncAi, setAsyncAi] = useState<EntryAi | undefined>(undefined)
   const [aiLoading, setAiLoading] = useState(false)
+  const [reprocessing, setReprocessing] = useState(false)
 
   useEffect(() => {
     setOverride(null)
@@ -125,6 +126,18 @@ export default function Detail() {
     return () => { cancelled = true }
   }, [id, found, aiFromStore])
 
+  // processEntry 完成后 store bump entry.updatedAt（成功→ready / 失败→failed 均如此），
+  // 据此清掉乐观「处理中」旗标，让 state 回落到 entry.status 的真值。
+  useEffect(() => {
+    setReprocessing(false)
+  }, [found?.updatedAt])
+
+  const handleReprocess = () => {
+    if (!id) return
+    setReprocessing(true)
+    void useUiStore.getState().processEntry(id)
+  }
+
   if (!found) {
     return (
       <div className="px-4">
@@ -145,19 +158,28 @@ export default function Detail() {
   const entry = found
   const ai = aiFromStore ?? asyncAi
   const baseState: AiState = override ?? statusToAiState(entry.status)
-  // entry 标记 ready 但 AI 尚在异步载入（深链 race）→ 显示 processing skeleton，
+  // 重处理中：乐观显示 processing（processEntry 不即改 status，需本地旗标过渡；
+  // store 在完成时 bump updatedAt，上面 effect 据此清旗标，state 回落到真值）。
+  // entry 标记 ready 但 AI 尚在异步载入（深链 race）→ 也显示 processing skeleton，
   // 别闪「暂无 AI 处理结果」。
-  const state: AiState = baseState === 'ready' && !ai && aiLoading ? 'processing' : baseState
+  const state: AiState = reprocessing
+    ? 'processing'
+    : baseState === 'ready' && !ai && aiLoading
+      ? 'processing'
+      : baseState
 
   return (
     <div className="flex flex-col gap-3 px-4 pb-8">
-      <TopBar title={formatTitle(entry.createdAt)} onBack={() => navigate(-1)} />
+      <TopBar
+        title={formatTitle(entry.createdAt)}
+        onBack={() => (window.history.length <= 1 ? navigate('/') : navigate(-1))}
+      />
 
       {entry.parts.map((part, i) => (
         <PartView key={i} part={part} iso={entry.createdAt} />
       ))}
 
-      <AiPanel state={state} ai={ai} />
+      <AiPanel state={state} ai={ai} onReprocess={handleReprocess} />
 
       {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event) && (
         <TodoConfirm title={ai.titleSuggestion ?? ''} />

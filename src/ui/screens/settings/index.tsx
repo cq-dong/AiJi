@@ -5,6 +5,63 @@ import { Toggle } from './Toggle'
 
 type Theme = 'light' | 'dark' | 'system'
 
+// 导出 Markdown：读 store 快照拼一份 Markdown，触发浏览器下载。
+// 只读现成字段（entries / aiByEntry / categories / tags），不调 di.storage。
+function buildExportMarkdown(): string {
+  const { entries, aiByEntry, categories, tags } = useUiStore.getState()
+  const catLabel = (slug: string) => categories.find((c) => c.slug === slug)?.label ?? slug
+  const tagLabel = (slug: string) => tags.find((t) => t.slug === slug)?.label ?? slug
+  const sorted = [...entries].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  const lines: string[] = []
+  lines.push('# AiJi 导出')
+  lines.push('')
+  lines.push(`> 生成时间：${new Date().toLocaleString('zh-CN')} · 共 ${entries.length} 条`)
+  lines.push('')
+  for (const e of sorted) {
+    const ai = aiByEntry[e.id]
+    const firstText = e.parts.find((p) => p.type === 'text')?.content
+    const firstTranscript = e.parts.find((p) => p.type !== 'text')?.transcript
+    const fallbackTitle = (firstText ?? firstTranscript ?? '').slice(0, 16)
+    const title = ai?.titleSuggestion || fallbackTitle || '（无标题）'
+    lines.push(`## ${title}`)
+    lines.push('')
+    lines.push(`_${e.createdAt}_`)
+    lines.push('')
+    const bodyLines: string[] = []
+    for (const p of e.parts) {
+      if (p.type === 'text') bodyLines.push(p.content)
+      else if (p.transcript) bodyLines.push(p.transcript)
+    }
+    lines.push(bodyLines.join('\n\n') || '（无正文）')
+    lines.push('')
+    if (ai) {
+      const bits: string[] = []
+      if (ai.category) bits.push(`类别：${catLabel(ai.category)}`)
+      if (ai.tags.length) bits.push(`标签：${ai.tags.map(tagLabel).join('、')}`)
+      if (ai.summary) bits.push(`摘要：${ai.summary}`)
+      if (bits.length) {
+        lines.push(`> ${bits.join(' · ')}`)
+        lines.push('')
+      }
+    }
+    lines.push('---')
+    lines.push('')
+  }
+  return lines.join('\n')
+}
+
+function downloadMarkdown(md: string): void {
+  const blob = new Blob([md], { type: 'text/markdown' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'aiji-export.md'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 const THEMES: { key: Theme; label: string }[] = [
   { key: 'light', label: '亮色' },
   { key: 'dark', label: '暗色' },
@@ -139,6 +196,7 @@ export default function Settings() {
   const setSettings = useUiStore((s) => s.setSettings)
   const theme = settings.theme
   const recordLocation = settings.recordLocation
+  const hasEntries = useUiStore((s) => s.entries.length > 0)
   const [editing, setEditing] = useState(false)
 
   return (
@@ -205,8 +263,17 @@ export default function Settings() {
       {/* 导出与分享 */}
       <Card className="mt-3">
         <p className="text-[14px] font-bold text-ink">导出与分享</p>
+        {!hasEntries && (
+          <p className="mt-2 text-[11px] text-t3">暂无条目可导出</p>
+        )}
         <div className="mt-3 flex gap-2">
-          <Button variant="primary" size="sm" className="h-[38px] flex-1 rounded-btn">
+          <Button
+            variant="primary"
+            size="sm"
+            className="h-[38px] flex-1 rounded-btn"
+            disabled={!hasEntries}
+            onClick={() => downloadMarkdown(buildExportMarkdown())}
+          >
             导出 Markdown
           </Button>
           <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn">

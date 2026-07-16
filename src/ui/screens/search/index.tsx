@@ -4,7 +4,17 @@ import { cn, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { SearchBar } from './SearchBar'
 import { SearchResultCard } from './SearchResultCard'
-import { searchEntries, todayRefFrom, type SearchResult } from './helpers'
+import {
+  dateChipsFrom,
+  EMPTY_FILTERS,
+  filterResults,
+  MODALITY_CHIPS,
+  moodChipsFrom,
+  searchEntries,
+  todayRefFrom,
+  type SearchFilters,
+  type SearchResult,
+} from './helpers'
 
 function DocIcon() {
   return (
@@ -40,10 +50,50 @@ function EmptySearch({ onPick, suggestions }: { onPick: (s: string) => void; sug
   )
 }
 
+interface ChipRowProps {
+  label: string
+  chips: ReadonlyArray<{ slug: string; label: string }>
+  active: string
+  onPick: (slug: string) => void
+}
+
+function ChipRow({ label, chips, active, onPick }: ChipRowProps) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="shrink-0 text-[11px] font-medium text-t3">{label}</span>
+      <div className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <button
+          type="button"
+          onClick={() => onPick('all')}
+          className={cn(
+            'h-7 shrink-0 rounded-full border px-3 text-[12px] font-medium transition',
+            active === 'all' ? 'border-transparent bg-pri text-card' : 'border-brd bg-card text-t2',
+          )}
+        >
+          全部
+        </button>
+        {chips.map((c) => (
+          <button
+            key={c.slug}
+            type="button"
+            onClick={() => onPick(c.slug)}
+            className={cn(
+              'h-7 shrink-0 rounded-full border px-3 text-[12px] font-medium transition',
+              active === c.slug ? 'border-transparent bg-pri text-card' : 'border-brd bg-card text-t2',
+            )}
+          >
+            {c.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Search() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
-  const [activeCat, setActiveCat] = useState('all')
+  const [filters, setFilters] = useState<SearchFilters>(EMPTY_FILTERS)
 
   const hasQuery = query.trim().length > 0
 
@@ -60,43 +110,76 @@ export default function Search() {
     [categories, tags],
   )
 
-  const filterChips = useMemo(
-    () => [
-      { slug: 'all', label: '全部' },
-      ...categories.map((c) => ({ slug: c.slug, label: c.label })),
-    ],
+  const catChips = useMemo(
+    () => categories.map((c) => ({ slug: c.slug, label: c.label })),
     [categories],
   )
+  const tagChips = useMemo(
+    () => tags.map((t) => ({ slug: t.slug, label: t.label })),
+    [tags],
+  )
+  const moodChips = useMemo(() => moodChipsFrom(aiByEntry), [aiByEntry])
+  const dateChips = useMemo(() => dateChipsFrom(entries), [entries])
+
+  const hasFilters =
+    filters.category !== 'all' ||
+    filters.tag !== 'all' ||
+    filters.mood !== 'all' ||
+    filters.modality !== 'all' ||
+    filters.date !== 'all'
 
   const todayRef = useMemo(() => todayRefFrom(entries), [entries])
 
   const results = useMemo<SearchResult[]>(() => {
     const all = searchEntries(query, entries, categories, tags, aiByEntry)
-    if (activeCat === 'all') return all
-    return all.filter((r) => r.ai?.category === activeCat)
-  }, [query, activeCat, entries, categories, tags, aiByEntry])
+    return filterResults(all, filters, aiByEntry)
+  }, [query, filters, entries, categories, tags, aiByEntry])
+
+  const setFilter = (key: keyof SearchFilters) => (slug: string) => {
+    setFilters((prev) => ({ ...prev, [key]: slug }))
+  }
+  const clearFilters = () => setFilters(EMPTY_FILTERS)
 
   return (
     <div className="px-4 pb-6 pt-4">
       <SearchBar value={query} onChange={setQuery} />
 
       {hasQuery && (
-        <div className="mt-3 flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
-          {filterChips.map((c) => (
+        <div className="mt-3 flex flex-col gap-2">
+          <ChipRow
+            label="类别"
+            chips={catChips}
+            active={filters.category}
+            onPick={setFilter('category')}
+          />
+          <ChipRow label="标签" chips={tagChips} active={filters.tag} onPick={setFilter('tag')} />
+          <ChipRow
+            label="侧面"
+            chips={moodChips}
+            active={filters.mood}
+            onPick={setFilter('mood')}
+          />
+          <ChipRow
+            label="模态"
+            chips={MODALITY_CHIPS}
+            active={filters.modality}
+            onPick={setFilter('modality')}
+          />
+          <ChipRow
+            label="日期"
+            chips={dateChips}
+            active={filters.date}
+            onPick={setFilter('date')}
+          />
+          {hasFilters && (
             <button
-              key={c.slug}
               type="button"
-              onClick={() => setActiveCat(c.slug)}
-              className={cn(
-                'h-7 shrink-0 rounded-full border px-3 text-[12px] font-medium transition',
-                activeCat === c.slug
-                  ? 'border-transparent bg-pri text-card'
-                  : 'border-brd bg-card text-t2',
-              )}
+              onClick={clearFilters}
+              className="self-start text-[11px] font-medium text-pri active:opacity-70"
             >
-              {c.label}
+              清除筛选
             </button>
-          ))}
+          )}
         </div>
       )}
 
@@ -107,7 +190,7 @@ export default function Search() {
           <EmptyState
             icon={<DocIcon />}
             title="没有匹配的条目"
-            subtitle={`没有匹配「${query.trim()}」的条目，试试别的关键词或换个类别`}
+            subtitle={`没有匹配「${query.trim()}」的条目，试试别的关键词或换个筛选条件`}
           />
         )}
 

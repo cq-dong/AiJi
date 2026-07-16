@@ -1,9 +1,102 @@
-import type { Category, Entry, EntryAi, Tag } from '@/domain/types'
+import type { Category, Entry, EntryAi, PartType, Tag } from '@/domain/types'
 
 export interface SearchResult {
   entry: Entry
   ai?: EntryAi
   category?: Category
+}
+
+// Filter facet selections. `undefined`/`'all'` means "no filter on this axis".
+// Dates are grouped by YYYY-M-D bucket strings derived from entry.createdAt.
+export interface SearchFilters {
+  category: string // 'all' or a category slug
+  tag: string // 'all' or a tag slug
+  mood: string // 'all' or a mood string
+  modality: string // 'all' | 'text' | 'audio' | 'video'
+  date: string // 'all' or a 'YYYY-M-D' bucket
+}
+
+export const EMPTY_FILTERS: SearchFilters = {
+  category: 'all',
+  tag: 'all',
+  mood: 'all',
+  modality: 'all',
+  date: 'all',
+}
+
+// Fixed modality chip set (text/audio/video). The design chips use Chinese labels
+// but the filter compares against EntryPart.type, so slug stays the PartType union.
+export const MODALITY_CHIPS: ReadonlyArray<{ slug: PartType; label: string }> = [
+  { slug: 'text', label: '文本' },
+  { slug: 'audio', label: '语音' },
+  { slug: 'video', label: '视频' },
+]
+
+// Aggregate distinct moods from aiByEntry (mood is an optional facet — only
+// entries whose AI detected a mood contribute). Sorted alphabetically.
+export function moodChipsFrom(aiByEntry: Record<string, EntryAi>): Array<{ slug: string; label: string }> {
+  const set = new Set<string>()
+  for (const ai of Object.values(aiByEntry)) {
+    const m = ai.facets.mood
+    if (m) set.add(m)
+  }
+  return Array.from(set)
+    .sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    .map((m) => ({ slug: m, label: m }))
+}
+
+// Aggregate distinct date buckets from entries' createdAt, newest first.
+// Bucket key is 'YYYY-M-D' (no zero-pad) so it matches what we compare against.
+export function dateChipsFrom(entries: ReadonlyArray<Entry>): Array<{ slug: string; label: string }> {
+  const seen = new Map<string, number>() // bucket -> latest timestamp
+  for (const e of entries) {
+    const d = new Date(e.createdAt)
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+    const t = d.getTime()
+    const prev = seen.get(key)
+    if (prev === undefined || t > prev) seen.set(key, t)
+  }
+  return Array.from(seen.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([slug]) => {
+      const [y, m, d] = slug.split('-').map(Number)
+      const dt = new Date(y, m - 1, d)
+      const today = new Date()
+      const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      const startDt = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate())
+      const diff = Math.round((startToday.getTime() - startDt.getTime()) / 86_400_000)
+      const label = diff <= 0 ? '今天' : diff === 1 ? '昨天' : `${m}/${d}`
+      return { slug, label }
+    })
+}
+
+function dateBucket(iso: string): string {
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+}
+
+// Apply the selected facets to the full-text matches returned by searchEntries.
+// A result is kept iff EVERY non-'all' facet matches. No selections => all pass.
+export function filterResults(
+  results: SearchResult[],
+  filters: SearchFilters,
+  aiByEntry: Record<string, EntryAi>,
+): SearchResult[] {
+  const hasCat = filters.category !== 'all'
+  const hasTag = filters.tag !== 'all'
+  const hasMood = filters.mood !== 'all'
+  const hasMod = filters.modality !== 'all'
+  const hasDate = filters.date !== 'all'
+  if (!hasCat && !hasTag && !hasMood && !hasMod && !hasDate) return results
+  return results.filter((r) => {
+    const ai = aiByEntry[r.entry.id]
+    if (hasCat && (ai?.category ?? '') !== filters.category) return false
+    if (hasTag && !(ai?.tags ?? []).includes(filters.tag)) return false
+    if (hasMood && (ai?.facets.mood ?? '') !== filters.mood) return false
+    if (hasMod && !r.entry.parts.some((p) => p.type === filters.modality)) return false
+    if (hasDate && dateBucket(r.entry.createdAt) !== filters.date) return false
+    return true
+  })
 }
 
 type AccentTone = 'idea' | 'project' | 'pending' | 'fail'

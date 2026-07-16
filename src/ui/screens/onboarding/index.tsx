@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/ui/components'
+import { useUiStore } from '@/app/store'
 
 const FEATURES = ['多模态随手记', 'AI 自动涌现分类', '本地优先 + BYOK']
 
@@ -8,9 +9,37 @@ export default function Onboarding() {
   const navigate = useNavigate()
   const [apiKey, setApiKey] = useState('')
   const [permGranted, setPermGranted] = useState(false)
+  const [permDenied, setPermDenied] = useState(false)
 
-  // Demo only — UI layer does not invoke getUserMedia; acceptance drives real flow.
-  const requestPermission = () => setPermGranted(true)
+  // 请求麦克风+摄像头授权。只需拿到授权标记，不持有 stream：成功后立即释放 tracks。
+  const requestPermission = async () => {
+    setPermDenied(false)
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setPermGranted(false)
+      setPermDenied(true)
+      return
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
+      stream.getTracks().forEach((t) => t.stop())
+      setPermGranted(true)
+    } catch {
+      setPermGranted(false)
+      setPermDenied(true)
+    }
+  }
+
+  const onStart = () => {
+    const key = apiKey.trim()
+    if (key) {
+      useUiStore.getState().setLlmConfig(
+        'https://api.deepseek.com/v1/chat/completions',
+        'deepseek-v4-flash',
+        key,
+      )
+    }
+    navigate('/')
+  }
 
   return (
     <div className="flex min-h-full flex-col px-4 pb-4 pt-6">
@@ -50,6 +79,11 @@ export default function Onboarding() {
         <div>
           <p className="text-[13px] font-medium text-ink">允许麦克风与摄像头</p>
           <p className="mt-0.5 text-[11px] text-t3">采集语音/视频需要授权</p>
+          {permDenied && (
+            <p className="mt-1 text-[11px] leading-relaxed text-catFail">
+              未授权，采集功能将受限。可在浏览器设置中重新授权。
+            </p>
+          )}
         </div>
         <Button
           size="sm"
@@ -62,12 +96,7 @@ export default function Onboarding() {
 
       {/* CTA */}
       <div className="mt-auto pt-6">
-        <Button
-          variant="primary"
-          size="lg"
-          className="w-full"
-          onClick={() => navigate('/')}
-        >
+        <Button variant="primary" size="lg" className="w-full" onClick={onStart}>
           开始记
         </Button>
       </div>

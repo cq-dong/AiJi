@@ -25,7 +25,17 @@ function FacetChips({ facets }: { facets: Facets }) {
   )
 }
 
-function ReadyBody({ ai, categories, tags }: { ai: EntryAi; categories: Category[]; tags: Tag[] }) {
+function ReadyBody({
+  ai,
+  categories,
+  tags,
+  onReprocess,
+}: {
+  ai: EntryAi
+  categories: Category[]
+  tags: Tag[]
+  onReprocess: () => void
+}) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[11px] text-t3">
@@ -61,7 +71,7 @@ function ReadyBody({ ai, categories, tags }: { ai: EntryAi; categories: Category
       )}
       <div className="flex items-center gap-4 pt-1">
         <button type="button" className="text-[12px] text-t3">编辑</button>
-        <button type="button" className="text-[12px] text-t3">重处理</button>
+        <button type="button" onClick={onReprocess} className="text-[12px] text-t3">重处理</button>
         <button type="button" className="text-[12px] text-catFail">删除</button>
       </div>
     </div>
@@ -86,13 +96,13 @@ function ProcessingBody() {
   )
 }
 
-function FailedBody() {
+function FailedBody({ onReprocess }: { onReprocess: () => void }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[14px] font-bold text-catFail">处理失败</p>
       <p className="text-[11px] text-t2">网络或模型异常，原始条目已保存</p>
       <div className="flex items-center gap-2">
-        <Button type="button" variant="primary" className="bg-catFail">
+        <Button type="button" variant="primary" className="bg-catFail" onClick={onReprocess}>
           重试
         </Button>
         <Button type="button" variant="secondary">
@@ -103,7 +113,15 @@ function FailedBody() {
   )
 }
 
-export function AiPanel({ state, ai }: { state: AiState; ai?: EntryAi }) {
+export function AiPanel({
+  state,
+  ai,
+  onReprocess,
+}: {
+  state: AiState
+  ai?: EntryAi
+  onReprocess: () => void
+}) {
   // 读侧从 store 取类别/标签（含涌现），不再依赖 seed 静态数组。
   const categories = useUiStore((s) => s.categories)
   const tags = useUiStore((s) => s.tags)
@@ -113,10 +131,12 @@ export function AiPanel({ state, ai }: { state: AiState; ai?: EntryAi }) {
         <h2 className="text-[13px] font-bold text-ink">AI 处理</h2>
         <Chip tone="pending">上送云端</Chip>
       </div>
-      {state === 'ready' && ai && <ReadyBody ai={ai} categories={categories} tags={tags} />}
+      {state === 'ready' && ai && (
+        <ReadyBody ai={ai} categories={categories} tags={tags} onReprocess={onReprocess} />
+      )}
       {state === 'ready' && !ai && <p className="text-[12px] text-t3">暂无 AI 处理结果</p>}
       {state === 'processing' && <ProcessingBody />}
-      {state === 'failed' && <FailedBody />}
+      {state === 'failed' && <FailedBody onReprocess={onReprocess} />}
     </Card>
   )
 }
