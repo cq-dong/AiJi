@@ -6,9 +6,13 @@ import './index.css'
 import App from './App.tsx'
 import { queryClient } from '@/app/query'
 import { useUiStore } from '@/app/store'
+import { seedDevDefaults } from '@/app/devSeed'
 
-// 启动即从 Dexie 载入真实条目（首屏空库由 adapter 灌 seed）；fire-and-forget，store 解析后自替换。
-void useUiStore.getState().hydrate()
+// DEV-only：从 .env.local（gitignored）灌 BYOK 默认到 localStorage+Dexie，再 hydrate——
+// 手机走隧道加载同一 bundle 即自动拿到 key，免每台设备手填。seed 失败不阻断载入。
+void seedDevDefaults()
+  .catch((e) => console.error('[devSeed] failed', e))
+  .finally(() => useUiStore.getState().hydrate())
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

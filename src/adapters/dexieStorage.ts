@@ -144,4 +144,12 @@ export const dexieStorage: StoragePort = {
   async deleteReminder(id: string): Promise<void> {
     await db.reminders.delete(id)
   },
+  async deleteCategory(slug: string): Promise<void> {
+    await db.categories.delete(slug)
+  },
+  async deleteEntry(id: string): Promise<void> {
+    await db.entries.delete(id)
+    // 删该条目的所有 AI 版本（entryAi byEntry index）。
+    await db.entryAi.where('entryId').equals(id).delete()
+  },
 }

@@ -1,7 +1,7 @@
 // Port interfaces (PRD §7.3). PWA-agnostic; adapters implement these.
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
-import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
 
 export interface StoragePort {
   listEntries(): Promise<Entry[]>
@@ -27,6 +27,10 @@ export interface StoragePort {
   getReminder(id: string): Promise<Reminder | undefined>
   saveReminder(r: Reminder): Promise<void>
   deleteReminder(id: string): Promise<void>
+  // Category/entry deletion (Wave 1 core). deleteCategory only drops the row —
+  // the store action re-maps affected entries' AI category to '' (未分类) first.
+  deleteCategory(slug: string): Promise<void>
+  deleteEntry(id: string): Promise<void>
 }
 
 export interface CapturePort {
@@ -38,6 +42,8 @@ export interface CapturePort {
   stopAudio(): Promise<{ ref: string; durationSec: number; blob?: Blob }>
   hasMicPermission(): Promise<boolean>
   requestMicPermission(): Promise<boolean>
+  // Geolocation for recordLocation setting (Wave 1 core). Null if denied/unsupported.
+  getLocation(): Promise<GeoPoint | null>
 }
 
 export interface SttPort {

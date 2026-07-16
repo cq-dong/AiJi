@@ -30,5 +30,7 @@ export default defineConfig({
     // '@/' key (not bare '@') so scoped npm packages like @tanstack are untouched.
     alias: { '@/': `${path.resolve(process.cwd(), 'src')}/` },
   },
-  server: { host: true, port: 5173 },
+  // allowedHosts: 允许 cloudflared/ngrok 隧道随机子域（手机 HTTPS 真机测试用）。
+  // true = 放行所有 Host 头（仅影响 vite dev/preview，不影响 build 产物）。
+  server: { host: true, port: 5173, allowedHosts: true },
 })

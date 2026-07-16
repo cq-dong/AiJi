@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, EntryPart, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
 import { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedReminders, seedSettings, seedTags } from '@/data/seed'
 import { di } from './di'
 
@@ -12,6 +12,7 @@ interface CaptureDraft {
   micDenied: boolean
   finalized: string // accumulated finalized STT segments (live preview)
   interim: string // current partial segment (live preview)
+  location?: GeoPoint // recordLocation 开时，采集开始时取一次（best-effort，未解析则 undefined）
 }
 
 interface UiState {
@@ -25,6 +26,7 @@ interface UiState {
   settings: Settings // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
   aggregates: Aggregate[] // 首屏 seed 兜底，hydrate 从 Dexie 载入；recomputeAggregate 后更新
   reminders: Reminder[] // 首屏 seed 兜底，hydrate 从 Dexie 载入；scheduleReminders 扫 pending 到点 fire
+  recalculating: Record<string, boolean> // key=`${scope}:${range}`；recomputeAggregate in-flight 标记，UI 据此显 spinner（与 stale 分离，失败不永转）
   justSaved: boolean // 刚保存 → 首页 toast + 置顶处理中卡片
   hydrate: () => Promise<void>
   startRecording: () => Promise<void>
@@ -46,9 +48,16 @@ interface UiState {
   confirmReminder: (entryId: string, dueAt: string, label: string) => Promise<void>
   dismissReminder: (id: string) => Promise<void>
   snoozeReminder: (id: string, minutes: number) => Promise<void>
+  // Wave 1 core actions（屏层纯消费，不碰 store.ts）
+  saveCategory: (cat: Category) => Promise<void>
+  deleteCategory: (slug: string) => Promise<void>
+  deleteEntry: (id: string) => Promise<void>
+  updateEntry: (id: string, patch: Partial<Entry>) => Promise<void>
+  updateEntryAi: (entryId: string, patch: Partial<EntryAi>) => Promise<void>
+  primeLocation: () => void
 }
 
-const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '' }
+const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined }
 
 // Compute the range string (dateKey) for a given scope anchored at a reference date.
 // day → '2026-07-15' · week → '2026-W28' · month → '2026-07'.
@@ -143,6 +152,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   settings: seedSettings,
   aggregates: seedAggregates,
   reminders: seedReminders,
+  recalculating: {},
   justSaved: false,
   hydrate: async () => {
     if (get().hydrated) return
@@ -171,6 +181,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
   startRecording: async () => {
     set((s) => ({ capture: { ...s.capture, finalized: '', interim: '' } }))
+    get().primeLocation()
     try {
       await di.capture.startAudio({
         onInterim: (t) => set((s) => ({ capture: { ...s.capture, interim: t } })),
@@ -212,6 +223,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       updatedAt: now,
       status: 'processing',
       parts,
+      location: s.capture.location,
     }
     set({ capture: emptyDraft, entries: [entry, ...s.entries], justSaved: true })
     // 落库：异步写 Dexie，失败只记日志不伤 UI（处理管线断网不丢后续补）
@@ -321,6 +333,9 @@ export const useUiStore = create<UiState>((set, get) => ({
     const existing = await di.storage.getAggregate(scope, dateKey)
     // 新鲜即跳过：scope 切换/挂载不再每次打付费 LLM；processEntry 先置 stale 再触发，真过期仍重算。
     if (existing && !existing.stale) return
+    const recalcingKey = `${scope}:${dateKey}`
+    // recalculating 与 stale 分离：in-flight 标记驱动 UI spinner；失败时清 in-flight、留 stale → 显「重新生成」而非永转（1b 修）。
+    set((s) => ({ recalculating: { ...s.recalculating, [recalcingKey]: true } }))
     const prevStale = existing?.stale ?? false
     if (existing) {
       const staleAg: Aggregate = { ...existing, stale: true }
@@ -338,18 +353,21 @@ export const useUiStore = create<UiState>((set, get) => ({
         const rest = s.aggregates.filter(
           (a) => !(a.scope.type === scope && a.scope.range === dateKey),
         )
-        return { aggregates: [ag, ...rest] }
+        return { aggregates: [ag, ...rest], recalculating: { ...s.recalculating, [recalcingKey]: false } }
       })
     } catch (e) {
       // 聚合失败只伤 AI 层——条目已分类落库，存储不受影响。
-      // 恢复 existing 的 stale 状态（避免卡在「重新生成中」）。
+      // 恢复 existing 的 stale 状态 + 清 in-flight（避免卡在「重新生成中」永转）。
       console.error('[store] recomputeAggregate failed', e)
       if (existing) {
         const restored: Aggregate = { ...existing, stale: prevStale }
         await di.storage.saveAggregate(restored)
         set((s) => ({
           aggregates: s.aggregates.map((a) => (a.id === existing.id ? restored : a)),
+          recalculating: { ...s.recalculating, [recalcingKey]: false },
         }))
+      } else {
+        set((s) => ({ recalculating: { ...s.recalculating, [recalcingKey]: false } }))
       }
     }
   },
@@ -403,5 +421,67 @@ export const useUiStore = create<UiState>((set, get) => ({
     await di.storage.saveReminder(snoozed)
     set((s) => ({ reminders: s.reminders.map((x) => (x.id === id ? snoozed : x)) }))
     scheduleReminders()
+  },
+  // ── Wave 1 core actions（屏层纯消费，不碰 store.ts）─────────────────────
+  saveCategory: async (cat) => {
+    // rename/recolor/新增类别：upsert by slug；listCategories 顺序保持（新类别追加末尾）。
+    await di.storage.saveCategory(cat)
+    set((s) => {
+      const exists = s.categories.some((c) => c.slug === cat.slug)
+      return { categories: exists ? s.categories.map((c) => (c.slug === cat.slug ? cat : c)) : [...s.categories, cat] }
+    })
+  },
+  primeLocation: () => {
+    // 采集开始时取一次地点：recordLocation 关 + 尚未取到时触发；best-effort，失败/拒绝→ location 留 undefined。
+    if (!get().settings.recordLocation) return
+    if (get().capture.location) return
+    void di.capture.getLocation().then((loc) => {
+      if (loc) set((s) => ({ capture: { ...s.capture, location: loc } }))
+    })
+  },
+  deleteCategory: async (slug) => {
+    // 受影响条目：分类指向该 slug 的。重映射 category=''（未分类）而非删 AI 记录——保留 summary/tags/facets。
+    const affected = Object.values(get().aiByEntry).filter((ai) => ai.category === slug)
+    await Promise.all(
+      affected.map(async (ai) => {
+        const next: EntryAi = { ...ai, category: '', version: ai.version + 1, createdAt: new Date().toISOString() }
+        await di.storage.saveEntryAi(next)
+        set((s) => ({ aiByEntry: { ...s.aiByEntry, [ai.entryId]: next } }))
+      }),
+    )
+    await di.storage.deleteCategory(slug)
+    set((s) => ({ categories: s.categories.filter((c) => c.slug !== slug) }))
+  },
+  deleteEntry: async (id) => {
+    // 关联提醒：条目都没了，提醒无意义——pending 的先 cancel timeout 再删 Reminder。
+    const linked = get().reminders.filter((r) => r.entryId === id)
+    await Promise.all(
+      linked.map(async (r) => {
+        clearScheduledTimeout(r.id)
+        await di.storage.deleteReminder(r.id)
+      }),
+    )
+    await di.storage.deleteEntry(id)
+    set((s) => ({
+      entries: s.entries.filter((e) => e.id !== id),
+      aiByEntry: Object.fromEntries(Object.entries(s.aiByEntry).filter(([k]) => k !== id)),
+      reminders: s.reminders.filter((r) => r.entryId !== id),
+    }))
+  },
+  updateEntry: async (id, patch) => {
+    // 手动编辑条目（如改文本/parts）：merge patch + bump updatedAt；id/createdAt 不变。
+    const cur = await di.storage.getEntry(id)
+    if (!cur) return
+    const next: Entry = { ...cur, ...patch, updatedAt: new Date().toISOString() }
+    await di.storage.saveEntry(next)
+    set((s) => ({ entries: s.entries.map((e) => (e.id === id ? next : e)) }))
+  },
+  updateEntryAi: async (entryId, patch) => {
+    // 手动编辑 AI 面板（如改类别/标题/摘要/标签）：bump version + 新 createdAt，同 id 原地 put。
+    const cur = get().aiByEntry[entryId] ?? (await di.storage.getEntryAi(entryId))
+    if (!cur) return
+    const next: EntryAi = { ...cur, ...patch, version: cur.version + 1, createdAt: new Date().toISOString() }
+    await di.storage.saveEntryAi(next)
+    set((s) => ({ aiByEntry: { ...s.aiByEntry, [entryId]: next } }))
   },
 }))

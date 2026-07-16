@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Secrets / local env (BYOK keys — never commit). *.local above covers
+# .env.local; these lines add belt-and-suspenders for plain .env + variants.
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

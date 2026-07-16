@@ -39,12 +39,19 @@ export interface Facets {
   event?: string
 }
 
+export interface GeoPoint {
+  lat: number
+  lng: number
+  label?: string // 反查地点名（可选；LLM/后置填）
+}
+
 export interface Entry {
   id: string
   createdAt: string // ISO
   updatedAt: string // ISO
   parts: EntryPart[]
   moodSelf?: string // 可选用户自标情绪侧面
+  location?: GeoPoint // 记录地点（settings.recordLocation 开时，采集时取一次）
   status: EntryStatus
   aiId?: string // 指向当前 EntryAi
 }

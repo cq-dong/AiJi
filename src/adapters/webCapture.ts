@@ -1,4 +1,5 @@
 import type { CapturePort } from '@/ports'
+import type { GeoPoint } from '@/domain/types'
 
 // PWA capture adapter (PRD §7.3 "WebSpeech+getUserMedia"): mic via getUserMedia,
 // live STT preview via WebSpeech, recording via MediaRecorder. Whisper final-quality
@@ -46,6 +47,17 @@ export const webCapture: CapturePort = {
     } catch {
       return false
     }
+  },
+
+  async getLocation(): Promise<GeoPoint | null> {
+    if (!('geolocation' in navigator)) return null
+    return new Promise<GeoPoint | null>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve(null), // denied/timeout → 不阻断采集，条目无 location
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
+      )
+    })
   },
 
   async startAudio({ onInterim, onFinal }) {
