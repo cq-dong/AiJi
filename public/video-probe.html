@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f7fa" />
+  <title>AiJi · A1 视频采集探针</title>
+  <style>
+    :root {
+      --bg: #f7f7fa;
+      --card: #ffffff;
+      --ink: #14141a;
+      --t2: #6b6b75;
+      --t3: #9a9aa5;
+      --pri: #4f46e5;
+      --priS: #eeedfd;
+      --brd: #ececef;
+      --ok: #0d9488;
+      --warn: #d97706;
+      --err: #dc2626;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Noto Sans SC", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-text-size-adjust: 100%;
+    }
+    body {
+      padding: 16px 16px 64px 16px;
+      max-width: 560px;
+      margin: 0 auto;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 8px 0 4px;
+    }
+    .sub {
+      color: var(--t2);
+      font-size: 12px;
+      margin: 0 0 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--brd);
+      border-radius: 16px;
+      padding: 16px;
+      margin: 12px 0;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 600;
+      margin: 0 0 12px;
+    }
+    .btns { display: flex; flex-direction: column; gap: 10px; }
+    button {
+      -webkit-appearance: none;
+      appearance: none;
+      border: none;
+      border-radius: 12px;
+      padding: 16px 18px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      min-height: 52px;
+      color: #fff;
+      background: var(--pri);
+      touch-action: manipulation;
+    }
+    button.sec { background: #fff; color: var(--ink); border: 1px solid var(--brd); }
+    button.ghost { background: var(--priS); color: var(--pri); }
+    button:disabled { opacity: 0.45; }
+    button.danger { background: var(--err); }
+    video {
+      width: 100%;
+      max-height: 320px;
+      background: #000;
+      border-radius: 12px;
+      display: block;
+    }
+    pre {
+      background: #0b0b10;
+      color: #e6e6ee;
+      border-radius: 12px;
+      padding: 12px;
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-break: break-word;
+      margin: 0;
+      max-height: 260px;
+      overflow: auto;
+    }
+    pre.light { background: #f3f3f8; color: var(--ink); }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .row > * { flex: 1 1 auto; }
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--priS);
+      color: var(--pri);
+      font-size: 11px;
+      font-weight: 600;
+      margin: 2px 4px 2px 0;
+    }
+    .pill.warn { background: #fef3c7; color: var(--warn); }
+    .pill.err  { background: #fee2e2; color: var(--err);  }
+    .pill.ok   { background: #ccfbf1; color: var(--ok);   }
+    .meta { font-size: 12px; color: var(--t2); }
+    .meta b { color: var(--ink); }
+    .note { font-size: 12px; color: var(--t3); margin-top: 8px; }
+    .section-title { font-size: 13px; font-weight: 600; margin: 14px 0 6px; color: var(--t2); }
+  </style>
+</head>
+<body>
+  <h1>AiJi · A1 视频采集探针</h1>
+  <p class="sub">
+    独立诊断页（不依赖 React/构建）。验证移动 PWA 能否稳定采集视频：权限、分辨率、MediaRecorder、回放、PWA 上下文。每步均有日志，便于手机截图。
+  </p>
+
+  <div class="card">
+    <h2>1 · 环境上下文</h2>
+    <pre id="env" class="light">读取中…</pre>
+  </div>
+
+  <div class="card">
+    <h2>2 · 摄像头权限与实时预览</h2>
+    <div class="btns">
+      <div class="row">
+        <button id="btnCam">开启摄像头（音+视）</button>
+        <button id="btnCamVideoOnly" class="ghost">仅视频(无麦克风)</button>
+      </div>
+      <button id="btnStop" class="danger" disabled>停止/释放所有轨道</button>
+    </div>
+    <div class="section-title">实时预览</div>
+    <video id="live" autoplay muted playsinline></video>
+    <div class="section-title">已授予的约束 / 轨道信息</div>
+    <pre id="constraints" class="light">未启动</pre>
+    <p class="note">
+      非本地（非 localhost）访问时，getUserMedia 要求 HTTPS。若在手机上经 LAN http:// 访问且权限被拒，多半是安全上下文不足，而非设备/浏览器不支持。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>3 · 录制 5 秒并回放</h2>
+    <button id="btnRec" disabled>录制 5 秒</button>
+    <div class="section-title">已选 MIME</div>
+    <pre id="mime" class="light">未检测</pre>
+    <div class="section-title">回放（录制结果）</div>
+    <video id="playback" controls playsinline></video>
+    <div class="section-title">Blob 信息</div>
+    <pre id="blob" class="light">未录制</pre>
+  </div>
+
+  <div class="card">
+    <h2>4 · 全量日志（时间戳）</h2>
+    <pre id="log">— 启动 —</pre>
+    <div class="row" style="margin-top:10px">
+      <button id="btnClearLog" class="sec">清空日志</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  var logEl   = document.getElementById("log");
+  var envEl   = document.getElementById("env");
+  var consEl  = document.getElementById("constraints");
+  var mimeEl  = document.getElementById("mime");
+  var blobEl  = document.getElementById("blob");
+  var liveEl  = document.getElementById("live");
+  var playEl  = document.getElementById("playback");
+  var btnCam  = document.getElementById("btnCam");
+  var btnCamV = document.getElementById("btnCamVideoOnly");
+  var btnStop = document.getElementById("btnStop");
+  var btnRec  = document.getElementById("btnRec");
+  var btnClear= document.getElementById("btnClearLog");
+
+  var stream = null;            // 当前 MediaStream
+  var recorder = null;          // MediaRecorder
+  var chunks = [];              // 录制分片
+  var recMime = null;           // 实际使用的 mime
+  var recStartTs = 0;           // 录制开始 wall-clock
+  var recStopTs  = 0;           // 录制停止 wall-clock
+
+  function ts() {
+    var d = new Date();
+    function p(n, l) { l = l || 2; var s = String(n); while (s.length < l) s = "0" + s; return s; }
+    return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds()) + "." + p(d.getMilliseconds(), 3);
+  }
+
+  function log(msg, kind) {
+    var tag = kind ? ("[" + kind + "] ") : "";
+    var line = ts() + "  " + tag + msg + "\n";
+    logEl.textContent += line;
+    logEl.scrollTop = logEl.scrollHeight;
+    // 同步打印到 console，方便远程调试
+    try {
+      if (kind === "ERROR") { console.error(line); }
+      else if (kind === "WARN") { console.warn(line); }
+      else { console.log(line); }
+    } catch (e) {}
+  }
+
+  function setPill(el, text, kind) {
+    var html = '<span class="pill ' + (kind || "") + '">' + text + "</span>";
+    el.innerHTML = html;
+  }
+
+  // —— 环境上下文 ——
+  function readEnv() {
+    var ua = navigator.userAgent || "(no userAgent)";
+    var sw = ("serviceWorker" in navigator) ? "supported" : "NOT supported";
+    var notif = ("Notification" in self) ? Notification.permission : "(Notification API 不存在)";
+    var isSecure = (window.isSecureContext !== undefined)
+      ? String(window.isSecureContext)
+      : "(isSecureContext 未定义)";
+    var proto = location.protocol;
+    var host = location.host;
+    var rec = ("MediaRecorder" in window) ? "supported" : "NOT supported";
+    var gum = (navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+      ? "supported" : "NOT supported";
+    var mimeList = ["video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    var supportedMimes = mimeList.filter(function (m) {
+      try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; }
+    });
+
+    envEl.textContent =
+      "userAgent: " + ua + "\n" +
+      "platform: " + (navigator.platform || "(n/a)") + "\n" +
+      "protocol: " + proto + "   host: " + host + "\n" +
+      "isSecureContext: " + isSecure + "\n" +
+      "serviceWorker: " + sw + "\n" +
+      "Notification.permission: " + notif + "\n" +
+      "getUserMedia: " + gum + "\n" +
+      "MediaRecorder: " + rec + "\n" +
+      "MediaRecorder.isTypeSupported() 命中:\n  " +
+        (supportedMimes.length ? supportedMimes.join("\n  ") : "(无)") + "\n" +
+      "screen: " + window.screen.width + "x" + window.screen.height +
+        "  dpr=" + (window.devicePixelRatio || 1);
+  }
+
+  function blockForNonSecure() {
+    var proto = location.protocol;
+    var host = location.host;
+    var isLocal = (host.indexOf("localhost") === 0) || (host.indexOf("127.0.0.1") === 0) || (host === "[::1]");
+    if (proto !== "https:" && !isLocal) {
+      log("⚠ 当前为 " + proto + "// 非本地 — 非安全上下文。getUserMedia 多半被拒。请用 https:// 或 localhost。", "WARN");
+      return true;
+    }
+    return false;
+  }
+
+  // —— 启动摄像头 ——
+  function startCamera(videoOnly) {
+    if (stream) {
+      log("已有流，先释放旧轨道。", "WARN");
+      stopAll();
+    }
+    blockForNonSecure(); // 仅记日志，仍尝试调用（部分浏览器对 file: 也宽松）
+
+    var cons = videoOnly
+      ? { video: true }
+      : { video: { facingMode: "environment", width: { ideal: 1280 } }, audio: true };
+
+    log("请求 getUserMedia，约束 = " + JSON.stringify(cons));
+
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      log("navigator.mediaDevices.getUserMedia 不存在。", "ERROR");
+      consEl.textContent = "navigator.mediaDevices.getUserMedia 不存在 — 浏览器/PWA 不支持。";
+      return;
+    }
+
+    var p = navigator.mediaDevices.getUserMedia(cons);
+    p.then(function (s) {
+      stream = s;
+      liveEl.srcObject = s;
+      log("getUserMedia 成功，共 " + s.getTracks().length + " 条轨道。");
+
+      var lines = [];
+      s.getTracks().forEach(function (t, i) {
+        var st = {};
+        try { st = t.getSettings(); } catch (e) { st = { error: String(e) }; }
+        log("轨道[" + i + "] kind=" + t.kind + " label=" + JSON.stringify(t.label) +
+            " readyState=" + t.readyState + " settings=" + JSON.stringify(st));
+        lines.push(
+          "track[" + i + "] kind=" + t.kind +
+          " label=" + JSON.stringify(t.label) +
+          " readyState=" + t.readyState +
+          "\n  settings=" + JSON.stringify(st)
+        );
+      });
+      consEl.textContent = lines.join("\n");
+
+      // 权限状态
+      try {
+        if (navigator.permissions && navigator.permissions.query) {
+          navigator.permissions.query({ name: "camera" }).then(function (r) {
+            log("permissions(camera) = " + r.state);
+          }, function (e) { log("permissions.query(camera) 失败: " + e, "WARN"); });
+          navigator.permissions.query({ name: "microphone" }).then(function (r) {
+            log("permissions(microphone) = " + r.state);
+          }, function (e) { log("permissions.query(microphone) 失败: " + e, "WARN"); });
+        }
+      } catch (e) {}
+
+      // 可录制性
+      if (!("MediaRecorder" in window)) {
+        log("MediaRecorder 不存在，无法录制。", "ERROR");
+        btnRec.disabled = true;
+      } else {
+        btnRec.disabled = false;
+      }
+      btnStop.disabled = false;
+    }).catch(function (err) {
+      log("getUserMedia 失败: " + err.name + " — " + err.message, "ERROR");
+      consEl.textContent = "ERROR: " + err.name + "\n" + err.message +
+        "\n\n(constraint=" + JSON.stringify(cons) + ")";
+      btnRec.disabled = true;
+    });
+  }
+
+  // —— 释放 ——
+  function stopAll() {
+    if (!stream) {
+      log("无流可释放。");
+      btnStop.disabled = true;
+      return;
+    }
+    try { if (liveEl.srcObject) { liveEl.srcObject = null; } } catch (e) {}
+    var n = 0;
+    stream.getTracks().forEach(function (t) {
+      try { t.stop(); n++; } catch (e) { log("track.stop() 异常: " + e, "WARN"); }
+    });
+    log("已释放 " + n + " 条轨道。");
+    stream = null;
+    btnStop.disabled = true;
+    btnRec.disabled = true;
+  }
+
+  // —— 选 MIME ——
+  function pickMime() {
+    var candidates = ["video/mp4", "video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"];
+    for (var i = 0; i < candidates.length; i++) {
+      var m = candidates[i];
+      var ok = false;
+      try { ok = MediaRecorder.isTypeSupported(m); } catch (e) { ok = false; }
+      if (ok) return m;
+    }
+    return ""; // 让浏览器自选
+  }
+
+  // —— 录制 5 秒 ——
+  function record5() {
+    if (!stream) { log("无流，无法录制。", "ERROR"); return; }
+    if (!("MediaRecorder" in window)) { log("MediaRecorder 不存在。", "ERROR"); return; }
+
+    recMime = pickMime();
+    mimeEl.textContent = "候选顺序:\n  video/mp4\n  video/webm;codecs=vp9\n  video/webm;codecs=vp8\n  video/webm\n\n实际选择: " + (recMime || "(浏览器自选)");
+    log("pickMime() => " + (recMime || "(空，让浏览器自选)"));
+
+    chunks = [];
+    var opts = {};
+    if (recMime) opts.mimeType = recMime;
+    try {
+      recorder = new MediaRecorder(stream, opts);
+    } catch (e) {
+      log("new MediaRecorder 异常: " + e, "ERROR");
+      return;
+    }
+    log("MediaRecorder 创建成功 mimeType=" + (recorder.mimeType || "(默认)"));
+
+    recorder.ondataavailable = function (ev) {
+      if (ev.data && ev.data.size > 0) {
+        chunks.push(ev.data);
+        log("dataavailable size=" + ev.data.size + " type=" + (ev.data.type || "?"));
+      }
+    };
+    recorder.onerror = function (ev) {
+      log("MediaRecorder.onerror: " + (ev.error ? (ev.error.name + " — " + ev.error.message) : "(unknown)"), "ERROR");
+    };
+    recorder.onstop = function () {
+      recStopTs = Date.now();
+      var blob = new Blob(chunks, { type: recMime || "video/webm" });
+      var url = URL.createObjectURL(blob);
+      playEl.src = url;
+
+      // 墙钟时长
+      var wallMs = recStopTs - recStartTs;
+
+      blobEl.textContent =
+        "blob.size = " + blob.size + " B (" + (blob.size / 1024).toFixed(1) + " KB)\n" +
+        "blob.type = " + blob.type + "\n" +
+        "墙钟录制时长 = " + wallMs + " ms\n" +
+        "分片数 = " + chunks.length;
+
+      log("录制完成 size=" + blob.size + " type=" + blob.type + " 墙钟=" + wallMs + "ms 分片=" + chunks.length);
+
+      // 从回放元素读真实 duration
+      playEl.onloadedmetadata = function () {
+        var d = playEl.duration;
+        log("playback.duration = " + d + " s (来自 loadedmetadata)");
+        blobEl.textContent += "\nplayback.duration = " + d + " s (来自 video metadata)";
+      };
+      playEl.onerror = function () {
+        log("回放 video 触发 onerror — 录制可能不可解码。", "ERROR");
+      };
+    };
+
+    try {
+      recStartTs = Date.now();
+      // timeslice 1000ms，便于观察 dataavailable 节奏
+      recorder.start(1000);
+      log("MediaRecorder.start(1000) 调用成功，mimeType=" + recorder.mimeType);
+      btnRec.disabled = true;
+      btnRec.textContent = "录制中…（5s）";
+
+      setTimeout(function () {
+        if (recorder && recorder.state !== "inactive") {
+          try {
+            recorder.stop();
+            log("5s 到，调用 recorder.stop()");
+          } catch (e) {
+            log("recorder.stop() 异常: " + e, "ERROR");
+          }
+        }
+        btnRec.disabled = false;
+        btnRec.textContent = "录制 5 秒";
+      }, 5000);
+    } catch (e) {
+      log("recorder.start 异常: " + e, "ERROR");
+      btnRec.disabled = false;
+    }
+  }
+
+  // —— 绑定 ——
+  btnCam.addEventListener("click", function () { startCamera(false); });
+  btnCamV.addEventListener("click", function () { startCamera(true); });
+  btnStop.addEventListener("click", stopAll);
+  btnRec.addEventListener("click", record5);
+  btnClear.addEventListener("click", function () {
+    logEl.textContent = "— 日志已清空 —\n";
+    log("日志清空。");
+  });
+
+  // —— pagehide 释放 ——
+  window.addEventListener("pagehide", function () {
+    try { if (stream) stopAll(); } catch (e) {}
+  });
+
+  // —— 初始化 ——
+  readEnv();
+  log("探针已加载。");
+  log("协议=" + location.protocol + " host=" + location.host);
+  log("isSecureContext=" + window.isSecureContext);
+  blockForNonSecure();
+})();
+</script>
+</body>
+</html>
