@@ -58,8 +58,23 @@ export interface EntryAi {
   facets: Facets
   titleSuggestion?: string
   summary?: string
+  // LLM-detected time-based reminder intent (B4). dueAt is absolute ISO 8601;
+  // label is a short summary the user can edit in TodoConfirm (B6).
+  // The suggestion is NOT a scheduled Reminder — user must confirm to create one (B5).
+  reminderSuggestion?: { dueAt: string; label: string }
   modelUsed: string
   createdAt: string
+}
+
+export type ReminderStatus = 'pending' | 'fired' | 'snoozed' | 'missed'
+
+export interface Reminder {
+  id: string
+  entryId: string // links back to the Entry that gave rise to this reminder
+  dueAt: string // ISO 8601 absolute timestamp (LLM-parsed, Q2)
+  label: string // short description shown in notification + settings sheet
+  status: ReminderStatus
+  createdAt: string // ISO
 }
 
 export interface Category {

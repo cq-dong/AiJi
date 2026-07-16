@@ -1,11 +1,12 @@
 import { db } from '@/data/db'
 import type { StoragePort } from '@/ports'
-import type { Aggregate, AggregateScopeType } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Reminder } from '@/domain/types'
 import {
   seedAggregates,
   seedCategories,
   seedEntries,
   seedEntryAi,
+  seedReminders,
   seedSettings,
   seedTags,
 } from '@/data/seed'
@@ -33,6 +34,8 @@ async function ensureSeeded(): Promise<void> {
   }
   // aggregates 空库时灌 seed 兜底（真重算后会覆盖）。
   if ((await db.aggregates.count()) === 0) await db.aggregates.bulkPut(seedAggregates)
+  // reminders 空库时灌 seed 样例（Phase 9 Batch 2b）。
+  if ((await db.reminders.count()) === 0) await db.reminders.bulkPut(seedReminders)
   seeded = true
 }
 
@@ -124,5 +127,21 @@ export const dexieStorage: StoragePort = {
     } catch {
       return undefined // not found (seed parts) or OPFS unsupported
     }
+  },
+  async listReminders(): Promise<Reminder[]> {
+    await ensureSeeded()
+    const all = await db.reminders.toArray()
+    // Earliest due first — pending reminders surface to top; missed naturally fall below.
+    return all.sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
+  },
+  async getReminder(id: string): Promise<Reminder | undefined> {
+    await ensureSeeded()
+    return db.reminders.get(id)
+  },
+  async saveReminder(r: Reminder): Promise<void> {
+    await db.reminders.put(r)
+  },
+  async deleteReminder(id: string): Promise<void> {
+    await db.reminders.delete(id)
   },
 }

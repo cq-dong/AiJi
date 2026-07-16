@@ -1,4 +1,4 @@
-import type { Aggregate, Category, Entry, EntryAi, Tag } from '@/domain/types'
+import type { Aggregate, Category, Entry, EntryAi, Reminder, Tag } from '@/domain/types'
 
 // Prototype sample data — heterogeneous entries (life fragments / stray ideas /
 // project progress), per AiJi identity ("记", not diary). "Today" = 2026-07-15.
@@ -98,6 +98,19 @@ export const seedEntryAi: EntryAi[] = [
   { id: 'ai10', entryId: 'e10', version: 1, category: 'idea', tags: ['aiji'], facets: {}, titleSuggestion: '混合模态测试', summary: '文本+语音混合记一条', modelUsed: 'deepseek-chat', createdAt: '2026-07-12T20:11:00+08:00' },
   { id: 'ai11', entryId: 'e11', version: 1, category: 'reading', tags: ['reflection'], facets: {}, titleSuggestion: '卡片笔记写作法', summary: '原子化+链接+不分类，与涌现一致', modelUsed: 'deepseek-chat', createdAt: '2026-07-12T13:01:00+08:00' },
   { id: 'ai12', entryId: 'e12', version: 1, category: 'life', tags: ['reflection'], facets: { mood: '疲惫', project: 'AiJi' }, titleSuggestion: '该早睡了', summary: '连续改 bug 三天，今天早睡', modelUsed: 'deepseek-chat', createdAt: '2026-07-11T18:23:00+08:00' },
+]
+
+export const seedReminders: Reminder[] = [
+  // e8: "要记得周三给设计稿反馈，别拖到周末。" — pending reminder for tomorrow morning.
+  {
+    id: 'rm1', entryId: 'e8', dueAt: '2026-07-16T10:00:00+08:00',
+    label: '给设计稿反馈', status: 'pending', createdAt: '2026-07-13T21:16:00+08:00',
+  },
+  // e12: "明天再啃 STT 那块。" — overdue, marked missed (Q3: >1h overdue → missed).
+  {
+    id: 'rm2', entryId: 'e12', dueAt: '2026-07-12T09:00:00+08:00',
+    label: '啃 STT 那块', status: 'missed', createdAt: '2026-07-11T18:23:00+08:00',
+  },
 ]
 
 export const seedAggregates: Aggregate[] = [
