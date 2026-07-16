@@ -191,6 +191,71 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+function SttSheet({ onClose }: { onClose: () => void }) {
+  const settings = useUiStore((s) => s.settings)
+  const setSttConfig = useUiStore((s) => s.setSttConfig)
+  const [model, setModel] = useState(settings.sttModel ?? '')
+  const [key, setKey] = useState('')
+  const hasKey = settings.sttKeyRef === 'stt:key'
+  const inputCls =
+    'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
+      <div className="w-full max-w-[420px] rounded-screen bg-page p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-bold text-ink">音频转写模型</p>
+          <button type="button" onClick={onClose} className="text-[16px] text-t3">
+            ✕
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-t3">BYOK · 阿里云 DashScope paraformer（WS 流式）· Key 本地存</p>
+
+        <div className="mt-3 space-y-3">
+          <div>
+            <label className="text-[11px] text-t2">模型</label>
+            <input
+              className={inputCls}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              placeholder="paraformer-realtime-v2"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-t2">
+              API Key{hasKey ? '（已设置，留空不变）' : ''}
+            </label>
+            <input
+              className={inputCls}
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder={hasKey ? '••••••（留空保持不变）' : 'sk-…'}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            className="h-[38px] flex-1 rounded-btn"
+            onClick={() => {
+              setSttConfig(model.trim() || 'paraformer-realtime-v2', key)
+              onClose()
+            }}
+          >
+            保存
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
   const settings = useUiStore((s) => s.settings)
   const setSettings = useUiStore((s) => s.setSettings)
@@ -198,6 +263,7 @@ export default function Settings() {
   const recordLocation = settings.recordLocation
   const hasEntries = useUiStore((s) => s.entries.length > 0)
   const [editing, setEditing] = useState(false)
+  const [editingStt, setEditingStt] = useState(false)
 
   return (
     <div className="px-4 pb-4 pt-4">
@@ -256,7 +322,11 @@ export default function Settings() {
             onClick={() => setEditing(true)}
           />
           <div className="my-3 h-px bg-brd" />
-          <ModelRow label="音频转写模型" value={settings.sttProvider} />
+          <ModelRow
+            label="音频转写模型"
+            value={settings.sttModel || settings.sttProvider}
+            onClick={() => setEditingStt(true)}
+          />
         </div>
       </Card>
 
@@ -303,6 +373,7 @@ export default function Settings() {
       </div>
 
       {editing && <ByokSheet onClose={() => setEditing(false)} />}
+      {editingStt && <SttSheet onClose={() => setEditingStt(false)} />}
     </div>
   )
 }

@@ -37,6 +37,7 @@ interface UiState {
   setOnline: (v: boolean) => void
   setSettings: (patch: Partial<Settings>) => void
   setLlmConfig: (url: string, model: string, key: string) => void
+  setSttConfig: (model: string, key: string) => void
   processEntry: (entryId: string) => Promise<void>
 }
 
@@ -141,8 +142,42 @@ export const useUiStore = create<UiState>((set, get) => ({
     void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
     if (key) void di.secrets.set('llm:key', key).catch((e) => console.error('[store] setLlmKey failed', e))
   },
+  setSttConfig: (model, key) => {
+    const cur = get().settings
+    const next = { ...cur, sttModel: model, sttKeyRef: key ? 'stt:key' : cur.sttKeyRef }
+    set({ settings: next })
+    void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+    if (key) void di.secrets.set('stt:key', key).catch((e) => console.error('[store] setSttKey failed', e))
+  },
   processEntry: async (entryId) => {
     try {
+      // STT 终稿（保存后）：paraformer 重写音频/视频 transcript，比 WebSpeech live 预览准。
+      // 无 stt:key → 跳过整步（用 WebSpeech 预览文本分类即可）；单 part 失败 → 回退预览文本，不阻断分类。
+      const sttKey = await di.secrets.get('stt:key')
+      if (sttKey) {
+        const fresh = await di.storage.getEntry(entryId)
+        if (fresh) {
+          let changed = false
+          const parts = await Promise.all(
+            fresh.parts.map(async (p) => {
+              if (p.type !== 'audio' && p.type !== 'video') return p
+              try {
+                const text = await di.stt.transcribe(p.ref)
+                if (!text) return p
+                changed = true
+                return { ...p, transcript: text }
+              } catch (e) {
+                console.error('[store] stt failed for ' + p.ref, e)
+                return p
+              }
+            }),
+          )
+          if (changed) {
+            const updated: Entry = { ...fresh, parts, updatedAt: new Date().toISOString() }
+            await di.storage.saveEntry(updated)
+          }
+        }
+      }
       const ai = await di.llm.classify(entryId)
       await di.storage.saveEntryAi(ai)
       // 涌现：分类可能新建了类别/标签（适配器已落库），重载让 home chip / detail 标签能解析。

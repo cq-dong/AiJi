@@ -96,6 +96,8 @@ export interface Settings {
   llmUrl?: string // BYOK endpoint (OpenAI-compatible chat completions)
   llmModel?: string // e.g. 'deepseek-v4-flash'
   sttProvider: string
+  sttModel?: string // e.g. 'paraformer-realtime-v2' (DashScope realtime WS, BYOK)
+  sttKeyRef?: string // 'stt:key' when a key is set in SecretStorePort
   recordLocation: boolean
   dailyReminder: boolean
   theme: 'light' | 'dark' | 'system'
