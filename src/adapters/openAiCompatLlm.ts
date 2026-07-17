@@ -1,5 +1,5 @@
 import type { LlmPort } from '@/ports'
-import type { Aggregate, AggregateScopeType, Category, ChatCite, ChatQuery, Entry, EntryAi, Facets, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatCite, ChatQuery, Entry, EntryAi, Facets, MediaType, Tag } from '@/domain/types'
 import { di } from '@/app/di'
 import { compressImage, extractFrame, pickFrameTimes } from '@/adapters/visionMedia'
 
@@ -37,11 +37,38 @@ interface ClassifyResult {
   reminderSuggestion?: { dueAt: string; label: string }
 }
 
+// D7: 按 mediaType 分块标注媒体来源，LLM 能区分文本/图片/语音/视频内容，回答更鲁棒。
+// mediaType 缺失时按 part.type 推断 fallback：text→文本, audio→语音, video 按 durationSec
+// 区分（<=0 照片→image, >0 真视频→video）。空内容 part 跳过。多段同类型用换行连接。
+// 被 classify 与 aggregate 共用 → 单条摘要与聚合摘要都带媒体类型上下文。
+const MEDIA_ORDER: readonly MediaType[] = ['text', 'image', 'audio', 'video']
+const MEDIA_LABELS: Record<MediaType, string> = {
+  text: '【文本】',
+  image: '【图片】',
+  audio: '【语音转文字】',
+  video: '【视频】',
+}
+function inferMediaType(p: Entry['parts'][number]): MediaType {
+  if (p.mediaType) return p.mediaType
+  if (p.type === 'text') return 'text'
+  if (p.type === 'audio') return 'audio'
+  // VideoPart: durationSec<=0 是拍照（image），>0 是真视频（video）
+  return p.durationSec <= 0 ? 'image' : 'video'
+}
 function entryText(entry: Entry): string {
-  return entry.parts
-    .map((p) => (p.type === 'text' ? p.content : p.transcript ?? ''))
-    .filter(Boolean)
-    .join('\n')
+  const groups: Record<MediaType, string[]> = { text: [], image: [], audio: [], video: [] }
+  for (const p of entry.parts) {
+    const text = p.type === 'text' ? p.content : p.transcript ?? ''
+    if (!text) continue
+    groups[inferMediaType(p)].push(text)
+  }
+  const blocks: string[] = []
+  for (const mt of MEDIA_ORDER) {
+    const items = groups[mt]
+    if (items.length === 0) continue
+    blocks.push(`${MEDIA_LABELS[mt]}\n${items.join('\n')}`)
+  }
+  return blocks.join('\n\n')
 }
 
 // Vision：收集 entry 的 video parts 的图像 data URL。照片（durationSec<=0）整张压缩；

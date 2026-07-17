@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Download, X } from 'lucide-react'
+import { Capacitor } from '@capacitor/core'
 import type { Category } from '@/domain/types'
 import { Button, cn } from '@/ui/components'
 import { exportCategoryZip } from '@/adapters/zipExport'
+import { canShareFiles, type SaveResult } from '@/adapters/fileShare'
 
 type Accent = NonNullable<Category['accent']>
 
@@ -30,6 +32,19 @@ interface CategoryEditSheetProps {
   onDelete: (slug: string) => void
 }
 
+// D10: SaveResult → 反馈文案（与 settings/CategoryDetail 一致语义）。
+function formatSaveFeedback(result: SaveResult): string {
+  if (!result.ok) return result.error ? `导出失败：${result.error}` : '导出失败'
+  if (result.method === 'share') return '已分享'
+  if (result.method === 'filesystem') {
+    const p = result.path ?? ''
+    const tail = p ? p.replace(/^file:\/\//, '').replace(/^content:\/\//, '') : ''
+    return tail ? `已保存到 ${tail}` : '已保存到 文档/AiJi/'
+  }
+  if (result.method === 'download') return '已下载到浏览器下载目录'
+  return '已导出'
+}
+
 export function CategoryEditSheet({
   category,
   liveCount,
@@ -41,6 +56,10 @@ export function CategoryEditSheet({
   const [accent, setAccent] = useState<Accent>(category.accent ?? 'catIdea')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [entered, setEntered] = useState(false)
+  // D10: .zip 导出确认 + 反馈状态。
+  const [zipConfirm, setZipConfirm] = useState(false)
+  const [zipExporting, setZipExporting] = useState(false)
+  const [zipToast, setZipToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   useEffect(() => {
     const r = requestAnimationFrame(() => setEntered(true))
@@ -51,6 +70,22 @@ export function CategoryEditSheet({
   const canSave =
     labelTrim.length > 0 &&
     (labelTrim !== category.label || accent !== (category.accent ?? 'catIdea'))
+
+  const filename = `aiji-category-${category.slug}.zip`
+
+  async function handleExport() {
+    setZipConfirm(false)
+    setZipExporting(true)
+    try {
+      const result = await exportCategoryZip(category.slug)
+      if (!result.ok && result.method === 'none' && result.error === '已取消') return
+      setZipToast({ msg: formatSaveFeedback(result), ok: result.ok })
+    } catch (e) {
+      setZipToast({ msg: `导出失败：${e instanceof Error ? e.message : String(e)}`, ok: false })
+    } finally {
+      setZipExporting(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col justify-end">
@@ -139,14 +174,12 @@ export function CategoryEditSheet({
             <div className="flex items-center gap-4">
               <button
                 type="button"
-                onClick={() => {
-                  void exportCategoryZip(category.slug)
-                  onClose()
-                }}
-                className="inline-flex cursor-pointer items-center gap-1 text-[13px] font-medium text-pri transition duration-base ease-out active:opacity-60 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                disabled={zipExporting}
+                onClick={() => setZipConfirm(true)}
+                className="inline-flex cursor-pointer items-center gap-1 text-[13px] font-medium text-pri transition duration-base ease-out active:opacity-60 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-50"
               >
                 <Download size={14} strokeWidth={2} />
-                导出该类别
+                {zipExporting ? '导出中…' : '导出该类别'}
               </button>
               <button
                 type="button"
@@ -195,6 +228,89 @@ export function CategoryEditSheet({
           </Button>
         </div>
       </div>
+
+      {/* D10: 导出确认 sheet——z-[110] 盖在编辑 sheet（z-[100]）之上。 */}
+      {zipConfirm && (
+        <div
+          className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 animate-fade-in"
+          onClick={() => setZipConfirm(false)}
+        >
+          <div
+            className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-[17px] font-bold text-ink">导出确认</p>
+              <button
+                type="button"
+                onClick={() => setZipConfirm(false)}
+                aria-label="关闭"
+                className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              >
+                <X size={18} strokeWidth={2} />
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+                <span className="text-[13px] text-t2">导出范围</span>
+                <span className="text-[13px] font-medium text-ink">类别「{category.label}」</span>
+              </div>
+              <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+                <span className="text-[13px] text-t2">条目数</span>
+                <span className="text-[13px] font-medium text-ink">{liveCount} 条</span>
+              </div>
+              <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+                <span className="text-[13px] text-t2">文件名</span>
+                <span className="text-[12px] font-medium text-ink">{filename}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+                <span className="text-[13px] text-t2">保存位置</span>
+                <span className="text-[12px] font-medium text-t2">
+                  {canShareFiles()
+                    ? '系统分享面板'
+                    : Capacitor.isNativePlatform()
+                      ? '文档/AiJi/'
+                      : '浏览器下载'}
+                </span>
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-[38px] flex-1 rounded-btn"
+                onClick={() => setZipConfirm(false)}
+              >
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                className="h-[38px] flex-1 rounded-btn"
+                onClick={() => void handleExport()}
+              >
+                确认导出
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* D10: 导出反馈 toast——z-[120] 盖在确认 sheet 之上。 */}
+      {zipToast && (
+        <div className="fixed inset-x-0 bottom-24 z-[120] flex justify-center px-4 pointer-events-none">
+          <div
+            className={cn(
+              'pointer-events-auto max-w-[360px] rounded-btn px-4 py-2.5 text-[12px] font-medium shadow-sheet animate-slide-up',
+              zipToast.ok ? 'bg-ink text-card' : 'bg-catFail text-card',
+            )}
+            role="status"
+            onClick={() => setZipToast(null)}
+          >
+            {zipToast.msg}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

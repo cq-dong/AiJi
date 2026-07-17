@@ -46,4 +46,8 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- 应用内自更新：下载 APK 后拉起系统安装器需此权限（Android 8+）。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- D4: 本地提醒通知（Android 13+ API 33+ 需运行时 + manifest 声明 POST_NOTIFICATIONS）。
+         @capacitor/local-notifications 在原生层用 NotificationManager 发系统通知（铃声+弹窗），
+         不再依赖前台 setTimeout（app 后台/被杀仍可触发）。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

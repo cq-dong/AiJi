@@ -4,6 +4,7 @@
 import { di } from '@/app/di'
 import { useUiStore } from '@/app/store'
 import type { Entry, EntryAi } from '@/domain/types'
+import { saveBlob, type SaveResult } from '@/adapters/fileShare'
 
 // CRC32 table (polynomial 0xEDB88320, standard zip CRC)
 const CRC_TABLE: Uint32Array = (() => {
@@ -204,7 +205,7 @@ function buildEntryMarkdown(
   return lines.join('\n')
 }
 
-export async function exportZip(): Promise<void> {
+export async function exportZip(): Promise<SaveResult> {
   // Cold-load guard: the user may trigger export before hydrate finishes (e.g. a
   // deep-linked settings action on a fresh load). Snapshot would be empty → empty zip.
   if (!useUiStore.getState().hydrated) await useUiStore.getState().hydrate()
@@ -261,14 +262,9 @@ export async function exportZip(): Promise<void> {
 
   const zip = buildZip(files)
   const blob = new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'aiji-export.zip'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  // D10: 平台分流落盘（Web Share / Filesystem / a.click fallback），返回 SaveResult
+  // 供调用方给出"已分享"/"已保存到 xxx"反馈。
+  return saveBlob(blob, 'aiji-export.zip')
 }
 
 // ── Wave 4: per-entry export + share ──────────────────────────────────────
@@ -285,10 +281,10 @@ function entryContext(id: string) {
 }
 
 // Single-entry .zip: entries/<id>.md + media/<ref>.<ext> + manifest.json. Mirrors global exportZip.
-export async function exportEntryZip(id: string): Promise<void> {
+export async function exportEntryZip(id: string): Promise<SaveResult> {
   if (!useUiStore.getState().hydrated) await useUiStore.getState().hydrate()
   const ctx = entryContext(id)
-  if (!ctx) return
+  if (!ctx) return { ok: false, method: 'none', error: '条目不存在' }
   const { entry, ai, catLabel, tagLabel } = ctx
   const enc = new TextEncoder()
   const files: ZipFile[] = [
@@ -313,20 +309,13 @@ export async function exportEntryZip(id: string): Promise<void> {
   })
   const zip = buildZip(files)
   const blob = new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `aiji-entry-${entry.id}.zip`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  return saveBlob(blob, `aiji-entry-${entry.id}.zip`)
 }
 
 // Per-category .zip: all entries whose AI category === slug, as
 // entries/<id>.md + media/<ref>.<ext> + manifest.json. Mirrors global exportZip,
 // restricted to the category's entries. Empty category → silent no-op (MVP).
-export async function exportCategoryZip(slug: string): Promise<void> {
+export async function exportCategoryZip(slug: string): Promise<SaveResult> {
   if (!useUiStore.getState().hydrated) await useUiStore.getState().hydrate()
   const { entries, aiByEntry, categories, tags } = useUiStore.getState()
   const catLabel = (s: string) => categories.find((c) => c.slug === s)?.label ?? s
@@ -334,7 +323,7 @@ export async function exportCategoryZip(slug: string): Promise<void> {
   const catEntries = entries
     .filter((e) => aiByEntry[e.id]?.category === slug)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-  if (catEntries.length === 0) return
+  if (catEntries.length === 0) return { ok: false, method: 'none', error: '该类别下没有条目' }
 
   const files: ZipFile[] = []
   const enc = new TextEncoder()
@@ -377,14 +366,7 @@ export async function exportCategoryZip(slug: string): Promise<void> {
 
   const zip = buildZip(files)
   const blob = new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `aiji-category-${slug}.zip`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  return saveBlob(blob, `aiji-category-${slug}.zip`)
 }
 
 // Web Share API available (mobile share sheet). UI gates the 分享 button on this.

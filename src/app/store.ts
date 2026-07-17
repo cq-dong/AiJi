@@ -74,6 +74,8 @@ interface UiState {
   confirmReminder: (entryId: string, dueAt: string, label: string) => Promise<void>
   dismissReminder: (id: string) => Promise<void>
   snoozeReminder: (id: string, minutes: number) => Promise<void>
+  // D4: 编辑已设提醒的时间/内容。cancel 旧通知 + 更新 Reminder + 重新 schedule。
+  editReminder: (id: string, dueAt: string, label: string) => Promise<void>
   // Wave 1 core actions（屏层纯消费，不碰 store.ts）
   saveCategory: (cat: Category) => Promise<void>
   deleteCategory: (slug: string) => Promise<void>
@@ -108,8 +110,11 @@ function entriesInRange(entries: Entry[], scope: AggregateScopeType, range: stri
   return entries.filter((e) => scopeRange(scope, new Date(e.createdAt)) === range)
 }
 
-// ── 提醒调度（Phase 9 Batch 2b · B5）─────────────────────────────────────
-// 前台 only（Q1）：setTimeout 到点 fire Notification；无 push server。
+// ── 提醒调度（Phase 9 Batch 2b · B5 · D4 重构）──────────────────────────
+// D4：旧方案纯 setTimeout 前台 only——app 进后台/被杀后到点不触发（无铃声无弹窗）。
+// 新方案：di.localNotifications.schedule(r) 预约系统级本地通知（原生：铃声+弹窗+
+// 锁屏，后台/被杀仍触发；web：浏览器 Notification 前台 best-effort）。store 仍保留
+// setTimeout 做前台状态更新（标 fired/missed）——两路并行，通知展示归 port，状态归 store。
 // module-level timeout 句柄表，key=reminder.id，供 dismiss/snooze cancel。
 const scheduledTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 // Q4：仅在首次 confirmReminder 时请求权限一次（permission !== 'default' 后不再弹）。
@@ -121,12 +126,19 @@ function clearScheduledTimeout(id: string): void {
     clearTimeout(h)
     scheduledTimeouts.delete(id)
   }
+  // D4: 同步取消系统级本地通知预约（原生 cancel pending notification；web 清 adapter timeout）
+  void di.localNotifications.cancel(id)
 }
 
-// 到点 fire：通知 + 置 fired + 落库 + 更新 state + 清 timeout 表。
-function fireReminder(r: Reminder): void {
+// 到点 fire：置 fired + 落库 + 更新 state + 清 timeout 表。
+// 通知展示由 di.localNotifications.schedule 预约（未来到点）或 fireReminder 内 notify（overdue 补推）处理。
+function fireReminder(r: Reminder, opts?: { fromOverdue?: boolean }): void {
   clearScheduledTimeout(r.id)
-  di.notifications.notify('AiJi 提醒', r.label, r.id)
+  // overdue 补推路径（hydrate 时发现已过到点 <1h）未走过 schedule → 此处即时 notify。
+  // 未来到点路径：schedule 已预约系统通知，不重复 notify（避免双通知）。
+  if (opts?.fromOverdue) {
+    di.localNotifications.notify('AiJi 提醒', r.label, r.id)
+  }
   const fired: Reminder = { ...r, status: 'fired' }
   void di.storage.saveReminder(fired).catch((e) => console.error('[store] saveReminder(fired) failed', e))
   useUiStore.setState((s) => ({ reminders: s.reminders.map((x) => (x.id === r.id ? fired : x)) }))
@@ -140,7 +152,7 @@ function markMissed(r: Reminder): void {
   useUiStore.setState((s) => ({ reminders: s.reminders.map((x) => (x.id === r.id ? missed : x)) }))
 }
 
-// 扫 reminders state：pending 的 → 未来 setTimeout 到点；overdue <1h 补 fire；>1h 标 missed。
+// 扫 reminders state：pending 的 → 未来预约系统通知 + setTimeout 状态更新；overdue <1h 补 fire；>1h 标 missed。
 // 去重守卫：已在 timeout 表的 id 跳过（confirm/snooze 先 clearScheduledTimeout 再调本函数）。
 function scheduleReminders(): void {
   const { reminders, trashed } = useUiStore.getState()
@@ -154,10 +166,12 @@ function scheduleReminders(): void {
     const diff = due - now
     if (diff <= 0) {
       // overdue（含到点 0ms）
-      if (-diff < 3_600_000) fireReminder(r) // <1h 补推（Q3）
+      if (-diff < 3_600_000) fireReminder(r, { fromOverdue: true }) // <1h 补推（Q3）
       else markMissed(r) // ≥1h 标错过
     } else {
-      // 未来：setTimeout 到点；fire 前 re-check（可能已被 dismiss/snooze）
+      // D4: 预约系统级本地通知（原生铃声+弹窗 / web 浏览器 Notification）——后台/被杀仍触发
+      void di.localNotifications.schedule(r).catch((e) => console.error('[store] localNotifications.schedule failed', e))
+      // 前台状态更新：setTimeout 到点标 fired；fire 前 re-check（可能已被 dismiss/snooze）
       const h = setTimeout(() => {
         const cur = useUiStore.getState().reminders.find((x) => x.id === r.id)
         if (cur && (cur.status === 'pending' || cur.status === 'snoozed')) fireReminder(cur)
@@ -290,7 +304,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     const cur = get().capture
     const transcript = (cur.finalized + cur.interim).trim()
-    const part: EntryPart = { type: 'audio', ref: result.ref, durationSec: Math.max(1, Math.round(result.durationSec)), transcript, mime: result.mime }
+    // D4 尾巴3: 显式标 mediaType='audio'——PartView 已有 fallback 推断但显式更准（LLM prompt 分块 / 导出 extension 均依赖）
+    const part: EntryPart = { type: 'audio', ref: result.ref, durationSec: Math.max(1, Math.round(result.durationSec)), transcript, mime: result.mime, mediaType: 'audio' }
     if (result.blob) void di.storage.saveMedia(result.ref, result.blob).catch((e) => console.error('[store] saveMedia failed', e))
     set((s2) => ({
       capture: { ...s2.capture, recording: false, finalized: '', interim: '', parts: [...s2.capture.parts, part] },
@@ -586,13 +601,14 @@ export const useUiStore = create<UiState>((set, get) => ({
       }
     }
   },
-  // ── 提醒 actions（Phase 9 Batch 2b · B5）──────────────────────────────
+  // ── 提醒 actions（Phase 9 Batch 2b · B5 · D4 重构）────────────────────
   confirmReminder: async (entryId, dueAt, label) => {
-    // Q4：首次确认提醒时请求 Notification.permission（情境相关，不无脑弹）。
+    // Q4：首次确认提醒时请求通知权限（情境相关，不无脑弹）。
     // permissionRequested flag 保证只问一次；denied 后不再骚扰，notify 走 toast 降级。
+    // D4: 走 di.localNotifications（原生 requestPermissions / web Notification.requestPermission）
     if (!permissionRequested) {
       permissionRequested = true
-      void di.notifications.requestPermission()
+      void di.localNotifications.requestPermission()
     }
     const r: Reminder = {
       id: crypto.randomUUID(),
@@ -643,6 +659,17 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     await di.storage.saveReminder(snoozed)
     set((s) => ({ reminders: s.reminders.map((x) => (x.id === id ? snoozed : x)) }))
+    scheduleReminders()
+  },
+  editReminder: async (id, dueAt, label) => {
+    // D4: 编辑已设提醒的时间/内容。cancel 旧通知预约 → 更新 Reminder → 重新 schedule。
+    // 状态保持 pending/snoozed（编辑不改状态，只改 dueAt+label）；已 fired/missed 不可编辑（UI 不暴露入口）。
+    clearScheduledTimeout(id)
+    const cur = get().reminders.find((x) => x.id === id)
+    if (!cur) return
+    const updated: Reminder = { ...cur, dueAt, label }
+    await di.storage.saveReminder(updated)
+    set((s) => ({ reminders: s.reminders.map((x) => (x.id === id ? updated : x)) }))
     scheduleReminders()
   },
   // ── Wave 1 core actions（屏层纯消费，不碰 store.ts）─────────────────────

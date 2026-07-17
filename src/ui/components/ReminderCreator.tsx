@@ -2,12 +2,18 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useUiStore } from '@/app/store'
 import { Button } from './Button'
 import { cn } from './cn'
+import type { Reminder } from '@/domain/types'
 
-// 统一的待办创建器：弹窗(ReminderPopup)与 detail 内联两处复用，修三问题——
+// 统一的待办创建/编辑器：弹窗(ReminderPopup)与 detail 内联两处复用，修四问题——
 //   1) 旧「创建待办/提醒我」两按钮都建 Reminder 只差 dueAt 来源 → 合并成单按钮+时间选择。
 //   2) 旧 TodoConfirm 条件 `!reminderSuggestion` 在确认后反而为真 + 靠 local state 藏卡 → 重进重现；
 //      本组件不靠 local，confirmReminder/updateEntryAi 置持久 ai.todoDismissed 由父级条件 reactive 藏。
 //   3) 旧「创建待办」硬编码今日 23:59 丢检出时间 → 时间选择器：检出时间默认选中，无则给快捷选项+自定义。
+//   4) D4: 卡片 UI 按设计 tokens 美化 + 已设提醒可编辑（改时间/内容，调 store.editReminder 重新 schedule）。
+//
+// 两种模式：
+//   - 创建模式（mode='create'）：从 AI suggestion 或用户手建新 Reminder。
+//   - 编辑模式（mode='edit'）：传入 existing Reminder，改 dueAt/label 后调 editReminder。
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
@@ -75,23 +81,40 @@ function buildPicks(detectedIso: string | undefined): TimePick[] {
   return picks
 }
 
+interface ReminderCreatorProps {
+  entryId: string
+  title: string
+  suggestion?: { dueAt: string; label: string }
+  onDone: () => void
+  // D4: 编辑模式。传入 existing Reminder → 编辑其 dueAt/label（调 store.editReminder）。
+  // 不传 → 创建模式（调 store.confirmReminder 建新 Reminder）。
+  existing?: Reminder
+}
+
 export function ReminderCreator({
   entryId,
   title,
   suggestion,
   onDone,
-}: {
-  entryId: string
-  title: string
-  suggestion?: { dueAt: string; label: string }
-  onDone: () => void
-}) {
-  const picks = useMemo(() => buildPicks(suggestion?.dueAt), [suggestion?.dueAt])
-  const [selectedKey, setSelectedKey] = useState<string>(() => picks[0]?.key ?? 'custom')
-  const [customLocal, setCustomLocal] = useState<string>(() => (suggestion?.dueAt ? isoToLocalInput(suggestion.dueAt) : ''))
-  const [label, setLabel] = useState<string>(suggestion?.label ?? title)
+  existing,
+}: ReminderCreatorProps) {
+  const mode: 'create' | 'edit' = existing ? 'edit' : 'create'
+  const initialDueAt = existing?.dueAt ?? suggestion?.dueAt
+  const picks = useMemo(() => buildPicks(initialDueAt), [initialDueAt])
+  const [selectedKey, setSelectedKey] = useState<string>(() => {
+    if (mode === 'edit' && initialDueAt) {
+      // 编辑模式：若初始时间不在快捷选项里，默认选 custom 并填入
+      const match = picks.find((p) => p.iso === initialDueAt)
+      return match?.key ?? 'custom'
+    }
+    return picks[0]?.key ?? 'custom'
+  })
+  const [customLocal, setCustomLocal] = useState<string>(() =>
+    initialDueAt ? isoToLocalInput(initialDueAt) : '',
+  )
+  const [label, setLabel] = useState<string>(existing?.label ?? suggestion?.label ?? title)
   const [busy, setBusy] = useState(false)
-  // confirmReminder/updateEntryAi 置 ai.todoDismissed → 父级条件 reactive 卸载本组件；
+  // confirmReminder/updateEntryAi/editReminder 置持久态 → 父级条件 reactive 卸载本组件；
   // mounted ref 防 finally setBusy 打到已卸载实例。
   const mounted = useRef(true)
   useEffect(() => () => { mounted.current = false }, [])
@@ -114,11 +137,18 @@ export function ReminderCreator({
   const inputCls =
     'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
 
+  const headerLabel = mode === 'edit' ? '编辑提醒' : 'AI 检测到 · 待办'
+  const submitLabel = mode === 'edit' ? '保存修改' : '创建待办'
+  const submitAction =
+    mode === 'edit' && existing
+      ? () => useUiStore.getState().editReminder(existing.id, resolvedIso, label)
+      : () => useUiStore.getState().confirmReminder(entryId, resolvedIso, label)
+
   return (
-    <div className="flex flex-col gap-3 rounded-card bg-priS p-4">
+    <div className="flex flex-col gap-3 rounded-card bg-priS p-4 shadow-sm">
       <div className="flex items-center gap-2">
         <span className="size-2 rounded-full bg-pri" />
-        <p className="text-[12px] font-bold text-pri">AI 检测到 · 待办</p>
+        <p className="text-[12px] font-bold text-pri">{headerLabel}</p>
       </div>
       <div className="flex flex-col gap-1.5">
         <label className="text-[11px] text-t2">提醒内容</label>
@@ -161,32 +191,28 @@ export function ReminderCreator({
         )}
       </div>
       <div className="flex items-center gap-2 pt-1">
-        <Button
-          type="button"
-          size="sm"
-          variant="primary"
-          disabled={busy}
-          onClick={() => run(() => useUiStore.getState().confirmReminder(entryId, resolvedIso, label))}
-        >
-          创建待办
+        <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => run(submitAction)}>
+          {submitLabel}
         </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="text-t3"
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              await useUiStore.getState().updateEntryAi(entryId, {
-                reminderSuggestion: undefined,
-                todoDismissed: true,
+        {mode === 'create' && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="text-t3"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                await useUiStore.getState().updateEntryAi(entryId, {
+                  reminderSuggestion: undefined,
+                  todoDismissed: true,
+                })
               })
-            })
-          }
-        >
-          忽略
-        </Button>
+            }
+          >
+            忽略
+          </Button>
+        )}
       </div>
     </div>
   )

@@ -149,3 +149,16 @@ export interface AppUpdatePort {
   checkForUpdate(): Promise<UpdateInfo>
   downloadAndInstall(info: UpdateInfo): Promise<void>
 }
+
+// D4 · 本地提醒通知端口。替代旧 setTimeout-only 前台调度（app 后台/被杀即失效）。
+// 原生走 @capacitor/local-notifications（系统级铃声+弹窗，后台/锁屏可触发）；
+// web 走浏览器 Notification API（前台 only，best-effort）。
+// schedule 预约未来通知；cancel 取消；notify 即时推（overdue 补推）。
+// store 仍保留 setTimeout 做前台状态更新（标 fired/missed），本端口只负责通知展示。
+export interface LocalNotificationsPort {
+  requestPermission(): Promise<boolean>
+  schedule(reminder: Reminder): Promise<void>
+  cancel(id: string): Promise<void>
+  // 即时通知（overdue 补推 / 前台即时确认）。tag 去重 id。
+  notify(label: string, body: string, tag: string): void
+}

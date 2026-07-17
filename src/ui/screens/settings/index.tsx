@@ -5,11 +5,12 @@ import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
 import { exportZip } from '@/adapters/zipExport'
+import { canShareFiles, type SaveResult } from '@/adapters/fileShare'
 import { importSampleData } from '@/adapters/dexieStorage'
 import { Toggle } from './Toggle'
 import { AccountSection } from './AccountSection'
 import type { UpdateInfo } from '@/ports'
-import type { Settings as SettingsType } from '@/domain/types'
+import type { EntryPart, Settings as SettingsType } from '@/domain/types'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -243,6 +244,126 @@ const THEMES: { key: Theme; label: string }[] = [
   { key: 'dark', label: '暗色' },
   { key: 'system', label: '跟随系统' },
 ]
+
+// D10: 把 SaveResult 翻译成人类可读的反馈文案。method 决定主语态（分享/保存/下载），
+// path 仅 filesystem 方式有值（content/file URI）。失败时返回 error 原文。
+function formatSaveFeedback(result: SaveResult): string {
+  if (!result.ok) {
+    return result.error ? `导出失败：${result.error}` : '导出失败'
+  }
+  if (result.method === 'share') return '已分享'
+  if (result.method === 'filesystem') {
+    const p = result.path ?? ''
+    // file:// 长 URI 截尾显示目录段；空时退回通用文案。
+    const tail = p ? p.replace(/^file:\/\//, '').replace(/^content:\/\//, '') : ''
+    return tail ? `已保存到 ${tail}` : '已保存到 文档/AiJi/'
+  }
+  if (result.method === 'download') return '已下载到浏览器下载目录'
+  return '已导出'
+}
+
+// 统计媒体数（用于确认对话框预估）。仅按 parts 类型粗判，不读 OPFS（避免预热大 blob）。
+function countMedia(parts: EntryPart[]): number {
+  let n = 0
+  for (const p of parts) {
+    if (p.type === 'audio' || p.type === 'video') n++
+  }
+  return n
+}
+
+// D10: 导出 .zip 确认对话框。说明范围 + 文件名 + 媒体数 + 保存位置，确认后执行。
+function ExportConfirmSheet({
+  scopeLabel,
+  filename,
+  entryCount,
+  mediaCount,
+  onClose,
+  onConfirm,
+}: {
+  scopeLabel: string
+  filename: string
+  entryCount: number
+  mediaCount: number
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const isNative = Capacitor.isNativePlatform()
+  const locationHint = canShareFiles()
+    ? '系统分享面板（可选保存到任意位置）'
+    : isNative
+      ? '文档/AiJi/（文件管理器可见）'
+      : '浏览器下载目录'
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-bold text-ink">导出确认</p>
+          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
+
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">导出范围</span>
+            <span className="text-[13px] font-medium text-ink">{scopeLabel}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">条目数</span>
+            <span className="text-[13px] font-medium text-ink">{entryCount} 条</span>
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">媒体数</span>
+            <span className="text-[13px] font-medium text-ink">{mediaCount} 个</span>
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">文件名</span>
+            <span className="text-[12px] font-medium text-ink">{filename}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">保存位置</span>
+            <span className="text-[12px] font-medium text-t2">{locationHint}</span>
+          </div>
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            className="h-[38px] flex-1 rounded-btn"
+            onClick={onConfirm}
+          >
+            确认导出
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// D10: 轻量 toast——3 秒后自动消失。成功/失败用颜色区分。
+function Toast({ message, ok, onDismiss }: { message: string; ok: boolean; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 3500)
+    return () => clearTimeout(t)
+  }, [onDismiss])
+  return (
+    <div className="fixed inset-x-0 bottom-24 z-[60] flex justify-center px-4 pointer-events-none">
+      <div
+        className={cn(
+          'pointer-events-auto max-w-[360px] rounded-btn px-4 py-2.5 text-[12px] font-medium shadow-sheet animate-slide-up',
+          ok ? 'bg-ink text-card' : 'bg-catFail text-card',
+        )}
+        role="status"
+      >
+        {message}
+      </div>
+    </div>
+  )
+}
 
 function ChevronRow({
   label,
@@ -883,7 +1004,8 @@ export default function Settings() {
   const setSettings = useUiStore((s) => s.setSettings)
   const theme = settings.theme
   const recordLocation = settings.recordLocation
-  const hasEntries = useUiStore((s) => s.entries.length > 0)
+  const entries = useUiStore((s) => s.entries)
+  const hasEntries = entries.length > 0
   const [editing, setEditing] = useState(false)
   const [editingStt, setEditingStt] = useState(false)
   const [editingVlm, setEditingVlm] = useState(false)
@@ -892,6 +1014,30 @@ export default function Settings() {
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const [importOk, setImportOk] = useState(false)
+
+  // D10: .zip 导出确认 + 反馈状态。
+  const [zipConfirm, setZipConfirm] = useState(false)
+  const [zipExporting, setZipExporting] = useState(false)
+  const [zipToast, setZipToast] = useState<{ msg: string; ok: boolean } | null>(null)
+
+  const zipMediaCount = entries.reduce((sum, e) => sum + countMedia(e.parts), 0)
+
+  async function handleZipExport() {
+    setZipConfirm(false)
+    setZipExporting(true)
+    try {
+      const result = await exportZip()
+      // 用户取消（method=none, ok=false, error='已取消'）——静默，不弹 toast。
+      if (!result.ok && result.method === 'none' && result.error === '已取消') {
+        return
+      }
+      setZipToast({ msg: formatSaveFeedback(result), ok: result.ok })
+    } catch (e) {
+      setZipToast({ msg: `导出失败：${e instanceof Error ? e.message : String(e)}`, ok: false })
+    } finally {
+      setZipExporting(false)
+    }
+  }
 
   async function handleImportSample() {
     setImporting(true)
@@ -1007,10 +1153,10 @@ export default function Settings() {
             variant="secondary"
             size="sm"
             className="h-[38px] flex-1 rounded-btn"
-            disabled={!hasEntries}
-            onClick={() => void exportZip()}
+            disabled={!hasEntries || zipExporting}
+            onClick={() => setZipConfirm(true)}
           >
-            导出 .zip
+            {zipExporting ? '导出中…' : '导出 .zip'}
           </Button>
         </div>
         <p className="mt-3 text-[11px] text-t3">分享</p>
@@ -1055,6 +1201,23 @@ export default function Settings() {
       {editingStt && <SttSheet onClose={() => setEditingStt(false)} />}
       {editingVlm && <VlmSheet onClose={() => setEditingVlm(false)} />}
       {editingAbout && <AboutSheet onClose={() => setEditingAbout(false)} />}
+      {zipConfirm && (
+        <ExportConfirmSheet
+          scopeLabel="全部条目"
+          filename="aiji-export.zip"
+          entryCount={entries.length}
+          mediaCount={zipMediaCount}
+          onClose={() => setZipConfirm(false)}
+          onConfirm={() => void handleZipExport()}
+        />
+      )}
+      {zipToast && (
+        <Toast
+          message={zipToast.msg}
+          ok={zipToast.ok}
+          onDismiss={() => setZipToast(null)}
+        />
+      )}
     </div>
   )
 }

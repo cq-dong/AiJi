@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { Capacitor } from '@capacitor/core'
 import { Button, Card, EmptyState, ReminderCreator, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
 import { exportEntryZip, shareEntry, canShareEntry } from '@/adapters/zipExport'
-import type { EntryAi, EntryPart, EntryStatus } from '@/domain/types'
-import { AudioPlayer, VideoThumb } from './PartView'
+import { canShareFiles, type SaveResult } from '@/adapters/fileShare'
+import type { EntryAi, EntryPart, EntryStatus, Reminder } from '@/domain/types'
+import { AudioPlayer, VideoThumb, LocationBadge } from './PartView'
 import { AiPanel, type AiState } from './AiPanel'
 import { Sheet } from './Sheet'
 import { formatTitle, formatDateTime, formatDuration, partTypeLabel, tagLabel } from './helpers'
-import { ChevronLeft, MapPin, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
+import { ChevronLeft, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 
 function statusToAiState(s: EntryStatus): AiState {
   if (s === 'processing') return 'processing'
@@ -405,23 +407,172 @@ function ConfirmDeleteDialog({
   )
 }
 
-// 更多 sheet：导出（下载单条 .zip）+ 分享（Web Share 或剪贴板降级）。
+// D10: SaveResult → 反馈文案（与 settings/categories 同语义）。
+function formatSaveFeedback(result: SaveResult): string {
+  if (!result.ok) return result.error ? `导出失败：${result.error}` : '导出失败'
+  if (result.method === 'share') return '已分享'
+  if (result.method === 'filesystem') {
+    const p = result.path ?? ''
+    const tail = p ? p.replace(/^file:\/\//, '').replace(/^content:\/\//, '') : ''
+    return tail ? `已保存到 ${tail}` : '已保存到 文档/AiJi/'
+  }
+  if (result.method === 'download') return '已下载到浏览器下载目录'
+  return '已导出'
+}
+
+// D10: 导出确认 sheet（底部 sheet 风格，与 settings/categories 对齐）。
+// z-[55] 盖在 MoreSheet(z-50) 之上；MoreSheet 作为兄弟渲染，confirm 以 fixed 脱离 Sheet 容器。
+function ExportConfirmSheet({
+  filename,
+  mediaCount,
+  onClose,
+  onConfirm,
+}: {
+  filename: string
+  mediaCount: number
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const isNative = Capacitor.isNativePlatform()
+  const locationHint = canShareFiles()
+    ? '系统分享面板（可选保存到任意位置）'
+    : isNative
+      ? '文档/AiJi/（文件管理器可见）'
+      : '浏览器下载目录'
+  return (
+    <div
+      className="fixed inset-0 z-[55] flex items-end justify-center bg-black/40 animate-fade-in"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="导出确认"
+    >
+      <div
+        className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-bold text-ink">导出确认</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭"
+            className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          >
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">导出范围</span>
+            <span className="text-[13px] font-medium text-ink">本条目</span>
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">媒体数</span>
+            <span className="text-[13px] font-medium text-ink">{mediaCount} 个</span>
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">文件名</span>
+            <span className="text-[12px] font-medium text-ink">{filename}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">保存位置</span>
+            <span className="text-[12px] font-medium text-t2">{locationHint}</span>
+          </div>
+        </div>
+        <div className="mt-4 flex gap-2">
+          <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
+            取消
+          </Button>
+          <Button variant="primary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onConfirm}>
+            确认导出
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// D10: 轻量 toast——3.5s 后自动消失。成功/失败用颜色区分（与 settings/categories 一致）。
+function Toast({ message, ok, onDismiss }: { message: string; ok: boolean; onDismiss: () => void }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 3500)
+    return () => clearTimeout(t)
+  }, [onDismiss])
+  return (
+    <div className="fixed inset-x-0 bottom-24 z-[60] flex justify-center px-4 pointer-events-none">
+      <div
+        className={cn(
+          'pointer-events-auto max-w-[360px] rounded-btn px-4 py-2.5 text-[12px] font-medium shadow-sheet animate-slide-up',
+          ok ? 'bg-ink text-card' : 'bg-catFail text-card',
+        )}
+        role="status"
+      >
+        {message}
+      </div>
+    </div>
+  )
+}
+
+// D4: 已设提醒卡片——展示 label + dueAt，带「编辑」入口唤起 ReminderCreator 编辑模式。
+// 视觉与 ReminderCreator 同源（bg-priS 圆角卡），让创建→编辑卡之间切换不跳样式。
+function ExistingReminderCard({
+  reminder,
+  onEdit,
+}: {
+  reminder: Reminder
+  onEdit: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-card bg-priS p-4 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className="size-2 rounded-full bg-pri" />
+        <p className="text-[12px] font-bold text-pri">已设提醒</p>
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label="编辑提醒"
+          className="ml-auto flex items-center gap-1 rounded-chip border border-brd bg-card px-2 py-1 text-[11px] font-medium text-pri transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        >
+          <Pencil size={11} strokeWidth={2.2} />
+          编辑
+        </button>
+      </div>
+      <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{reminder.label}</p>
+      <p className="text-[11px] text-t2">{formatDateTime(reminder.dueAt)}</p>
+    </div>
+  )
+}
+
+// 更多 sheet：导出（下载单条 .zip，D10 加确认+反馈）+ 分享（Web Share 或剪贴板降级）。
 function MoreSheet({
   entryId,
+  mediaCount,
   onClose,
+  onExportResult,
 }: {
   entryId: string
+  mediaCount: number
   onClose: () => void
+  onExportResult: (msg: string, ok: boolean) => void
 }) {
+  const [confirmExport, setConfirmExport] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [shareFeedback, setShareFeedback] = useState<string | null>(null)
 
   const handleExport = async () => {
+    setConfirmExport(false)
     setExporting(true)
     try {
-      await exportEntryZip(entryId)
+      const result = await exportEntryZip(entryId)
+      // 用户取消分享面板（method=none, error='已取消'）——静默，不弹 toast。
+      if (!result.ok && result.method === 'none' && result.error === '已取消') return
+      onExportResult(formatSaveFeedback(result), result.ok)
+    } catch (e) {
+      onExportResult(`导出失败：${e instanceof Error ? e.message : String(e)}`, false)
     } finally {
       setExporting(false)
+      onClose()
     }
   }
 
@@ -435,27 +586,37 @@ function MoreSheet({
   const shareLabel = canShareEntry() ? '分享…' : '分享'
 
   return (
-    <Sheet title="更多操作" onClose={onClose}>
-      <button
-        type="button"
-        onClick={handleExport}
-        disabled={exporting}
-        className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-50"
-      >
-        <span>导出</span>
-        {exporting && <span className="text-[12px] text-t3">导出中…</span>}
-      </button>
-      <div className="flex flex-col gap-1.5">
+    <>
+      <Sheet title="更多操作" onClose={onClose}>
         <button
           type="button"
-          onClick={handleShare}
-          className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          onClick={() => setConfirmExport(true)}
+          disabled={exporting}
+          className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-50"
         >
-          <span>{shareLabel}</span>
+          <span>导出</span>
+          {exporting && <span className="text-[12px] text-t3">导出中…</span>}
         </button>
-        {shareFeedback && <p className="text-[11px] text-t3">{shareFeedback}</p>}
-      </div>
-    </Sheet>
+        <div className="flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={handleShare}
+            className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          >
+            <span>{shareLabel}</span>
+          </button>
+          {shareFeedback && <p className="text-[11px] text-t3">{shareFeedback}</p>}
+        </div>
+      </Sheet>
+      {confirmExport && (
+        <ExportConfirmSheet
+          filename={`aiji-entry-${entryId}.zip`}
+          mediaCount={mediaCount}
+          onClose={() => setConfirmExport(false)}
+          onConfirm={() => void handleExport()}
+        />
+      )}
+    </>
   )
 }
 
@@ -475,6 +636,10 @@ export default function Detail() {
   const [moreOpen, setMoreOpen] = useState(false)
   // 详情视图：record=片段自然合并的阅读流（默认）；source=片段式原态，可编辑/删除单片段。
   const [viewMode, setViewMode] = useState<'record' | 'source'>('record')
+  // D4: 已设提醒编辑模式——点「编辑」把对应 Reminder 喂给 ReminderCreator(existing)。
+  const [editingReminder, setEditingReminder] = useState<Reminder | undefined>(undefined)
+  // D10: 导出反馈 toast（MoreSheet 完成后回调，toast 寿命长于 sheet）。
+  const [exportToast, setExportToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
@@ -541,6 +706,10 @@ export default function Detail() {
 
   const entry = found
   const ai = aiFromStore ?? asyncAi
+  // D4: 属于本条目的提醒（创建模式在无提醒时弹；已设提醒走 ExistingReminderCard + 编辑）。
+  const entryReminders = reminders.filter((r) => r.entryId === entry.id)
+  // D10: 导出确认 sheet 展示用——本条目包含的媒体片段数。
+  const mediaCount = entry.parts.filter((p) => p.type === 'audio' || p.type === 'video').length
   // 原态视图：单片段删除 / 文本片段编辑 → updateEntry(id, { parts })。
   const removePartAt = (idx: number) => {
     if (!id) return
@@ -621,7 +790,7 @@ export default function Detail() {
         onDelete={() => setConfirmingDelete(true)}
       />
 
-      {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event || !!ai.reminderSuggestion) && !ai.todoDismissed && !reminders.some((r) => r.entryId === entry.id) && (
+      {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event || !!ai.reminderSuggestion) && !ai.todoDismissed && entryReminders.length === 0 && (
         <ReminderCreator
           entryId={entry.id}
           title={ai.titleSuggestion ?? ''}
@@ -630,7 +799,23 @@ export default function Detail() {
         />
       )}
 
-      <p className="flex items-center gap-1 text-[11px] text-t3"><MapPin size={12} strokeWidth={2} />地点：未记录（设置中可开启）</p>
+      {/* D4: 已设提醒卡片——展示 label/dueAt + 编辑入口；点编辑把该 Reminder 传给 ReminderCreator 编辑模式。 */}
+      {entryReminders.map((r) =>
+        editingReminder?.id === r.id ? (
+          <ReminderCreator
+            key={r.id}
+            entryId={entry.id}
+            title={ai?.titleSuggestion ?? ''}
+            existing={r}
+            onDone={() => setEditingReminder(undefined)}
+          />
+        ) : (
+          <ExistingReminderCard key={r.id} reminder={r} onEdit={() => setEditingReminder(r)} />
+        ),
+      )}
+
+      {/* D5: 地点标签——entry.location 存在时显示地址（或 lat/lng 回落），否则提示未记录。 */}
+      <LocationBadge location={entry.location} />
 
       {editingAi && ai && (
         <AiEditSheet ai={ai} onSave={handleSaveAi} onClose={() => setEditingAi(false)} />
@@ -641,7 +826,21 @@ export default function Detail() {
       {confirmingDelete && (
         <ConfirmDeleteDialog onConfirm={handleConfirmDelete} onClose={() => setConfirmingDelete(false)} />
       )}
-      {moreOpen && id && <MoreSheet entryId={id} onClose={() => setMoreOpen(false)} />}
+      {moreOpen && id && (
+        <MoreSheet
+          entryId={id}
+          mediaCount={mediaCount}
+          onClose={() => setMoreOpen(false)}
+          onExportResult={(msg, ok) => setExportToast({ msg, ok })}
+        />
+      )}
+      {exportToast && (
+        <Toast
+          message={exportToast.msg}
+          ok={exportToast.ok}
+          onDismiss={() => setExportToast(null)}
+        />
+      )}
     </div>
   )
 }
