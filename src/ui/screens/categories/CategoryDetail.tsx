@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, Download } from 'lucide-react'
 import type { Category, Entry, EntryAi, Facets, Tag } from '@/domain/types'
 import { Button, Card, EmptyState, cn } from '@/ui/components'
+import { exportCategoryZip } from '@/adapters/zipExport'
 import { EntryRow } from './EntryRow'
 
 // Group-by dimension within a category's detail list.
@@ -65,7 +66,7 @@ export function CategoryDetail({
   if (items.length === 0) {
     return (
       <div>
-        <DetailHeader label={category.label} dot={dot} count={0} onBack={onBack} />
+        <DetailHeader label={category.label} dot={dot} count={0} slug={category.slug} onBack={onBack} />
         <EmptyState
           title="该类别下还没有条目"
           subtitle="记几条相关内容，AI 会自动归到这个类别"
@@ -80,6 +81,7 @@ export function CategoryDetail({
         label={category.label}
         dot={dot}
         count={items.length}
+        slug={category.slug}
         onBack={onBack}
       />
       <div className="mt-3 grid grid-cols-4 gap-1 rounded-btn bg-page p-1">
@@ -181,11 +183,13 @@ function DetailHeader({
   label,
   dot,
   count,
+  slug,
   onBack,
 }: {
   label: string
   dot: string
   count: number
+  slug: string
   onBack: () => void
 }) {
   return (
@@ -196,6 +200,14 @@ function DetailHeader({
       <span className={cn('size-3 rounded-full', dot)} />
       <span className="text-[17px] font-bold text-ink">{label}</span>
       <span className="text-[12px] text-t3">{count} 条</span>
+      <button
+        type="button"
+        aria-label="导出该类别"
+        onClick={() => void exportCategoryZip(slug)}
+        className="ml-auto grid size-9 cursor-pointer place-items-center rounded-btn text-t2 transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+      >
+        <Download size={18} strokeWidth={2} />
+      </button>
     </div>
   )
 }

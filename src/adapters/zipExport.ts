@@ -323,6 +323,70 @@ export async function exportEntryZip(id: string): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
+// Per-category .zip: all entries whose AI category === slug, as
+// entries/<id>.md + media/<ref>.<ext> + manifest.json. Mirrors global exportZip,
+// restricted to the category's entries. Empty category → silent no-op (MVP).
+export async function exportCategoryZip(slug: string): Promise<void> {
+  if (!useUiStore.getState().hydrated) await useUiStore.getState().hydrate()
+  const { entries, aiByEntry, categories, tags } = useUiStore.getState()
+  const catLabel = (s: string) => categories.find((c) => c.slug === s)?.label ?? s
+  const tagLabel = (s: string) => tags.find((t) => t.slug === s)?.label ?? s
+  const catEntries = entries
+    .filter((e) => aiByEntry[e.id]?.category === slug)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  if (catEntries.length === 0) return
+
+  const files: ZipFile[] = []
+  const enc = new TextEncoder()
+
+  for (const e of catEntries) {
+    const md = buildEntryMarkdown(e, aiByEntry[e.id], catLabel, tagLabel)
+    files.push({ name: `entries/${e.id}.md`, data: enc.encode(md) })
+  }
+
+  const mediaMimes = new Map<string, string>()
+  for (const e of catEntries) {
+    for (const p of e.parts) {
+      if (p.type === 'audio' || p.type === 'video') mediaMimes.set(p.ref, p.mime ?? '')
+    }
+  }
+  for (const [ref, mime] of mediaMimes) {
+    try {
+      const blob = await di.storage.getMedia(ref)
+      if (!blob) continue
+      const buf = new Uint8Array(await blob.arrayBuffer())
+      files.push({ name: `media/${ref}.${extFromType(mime || blob.type)}`, data: buf })
+    } catch (e) {
+      console.error('[exportCategoryZip] getMedia failed for ' + ref, e)
+    }
+  }
+
+  const manifest = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    categorySlug: slug,
+    categoryLabel: catLabel(slug),
+    entryCount: catEntries.length,
+    schema: {
+      entries: 'Entry[] as markdown in entries/<id>.md',
+      media: 'Binary media blobs in media/<ref>.<ext>',
+      description: 'AiJi per-category export — entries whose AI category === slug',
+    },
+  }
+  files.push({ name: 'manifest.json', data: enc.encode(JSON.stringify(manifest, null, 2)) })
+
+  const zip = buildZip(files)
+  const blob = new Blob([zip.buffer as ArrayBuffer], { type: 'application/zip' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `aiji-category-${slug}.zip`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 // Web Share API available (mobile share sheet). UI gates the 分享 button on this.
 export function canShareEntry(): boolean {
   return typeof (navigator as unknown as { share?: unknown }).share === 'function'

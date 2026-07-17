@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { X } from 'lucide-react'
+import { Download, X } from 'lucide-react'
 import type { Category } from '@/domain/types'
 import { Button, cn } from '@/ui/components'
+import { exportCategoryZip } from '@/adapters/zipExport'
 
 type Accent = NonNullable<Category['accent']>
 
@@ -135,13 +136,26 @@ export function CategoryEditSheet({
 
         <div className="mt-5">
           {!confirmDelete ? (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="cursor-pointer text-[13px] font-medium text-catFail transition duration-base ease-out active:opacity-60 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-            >
-              删除类别
-            </button>
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => {
+                  void exportCategoryZip(category.slug)
+                  onClose()
+                }}
+                className="inline-flex cursor-pointer items-center gap-1 text-[13px] font-medium text-pri transition duration-base ease-out active:opacity-60 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              >
+                <Download size={14} strokeWidth={2} />
+                导出该类别
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(true)}
+                className="cursor-pointer text-[13px] font-medium text-catFail transition duration-base ease-out active:opacity-60 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+              >
+                删除类别
+              </button>
+            </div>
           ) : (
             <div className="rounded-card border border-catFail/30 bg-catFail/5 p-3">
               <p className="text-[12px] leading-relaxed text-ink">
