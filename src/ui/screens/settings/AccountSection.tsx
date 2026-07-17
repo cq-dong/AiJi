@@ -5,6 +5,7 @@ import { Button, Card, Sheet, cn } from '@/ui/components'
 import { useAccountStore } from '@/app/accountStore'
 import { useUiStore } from '@/app/store'
 import { useQuotaStore } from '@/app/quotaStore'
+import { PlansSheet } from './PlansSheet'
 import { QuotaSheet } from './QuotaSheet'
 
 // 头像压缩：FileReader 读为 data URL → Image → canvas 缩放至 256×256（contain）
@@ -165,6 +166,7 @@ export function AccountSection() {
   const [keySourceOpen, setKeySourceOpen] = useState(false)
   const [quotaOpen, setQuotaOpen] = useState(false)
   const [nickOpen, setNickOpen] = useState(false)
+  const [plansOpen, setPlansOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   if (!account) return null
@@ -180,6 +182,17 @@ export function AccountSection() {
   const keySourceLabel =
     keySource === 'builtin' ? '内置 Key（免费额度）' : '自己的 Key'
   const showQuotaRow = keySource === 'builtin'
+
+  // 升级行：guest 隐藏（需先 bindNetwork，T15c）；free 显「升级付费」；paid 显到期日期。
+  const showUpgradeRow = account.plan !== 'guest'
+  const upgradeLabel =
+    account.plan === 'paid'
+      ? `当前：${account.paidPlanId === 'yearly' ? '年度会员' : '月度会员'}${
+          account.paidExpiresAt
+            ? ` 至 ${account.paidExpiresAt.slice(0, 10)}`
+            : ''
+        }`
+      : '升级付费'
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -306,6 +319,19 @@ export function AccountSection() {
         </button>
       )}
 
+      {showUpgradeRow && (
+        <button
+          type="button"
+          onClick={() => setPlansOpen(true)}
+          className={cn(
+            'mt-1 flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+          )}
+        >
+          <span className="text-[13px] text-ink">{upgradeLabel}</span>
+          <ChevronRight size={18} className="text-t2" />
+        </button>
+      )}
+
       {/* 退出登录：ghost 文字按钮，居中，更轻。 */}
       <button
         type="button"
@@ -324,6 +350,7 @@ export function AccountSection() {
         current={keySource}
       />
       <QuotaSheet open={quotaOpen} onClose={() => setQuotaOpen(false)} />
+      <PlansSheet open={plansOpen} onClose={() => setPlansOpen(false)} />
       {nickOpen && (
         <NicknameSheet
           initial={account.nickname}
