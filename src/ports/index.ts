@@ -127,3 +127,25 @@ export interface SecretStorePort {
   // D8: 清空 BYOK key 时删 localStorage 行——否则旧 key 残留、UI 仍显「已配置」。
   delete(key: string): Promise<void>
 }
+
+// 应用自更新端口。PWA / Android 双实现：
+// - checkForUpdate：fetch GitHub Releases API（公开仓带 CORS，WebView 直连）+ semver 比较。
+//   latest = release tag_name 去 v 前缀；apkUrl = .apk 资产直链；releaseNotes = body。
+// - downloadAndInstall：Android 走原生插件（OkHttp 下载→FileProvider→系统安装器，
+//   绕过 assets.githubusercontent.com 的 CORS）；PWA 回退 window.open(releaseUrl)。
+// current = 构建时烘焙的 __APP_VERSION__（package.json version 单一真源）。
+export interface UpdateInfo {
+  current: string
+  latest: string
+  hasUpdate: boolean
+  // Android: release 资产里 .apk 的 browser_download_url（原生插件用 OkHttp 拉）。
+  apkUrl?: string
+  // PWA fallback: GitHub release 页（window.open）。
+  releaseUrl?: string
+  releaseNotes?: string
+}
+
+export interface AppUpdatePort {
+  checkForUpdate(): Promise<UpdateInfo>
+  downloadAndInstall(info: UpdateInfo): Promise<void>
+}

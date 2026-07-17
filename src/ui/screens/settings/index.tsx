@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Download, X } from 'lucide-react'
+import { Capacitor } from '@capacitor/core'
 import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
 import { exportZip } from '@/adapters/zipExport'
 import { Toggle } from './Toggle'
 import { AccountSection } from './AccountSection'
+import type { UpdateInfo } from '@/ports'
 import type { Settings as SettingsType } from '@/domain/types'
 
 type Theme = 'light' | 'dark' | 'system'
@@ -695,6 +697,136 @@ function VlmSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+// 关于 sheet：显示当前版本 / 最新版本 / 检查状态 / 更新日志。镜像 ByokSheet 的
+// 底部 sheet 模式。checkForUpdate 走 di.appUpdate（web=fetch GitHub API，Android=同）；
+// downloadAndInstall 走 di.appUpdate（Android=原生插件下载安装，web=跳 release 页）。
+type CheckState =
+  | { status: 'idle' }
+  | { status: 'checking' }
+  | { status: 'ok'; info: UpdateInfo }
+  | { status: 'error'; message: string }
+
+function AboutSheet({ onClose }: { onClose: () => void }) {
+  const isNative = Capacitor.isNativePlatform()
+  const [state, setState] = useState<CheckState>({ status: 'idle' })
+  const [installing, setInstalling] = useState(false)
+  const [installErr, setInstallErr] = useState<string | null>(null)
+
+  async function handleCheck() {
+    setState({ status: 'checking' })
+    setInstallErr(null)
+    try {
+      const info = await di.appUpdate.checkForUpdate()
+      setState({ status: 'ok', info })
+    } catch (e) {
+      setState({ status: 'error', message: e instanceof Error ? e.message : String(e) })
+    }
+  }
+
+  async function handleInstall() {
+    if (state.status !== 'ok') return
+    setInstalling(true)
+    setInstallErr(null)
+    try {
+      await di.appUpdate.downloadAndInstall(state.info)
+    } catch (e) {
+      setInstallErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setInstalling(false)
+    }
+  }
+
+  const info = state.status === 'ok' ? state.info : null
+  const latestLabel = info ? (info.latest === '—' ? '尚未发布' : `v${info.latest}`) : '—'
+  const hasUpdate = info?.hasUpdate ?? false
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-bold text-ink">关于 AiJi</p>
+          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
+
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">当前版本</span>
+            <span className="text-[13px] font-medium text-ink">v{__APP_VERSION__}</span>
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">最新版本</span>
+            <span className={cn('text-[13px] font-medium', hasUpdate ? 'text-catFail' : 'text-ink')}>
+              {latestLabel}
+              {hasUpdate && ' · 有更新'}
+            </span>
+          </div>
+          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+            <span className="text-[13px] text-t2">运行环境</span>
+            <span className="text-[13px] text-t3">{isNative ? 'Android 原生壳' : 'PWA（浏览器）'}</span>
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <button
+            type="button"
+            disabled={state.status === 'checking'}
+            onClick={() => void handleCheck()}
+            className={cn(
+              'h-[38px] w-full rounded-btn text-[12px] font-medium transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+              state.status === 'checking'
+                ? 'bg-brd text-t3'
+                : 'border border-brd bg-card text-t2',
+            )}
+          >
+            {state.status === 'checking' ? '检查中…' : '检查更新'}
+          </button>
+        </div>
+
+        {state.status === 'error' && (
+          <p className="mt-2 text-[11px] text-catFail">✗ {state.message}</p>
+        )}
+        {info && info.releaseNotes && (
+          <div className="mt-3 max-h-[160px] overflow-y-auto rounded-card border border-brd bg-card p-3">
+            <p className="mb-1 text-[11px] text-t3">更新日志</p>
+            <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-t2">
+              {info.releaseNotes}
+            </p>
+          </div>
+        )}
+
+        {hasUpdate && (
+          <div className="mt-3">
+            <Button
+              variant="primary"
+              size="sm"
+              className="h-[38px] w-full rounded-btn"
+              disabled={installing}
+              onClick={() => void handleInstall()}
+            >
+              <Download size={14} strokeWidth={2} />
+              {installing
+                ? '下载安装中…'
+                : isNative
+                  ? '下载并安装更新'
+                  : '前往 GitHub 下载'}
+            </Button>
+            {installErr && (
+              <p className="mt-2 text-[11px] text-catFail">✗ {installErr}</p>
+            )}
+            {isNative && (
+              <p className="mt-2 text-[11px] text-t3">
+                下载完成后系统会弹出安装提示，请允许「安装未知应用」。
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function VisionSection({
   settings,
   setSettings,
@@ -754,6 +886,7 @@ export default function Settings() {
   const [editing, setEditing] = useState(false)
   const [editingStt, setEditingStt] = useState(false)
   const [editingVlm, setEditingVlm] = useState(false)
+  const [editingAbout, setEditingAbout] = useState(false)
 
   return (
     <div className="px-4 pb-4 pt-4">
@@ -874,12 +1007,13 @@ export default function Settings() {
 
       {/* 关于 */}
       <div className="mt-3">
-        <ChevronRow label="关于 AiJi" value="v0.1" />
+        <ChevronRow label="关于 AiJi" value={`v${__APP_VERSION__}`} onClick={() => setEditingAbout(true)} />
       </div>
 
       {editing && <ByokSheet onClose={() => setEditing(false)} />}
       {editingStt && <SttSheet onClose={() => setEditingStt(false)} />}
       {editingVlm && <VlmSheet onClose={() => setEditingVlm(false)} />}
+      {editingAbout && <AboutSheet onClose={() => setEditingAbout(false)} />}
     </div>
   )
 }

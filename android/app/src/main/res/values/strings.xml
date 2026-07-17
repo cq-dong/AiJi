@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">AiJi</string>
+    <string name="title_activity_main">AiJi</string>
+    <string name="package_name">com.cqdong.aiji</string>
+    <string name="custom_url_scheme">com.cqdong.aiji</string>
+</resources>

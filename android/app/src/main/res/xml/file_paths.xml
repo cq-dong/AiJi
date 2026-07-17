@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- cache-path 覆盖 getCacheDir() 根——ApkInstallerPlugin 下载的 APK 落此，
+    FileProvider 取 content:// 给系统安装器。原模板的 external-path 过宽（暴露整个
+    外部存储），插件不用，删掉收窄。 -->
+    <cache-path name="my_cache_images" path="." />
+</paths>

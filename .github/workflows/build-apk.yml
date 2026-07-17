@@ -1,0 +1,70 @@
+name: Build Android APK
+
+# tag v* 触发：构建 web → sync 进 android 工程 → assembleDebug → 发 GitHub Release。
+# 本机无安卓工具链，全部在 CI 装 JDK17 + Android SDK。
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # softprops/action-gh-release 上传资产需要
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build web
+        run: npm run build
+
+      - name: Sync version into gradle
+        # tag 版号写进 versionName；versionCode 用 run_number 单调递增（debug 签名下足够）。
+        # 保持原生「系统设置里的版本」与 __APP_VERSION__（package.json）一致。
+        # 锚定 defaultConfig 块内的 versionCode/versionName 行，避免日后加 flavor 被误改。
+        run: |
+          TAG=${GITHUB_REF_NAME#v}
+          echo "version=$TAG"
+          sed -i -E "s/^(\s*)versionCode .*/\1versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i -E "s/^(\s*)versionName \".*\"/\1versionName \"$TAG\"/" android/app/build.gradle
+          grep -nE "versionCode|versionName" android/app/build.gradle
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug
+
+      - name: Rename APK
+        # 固定资产名 aiji.apk → 稳定直链 releases/latest/download/aiji.apk。
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/debug/app-debug.apk release/aiji.apk
+          ls -la release/
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/aiji.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true

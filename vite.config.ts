@@ -2,8 +2,18 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 
 export default defineConfig({
+  // 版本单一真源 = package.json version。config 时 Node 端 readFileSync 读出，
+  // define 烘焙成运行时常量 __APP_VERSION__——app 内无需 fetch 自报版本，
+  // About sheet 与 GitHub Release tag 比对以此为准（不依赖原生 App.getInfo，
+  // 后者可能与 package.json 漂移）。JSON.stringify 保证注入是合法字符串字面量。
+  define: {
+    __APP_VERSION__: JSON.stringify(
+      JSON.parse(readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8')).version,
+    ),
+  },
   plugins: [
     react(),
     VitePWA({
