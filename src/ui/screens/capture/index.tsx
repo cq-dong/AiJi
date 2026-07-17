@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useUiStore } from '@/app/store'
+import { useAccountStore } from '@/app/accountStore'
+import { useQuotaStore } from '@/app/quotaStore'
 import { di } from '@/app/di'
 import type { EntryPart } from '@/domain/types'
 import {
@@ -18,6 +20,40 @@ import {
   Toast,
   VoiceBar,
 } from './widgets'
+
+// Task 16: toast 可携带可选 action（"注册网络账号"链接），pointer-events 启用以便点击。
+function ActionToast({
+  message,
+  actionLabel,
+  onAction,
+  onDone,
+}: {
+  message: string
+  actionLabel?: string
+  onAction?: () => void
+  onDone: () => void
+}) {
+  useEffect(() => {
+    const id = window.setTimeout(onDone, 3200)
+    return () => window.clearTimeout(id)
+  }, [onDone])
+  return (
+    <div className="pointer-events-auto absolute inset-x-0 bottom-24 z-40 flex justify-center px-4">
+      <div className="flex max-w-full items-center gap-3 rounded-btn bg-black/85 px-4 py-2.5 text-[13px] font-medium text-white shadow-lg">
+        <span className="flex-1">{message}</span>
+        {actionLabel && onAction && (
+          <button
+            type="button"
+            onClick={() => { onAction(); onDone() }}
+            className="shrink-0 rounded-btn bg-pri px-2.5 py-1 text-[12px] font-semibold text-white active:opacity-70"
+          >
+            {actionLabel}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 type View = 'compose' | 'camera'
 
@@ -48,6 +84,32 @@ export default function Capture() {
   const [textOpen, setTextOpen] = useState(false)
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
   const [toast, setToast] = useState<string | null>(null)
+  // Task 16: 富 toast（带可选 action 链接）—— 采集失败引导 / session 过期。
+  const [actionToast, setActionToast] = useState<{
+    message: string
+    actionLabel?: string
+    onAction?: () => void
+  } | null>(null)
+
+  // Task 16: quota 耗尽 + 账号态。keySource 默认 'byok'（domain types: undefined→byok）。
+  // quota 仅对 builtin 用户有意义（byok 用自己的 key，不耗内置额度）。
+  const account = useAccountStore((s) => s.account)
+  const sessionStale = useAccountStore((s) => s.sessionStale)
+  const quotaExhausted = useQuotaStore((s) => s.exhausted)
+  const settings = useUiStore((s) => s.settings)
+  const keySource = settings?.keySource ?? 'byok'
+  const isGuest = !account || account.type === 'guest'
+  // builtin 且额度耗尽 → 采集入口降级（用户应切 byok 或等重置）。
+  const quotaBlocked = keySource === 'builtin' && quotaExhausted
+
+  // Task 16: session 过期信号——accountStore hydrate 时 refresh 失败置 sessionStale=true。
+  // 此处不自动 logout（spec: LLM 失败只伤 AI 层；让用户看到失败条目再手动登出）。
+  useEffect(() => {
+    if (!sessionStale) return
+    setActionToast({
+      message: '登录已过期，请重新登录',
+    })
+  }, [sessionStale])
   // Wave 3 #4: draft hint banner — shows when parts are restored from a
   // persisted draft on hydrate. Initialized from current parts (common case:
   // hydrate completed before navigating to /capture). Also checks once more
@@ -153,19 +215,40 @@ export default function Capture() {
 
   const handleVoice = () => {
     if (micDenied) allowMic()
-    void startRecording()
+    void startRecording().catch(() => showCaptureFailureToast())
   }
-  const handleStopVoice = () => { void stopRecording() }
+  const handleStopVoice = () => {
+    void stopRecording().catch(() => showCaptureFailureToast())
+  }
 
   const openCamera = () => setView('camera')
 
   const handleGallery = async () => {
-    const r = await di.capture.pickMedia()
-    if (!r) return
-    addMediaPart(
-      { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)), mime: r.mime },
-      r.blob,
-    )
+    try {
+      const r = await di.capture.pickMedia()
+      if (!r) return
+      addMediaPart(
+        { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)), mime: r.mime },
+        r.blob,
+      )
+    } catch {
+      showCaptureFailureToast()
+    }
+  }
+
+  // Task 16: 采集失败引导——仅 guest 或 (byok 且未配 stt:key) 时附"注册网络账号"链接。
+  // network+builtin 用户失败只显纯文案 toast（无链接）。
+  const showCaptureFailureToast = async () => {
+    const eligible = isGuest || (keySource === 'byok' && !(await di.secrets.get('stt:key')))
+    if (eligible) {
+      setActionToast({
+        message: '采集失败',
+        actionLabel: '或注册网络账号用免费额度',
+        onAction: () => navigate('/login'),
+      })
+    } else {
+      setActionToast({ message: '采集失败，请重试' })
+    }
   }
 
   // Wave 3 #3: title editing — update store.capture.title directly (no setTitle
@@ -213,6 +296,18 @@ export default function Capture() {
       {/* Wave 3 #4: draft restored hint */}
       {view === 'compose' && showDraftHint && parts.length > 0 && (
         <DraftHintBanner onDismiss={() => setShowDraftHint(false)} />
+      )}
+
+      {/* Task 16: quota 耗尽提示（仅 builtin 用户）—— byok 用自己的 key 不受此限。 */}
+      {view === 'compose' && quotaBlocked && (
+        <div className="mx-4 mb-2 rounded-chip bg-catPending/10 px-3 py-2.5">
+          <p className="text-[12px] font-medium text-catPending">
+            今日内置额度已用完，明早 8 点重置
+          </p>
+          <p className="mt-0.5 text-[11px] text-t3">
+            或切用自己的 Key
+          </p>
+        </div>
       )}
 
       <main className="relative flex-1 overflow-y-auto">
@@ -268,7 +363,7 @@ export default function Capture() {
               onVoice={handleVoice}
               onCamera={openCamera}
               onGallery={handleGallery}
-              disabled={saving}
+              disabled={saving || quotaBlocked}
             />
             <SaveBar
               saving={saving}
@@ -282,6 +377,14 @@ export default function Capture() {
       )}
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {actionToast && (
+        <ActionToast
+          message={actionToast.message}
+          actionLabel={actionToast.actionLabel}
+          onAction={actionToast.onAction}
+          onDone={() => setActionToast(null)}
+        />
+      )}
     </div>
   )
 }
