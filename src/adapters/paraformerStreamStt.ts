@@ -10,7 +10,7 @@ import { di } from '@/app/di'
 // （AI-only 降级，采集存储不伤）。WebSpeech live interim 不动，本适配只负责保存后转写。
 
 const SECRET_KEY = 'stt:key'
-const WS_BASE = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference'
+const DEFAULT_WS_BASE = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference'
 const TARGET_RATE = 16000
 
 function getAudioContextCtor(): typeof AudioContext {
@@ -52,11 +52,11 @@ async function blobToPcm16k(blob: Blob): Promise<Int16Array> {
 }
 
 // 推 PCM 帧，收增量 result-generated，拼 sentence_end 句返回。
-function streamAsr(pcm: Int16Array, apiKey: string, model: string): Promise<string> {
+function streamAsr(pcm: Int16Array, apiKey: string, model: string, wsBase: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     let ws: WebSocket
     try {
-      ws = new WebSocket(`${WS_BASE}?api_key=${encodeURIComponent(apiKey)}`)
+      ws = new WebSocket(`${wsBase}?api_key=${encodeURIComponent(apiKey)}`)
     } catch (e) {
       reject(new Error('STT WS 构造失败: ' + (e as Error).message))
       return
@@ -141,17 +141,18 @@ function streamAsr(pcm: Int16Array, apiKey: string, model: string): Promise<stri
   })
 }
 
-export const paraformerStt: SttPort = {
+export const paraformerStreamStt: SttPort = {
   async transcribe(ref) {
     const settings = await di.storage.getSettings()
     const model = settings.sttModel || 'paraformer-realtime-v2'
+    const wsBase = settings.sttUrl || DEFAULT_WS_BASE
     const apiKey = await di.secrets.get(SECRET_KEY)
     if (!apiKey) throw new Error('STT BYOK 未配置（stt:key 缺失）')
     const blob = await di.storage.getMedia(ref)
     if (!blob) throw new Error('音频 blob 未找到: ' + ref)
     const pcm = await blobToPcm16k(blob)
     if (pcm.length === 0) throw new Error('音频解码为空: ' + ref)
-    const text = await streamAsr(pcm, apiKey, model)
+    const text = await streamAsr(pcm, apiKey, model, wsBase)
     return text.trim()
   },
 }

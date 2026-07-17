@@ -74,7 +74,7 @@ export const dexieStorage: StoragePort = {
     const rows = await db.entryAi.where('entryId').equals(entryId).toArray()
     if (rows.length === 0) return undefined
     // D1: 严格 > 在等版本上随机取（Dexie toArray 主键序）。改 >= + createdAt tie-break，
-    // 始终返回最高版本 + 最新创建的 EntryAi。配合 deepSeekLlm.classify 版本递增，重处理不再返过期 AI。
+    // 始终返回最高版本 + 最新创建的 EntryAi。配合 openAiCompatLlm.classify 版本递增，重处理不再返过期 AI。
     return rows.reduce((a, b) => {
       if (b.version !== a.version) return b.version > a.version ? b : a
       return new Date(b.createdAt).getTime() > new Date(a.createdAt).getTime() ? b : a

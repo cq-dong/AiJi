@@ -18,10 +18,13 @@ export async function seedDevDefaults(): Promise<void> {
   if (!import.meta.env.DEV) return
   const llmKey = import.meta.env.VITE_LLM_KEY as string | undefined
   const sttKey = import.meta.env.VITE_STT_KEY as string | undefined
+  const vlmKey = import.meta.env.VITE_VLM_KEY as string | undefined
   const llmUrl = import.meta.env.VITE_LLM_URL as string | undefined
   const llmModel = import.meta.env.VITE_LLM_MODEL as string | undefined
   const sttModel = import.meta.env.VITE_STT_MODEL as string | undefined
-  if (!llmKey && !sttKey && !llmUrl && !llmModel && !sttModel) return
+  const vlmUrl = import.meta.env.VITE_VLM_URL as string | undefined
+  const vlmModel = import.meta.env.VITE_VLM_MODEL as string | undefined
+  if (!llmKey && !sttKey && !vlmKey && !llmUrl && !llmModel && !sttModel && !vlmUrl && !vlmModel) return
 
   if (llmKey) {
     const existing = await di.secrets.get('llm:key')
@@ -31,6 +34,10 @@ export async function seedDevDefaults(): Promise<void> {
     const existing = await di.secrets.get('stt:key')
     if (!existing) await di.secrets.set('stt:key', sttKey)
   }
+  if (vlmKey) {
+    const existing = await di.secrets.get('vlm:key')
+    if (!existing) await di.secrets.set('vlm:key', vlmKey)
+  }
 
   const s = await di.storage.getSettings()
   const patch: Partial<Settings> = {}
@@ -39,5 +46,10 @@ export async function seedDevDefaults(): Promise<void> {
   if (sttModel && s.sttModel === seedSettings.sttModel) patch.sttModel = sttModel
   if (llmKey && !s.apiKeyRef) patch.apiKeyRef = 'llm:key'
   if (sttKey && !s.sttKeyRef) patch.sttKeyRef = 'stt:key'
+  // VLM url/model：seed-once（仅当仍处 seed 默认 undefined 时填，用户改过不覆盖）。
+  // vlmUrl 须为完整 chat completions URL（适配器 fetch verbatim，不补 /chat/completions）。
+  if (vlmUrl && s.vlmUrl === seedSettings.vlmUrl) patch.vlmUrl = vlmUrl
+  if (vlmModel && s.vlmModel === seedSettings.vlmModel) patch.vlmModel = vlmModel
+  if (vlmKey && !s.vlmKeyRef) patch.vlmKeyRef = 'vlm:key'
   if (Object.keys(patch).length > 0) await di.storage.saveSettings({ ...s, ...patch })
 }
