@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Camera, User, X } from 'lucide-react'
+import { Camera, ChevronRight, User, X } from 'lucide-react'
 import { Button, Card } from '@/ui/components'
 import { useAccountStore } from '@/app/accountStore'
 
@@ -45,7 +45,7 @@ async function compressAvatar(file: File): Promise<string> {
 function NetworkSheet({ onClose }: { onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div
@@ -63,6 +63,7 @@ function NetworkSheet({ onClose }: { onClose: () => void }) {
             <X size={18} strokeWidth={2} />
           </button>
         </div>
+        <div className="mt-3 h-px bg-brd" />
         <p className="mt-3 text-[13px] leading-relaxed text-t2">
           网络账号功能暂未开通，敬请期待
         </p>
@@ -89,7 +90,7 @@ function NicknameSheet({
   const [value, setValue] = useState(initial)
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
       onClick={onClose}
     >
       <div
@@ -107,13 +108,14 @@ function NicknameSheet({
             <X size={18} strokeWidth={2} />
           </button>
         </div>
+        <div className="mt-3 h-px bg-brd" />
         <input
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="昵称"
           aria-label="昵称"
-          className="mt-3 w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri"
+          className="mt-3 h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         />
         <div className="mt-4 flex gap-2">
           <Button
@@ -169,14 +171,14 @@ export function AccountSection() {
   }
 
   return (
-    <Card className="mt-3">
+    <Card className="mt-4">
       <div className="flex items-center gap-3">
         {/* 头像：64px 圆，可点换图。 */}
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
           aria-label="更换头像"
-          className="relative size-16 shrink-0 overflow-hidden rounded-full bg-priS transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          className="relative size-16 shrink-0 overflow-hidden rounded-full bg-priS shadow-sm ring-2 ring-pri/10 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           {account.avatar ? (
             <img
@@ -190,8 +192,8 @@ export function AccountSection() {
             </span>
           )}
           {/* 相机角标。 */}
-          <span className="absolute bottom-0 right-0 flex size-6 items-center justify-center rounded-full bg-pri text-white shadow-sm">
-            <Camera size={12} strokeWidth={2.2} />
+          <span className="absolute bottom-0 right-0 flex size-5 items-center justify-center rounded-full bg-pri/95 text-white shadow-sm ring-2 ring-card">
+            <Camera size={11} strokeWidth={2.2} />
           </span>
         </button>
         <input
@@ -208,46 +210,49 @@ export function AccountSection() {
           onClick={() => setNickOpen(true)}
           className="flex-1 text-left transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded-btn"
         >
-          <p className="text-[16px] font-bold text-ink">{account.nickname}</p>
+          <p className="text-[17px] font-bold text-ink">{account.nickname}</p>
           <div className="mt-1 flex items-center gap-2">
-            <span className="rounded-chip bg-priS px-2 py-0.5 text-[11px] text-pri">
+            <span className="rounded-chip bg-priS px-2.5 py-1 text-[11px] font-medium text-pri">
               {typeLabel}
             </span>
             <span className="text-[11px] text-t3">{planLabel}</span>
           </div>
         </button>
 
-        {/* User 图标作右侧可点击提示（亦触发昵称编辑）。 */}
+        {/* User 图标作右侧可点击提示（亦触发昵称编辑），44pt 触达。 */}
         <button
           type="button"
           onClick={() => setNickOpen(true)}
           aria-label="编辑昵称"
-          className="flex size-9 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           <User size={18} strokeWidth={2} />
         </button>
       </div>
 
-      <Button
-        variant="secondary"
-        size="sm"
-        className="mt-3 w-full"
-        onClick={() => setSheetOpen(true)}
-      >
-        切换网络账号
-      </Button>
+      <div className="my-3 h-px bg-brd" />
 
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mt-2 w-full text-catFail"
+      {/* 切换网络账号：ChevronRow 风格，与 settings 其他行一致。 */}
+      <button
+        type="button"
+        onClick={() => setSheetOpen(true)}
+        className="flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+      >
+        <span className="text-[13px] text-ink">切换网络账号</span>
+        <ChevronRight size={18} className="text-t2" />
+      </button>
+
+      {/* 退出登录：ghost 文字按钮，居中，更轻。 */}
+      <button
+        type="button"
         onClick={() => {
           useAccountStore.getState().logout()
           navigate('/login')
         }}
+        className="mt-2 w-full text-center text-[13px] text-catFail transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded-btn py-1"
       >
         退出登录
-      </Button>
+      </button>
 
       {sheetOpen && <NetworkSheet onClose={() => setSheetOpen(false)} />}
       {nickOpen && (

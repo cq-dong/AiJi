@@ -759,6 +759,9 @@ export default function Settings() {
     <div className="px-4 pb-4 pt-4">
       <h1 className="text-[24px] font-bold text-ink">个人中心</h1>
 
+      {/* 账号 */}
+      <AccountSection />
+
       {/* 外观 */}
       <Card className="mt-4">
         <p className="text-[14px] font-bold text-ink">外观</p>
@@ -793,9 +796,6 @@ export default function Settings() {
         </div>
         <Toggle checked={recordLocation} onChange={(v) => setSettings({ recordLocation: v })} />
       </div>
-
-      {/* 账号 */}
-      <AccountSection />
 
       {/* AI 模型 */}
       <Card className="mt-3">
