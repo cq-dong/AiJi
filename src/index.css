@@ -17,6 +17,11 @@
   --c-priS: 238 237 253; /* #eeedfd */
   --c-brd: 236 236 239; /* #ececef */
   --aji-shadow: 20 20 26; /* 浅色：深墨落影 */
+  /* D1/D2: 安全区 fallback。Android 原生（MainActivity）注入真实 systemBars insets 覆盖此值；
+     PWA 浏览器 env(safe-area-inset-*) 不被 Android WebView 支持（iOS WebKit 特性），
+     PWA 无系统状态栏 → fallback 0 还原 390×844 原型视感。 */
+  --safe-top: 0px;
+  --safe-bottom: 0px;
 }
 .dark {
   color-scheme: dark;

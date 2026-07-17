@@ -40,6 +40,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- capture: WebView 里 getUserMedia 麦克风/摄像头需运行时权限 + manifest 声明（A1 假设）。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- D3/D8: Android WebView 录音/录像除 RECORD_AUDIO 外常需 MODIFY_AUDIO_SETTINGS（系统音频路由）。
+         纯回放场景不需要，但 getUserMedia 音频轨 + 视频含音频轨的链路在部分 ROM 上无此权限会静默失败。 -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.CAMERA" />
     <!-- recordLocation 设置：条目附地理位置。 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />

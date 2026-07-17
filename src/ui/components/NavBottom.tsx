@@ -16,10 +16,10 @@ export function NavBottom() {
       className="absolute inset-x-0 bottom-0 z-20 border-t border-brd bg-card shadow-[0_-4px_12px_rgb(var(--aji-shadow)/0.04)]"
       style={{
         // D1: 底部系统导航栏（gesture/三键）安全区适配。
-        // nav 高度增加 safe-area-inset-bottom，内部 padding-bottom 把图标网格顶上去；
-        // PWA 浏览器环境 inset=0 → 退化为原 79px，不影响原型视感。
-        height: 'calc(79px + env(safe-area-inset-bottom, 0px))',
-        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        // Android WebView 不支持 env(safe-area-inset-*)，--safe-bottom 由 MainActivity 原生注入；
+        // PWA 浏览器环境 fallback 0 → 退化为原 79px，不影响原型视感。
+        height: 'calc(79px + var(--safe-bottom, 0px))',
+        paddingBottom: 'var(--safe-bottom, 0px)',
       }}
     >
       <div className="grid grid-cols-5">

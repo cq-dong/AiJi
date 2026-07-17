@@ -176,12 +176,16 @@ export default function Capture() {
   // is granted. Probe with an actual getUserMedia({audio:true}) call (via
   // requestMicPermission) to avoid false-negative denial. If the probe succeeds,
   // proceed to startRecording; if it fails, the NoMicPanel stays.
+  // D3 修复：native 路径先 probe，成功才清 micDenied——此前 allowMic() 先清再 probe，
+  // probe 失败时 micDenied 残留 false，UI 卡在无 NoMicPanel 但 startRecording 又失败。
   const handleVoice = async () => {
     if (micDenied) {
-      allowMic()
       if (Capacitor.isNativePlatform()) {
         const ok = await di.capture.requestMicPermission()
-        if (!ok) return // truly denied — NoMicPanel re-shows via micDenied
+        if (!ok) return // truly denied — micDenied 仍 true，NoMicPanel 保持
+        allowMic() // probe 成功 → 清 micDenied
+      } else {
+        allowMic()
       }
     }
     void startRecording()
@@ -252,14 +256,17 @@ export default function Capture() {
             <NoMicPanel
               onUseText={() => { allowMic(); setTextOpen(true) }}
               onRetry={() => {
-                allowMic()
-                // D3: native platform — probe with getUserMedia before retrying
-                // startRecording, to avoid false-negative from navigator.permissions.
+                // D3 修复：native 先 probe，成功才清 micDenied + 开始录音——
+                // 此前 allowMic() 先清再 probe，probe 失败时 micDenied 残留 false。
                 if (Capacitor.isNativePlatform()) {
                   void di.capture.requestMicPermission().then((ok) => {
-                    if (ok) void startRecording()
+                    if (ok) {
+                      allowMic()
+                      void startRecording()
+                    }
                   })
                 } else {
+                  allowMic()
                   void startRecording()
                 }
               }}

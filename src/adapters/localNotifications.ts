@@ -90,12 +90,13 @@ async function ensureChannel(): Promise<void> {
   }
   try {
     // Android 8+ 需 notification channel 才能发声。默认 channel 可能无声/不存在，
-    // 自建 'reminders' channel 设 IMPORTANCE_HIGH（铃声 + 横幅）。
+    // 自建 'reminders' channel 设 IMPORTANCE_HIGH（系统默认铃声 + 横幅）。
+    // D4 修复：去掉 sound: 'beep.wav'——res/raw 无此资源会导致 channel 创建异常/无声。
+    // IMPORTANCE_HIGH 保证系统用默认通知声，去掉 sound 不影响发声。
     await LocalNotifications.createChannel({
       id: 'reminders',
       name: '提醒',
       description: 'AiJi 待办提醒通知',
-      sound: 'beep.wav',
       importance: 5, // IMPORTANCE_HIGH
       visibility: 1, // PUBLIC
       vibration: true,
@@ -104,6 +105,23 @@ async function ensureChannel(): Promise<void> {
     console.error('[localNotifications] createChannel failed', e)
   }
   nativeChannelReady = true
+}
+
+// D4 修复：schedule/notify 前确保 POST_NOTIFICATIONS 已授权（Android 13+ 运行时权限）。
+// checkPermissions 先查当前状态；仅 'prompt'（从未问过）才 requestPermissions 弹原生框。
+// 'granted' 直接通过；'denied' 跳过（避免静默 schedule 后被系统拦截）。
+async function ensurePermission(): Promise<boolean> {
+  try {
+    const check = await LocalNotifications.checkPermissions()
+    if (check.display === 'granted') return true
+    if (check.display === 'denied') return false
+    // 'prompt' → 请求（原生弹框）
+    const res = await LocalNotifications.requestPermissions()
+    return res.display === 'granted'
+  } catch (e) {
+    console.error('[localNotifications] ensurePermission failed', e)
+    return false
+  }
 }
 
 const nativeImpl: LocalNotificationsPort = {
@@ -117,6 +135,9 @@ const nativeImpl: LocalNotificationsPort = {
     }
   },
   async schedule(reminder: Reminder): Promise<void> {
+    // D4 修复：权限未授权则不 schedule（避免到点被系统静默拦截）。
+    const ok = await ensurePermission()
+    if (!ok) return
     await ensureChannel()
     const id = hashId(reminder.id)
     const due = new Date(reminder.dueAt)
@@ -153,6 +174,9 @@ const nativeImpl: LocalNotificationsPort = {
   notify(label: string, body: string, tag: string): void {
     // 即时通知（overdue 补推 / 前台即时）。用 tag 末段作 id hash 源，保证去重。
     void (async () => {
+      // D4 修复：权限未授权则不 notify（避免静默失败）。
+      const ok = await ensurePermission()
+      if (!ok) return
       await ensureChannel()
       try {
         await LocalNotifications.schedule({

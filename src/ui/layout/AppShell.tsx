@@ -31,14 +31,19 @@ function TopBar() {
 // 主 tab 层：状态栏 + 顶栏(搜索) + 内容 + 采集 FAB + 底部导航
 export function MainLayout() {
   return (
-    <div className="aji-frame flex flex-col bg-page">
+    <div
+      className="aji-frame flex flex-col bg-page"
+      // D1/D2: 顶部留系统状态栏高度。Android WebView 不支持 env(safe-area-inset-*)（iOS 特性），
+      // MainActivity 在原生层把 systemBars.top 注入为 --safe-top；PWA fallback 0（由 Statusbar 模拟层占位）。
+      style={{ paddingTop: 'var(--safe-top, 0px)' }}
+    >
       <Statusbar />
       <TopBar />
-      {/* D1: 内容区底部留 NavBottom(79) + safe-area-inset-bottom 的空间，
-          避免记录多时底部功能栏被系统导航栏遮挡。PWA 环境 inset=0。 */}
+      {/* D1: 内容区底部留 NavBottom(79) + safe-bottom 的空间，
+          避免记录多时底部功能栏被系统导航栏遮挡。--safe-bottom 由 MainActivity 注入，PWA fallback 0。 */}
       <main
         className="flex-1 overflow-y-auto"
-        style={{ paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 0px))' }}
+        style={{ paddingBottom: 'calc(100px + var(--safe-bottom, 0px))' }}
       >
         <Outlet />
       </main>
@@ -52,12 +57,15 @@ export function MainLayout() {
 // 裸层（采集 / 详情 / Onboarding）：状态栏 + 内容，无导航无 FAB
 export function BareLayout() {
   return (
-    <div className="aji-frame flex flex-col bg-page">
+    <div
+      className="aji-frame flex flex-col bg-page"
+      style={{ paddingTop: 'var(--safe-top, 0px)' }}
+    >
       <Statusbar />
       {/* D1: 裸层内容区底部留安全区空间，避免采集页底部操作 / 详情页底部按钮被系统导航栏遮挡。 */}
       <main
         className="flex-1 overflow-y-auto"
-        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        style={{ paddingBottom: 'var(--safe-bottom, 0px)' }}
       >
         <Outlet />
       </main>

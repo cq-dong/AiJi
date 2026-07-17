@@ -606,9 +606,13 @@ export const useUiStore = create<UiState>((set, get) => ({
     // Q4：首次确认提醒时请求通知权限（情境相关，不无脑弹）。
     // permissionRequested flag 保证只问一次；denied 后不再骚扰，notify 走 toast 降级。
     // D4: 走 di.localNotifications（原生 requestPermissions / web Notification.requestPermission）
+    // D4 修复：await requestPermission 检查返回值——未授权仍落库 Reminder 但 warn（不阻塞）。
     if (!permissionRequested) {
       permissionRequested = true
-      void di.localNotifications.requestPermission()
+      const ok = await di.localNotifications.requestPermission()
+      if (!ok) {
+        console.warn('[store] notification permission not granted; reminder saved but alerts may be suppressed')
+      }
     }
     const r: Reminder = {
       id: crypto.randomUUID(),
