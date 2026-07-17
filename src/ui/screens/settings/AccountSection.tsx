@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Camera, Check, ChevronRight, User, X } from 'lucide-react'
 import { Button, Card, Sheet, cn } from '@/ui/components'
@@ -157,6 +157,95 @@ function NicknameSheet({
   )
 }
 
+// 游客升级为网络账号：绑邮箱+密码，account.id 不变（单池）。
+// bindNetwork 抛 'AUTH_<CODE>:<中文>'；AUTH_409 = 邮箱已注册。成功后 onClose + toast。
+// Sheet 原语无 open prop，调用方条件渲染 → 内部 `if (!open) return null`（hooks 前置）。
+function BindNetworkSheet({
+  open,
+  onClose,
+  onSuccess,
+}: {
+  open: boolean
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const bindNetwork = useAccountStore((s) => s.bindNetwork)
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  if (!open) return null
+
+  async function onSubmit() {
+    setError(null)
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('邮箱格式无效')
+      return
+    }
+    if (password.length < 8) {
+      setError('密码至少 8 位')
+      return
+    }
+    if (password !== confirm) {
+      setError('两次密码不一致')
+      return
+    }
+    setBusy(true)
+    try {
+      await bindNetwork(email, password)
+      onSuccess()
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError(msg.startsWith('AUTH_409') ? '该邮箱已注册' : msg.replace(/^AUTH_\d+:/, ''))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Sheet title="升级为网络账号" onClose={onClose}>
+      <div className="space-y-2 py-1">
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="邮箱"
+          aria-label="邮箱"
+          className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="密码（至少 8 位）"
+          aria-label="密码"
+          className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        />
+        <input
+          type="password"
+          value={confirm}
+          onChange={(e) => setConfirm(e.target.value)}
+          placeholder="确认密码"
+          aria-label="确认密码"
+          className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        />
+        {error && <p className="text-[12px] text-catFail">{error}</p>}
+        <Button
+          variant="primary"
+          size="lg"
+          className="w-full"
+          disabled={busy}
+          onClick={() => void onSubmit()}
+        >
+          {busy ? '升级中…' : '升级'}
+        </Button>
+      </div>
+    </Sheet>
+  )
+}
+
 export function AccountSection() {
   const navigate = useNavigate()
   const account = useAccountStore((s) => s.account)
@@ -167,7 +256,16 @@ export function AccountSection() {
   const [quotaOpen, setQuotaOpen] = useState(false)
   const [nickOpen, setNickOpen] = useState(false)
   const [plansOpen, setPlansOpen] = useState(false)
+  const [bindOpen, setBindOpen] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // 本地瞬时 toast：2.5s 自动消失。AppShell 无 toast 系统，故局部实现。
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 2500)
+    return () => clearTimeout(t)
+  }, [toast])
 
   if (!account) return null
 
@@ -290,6 +388,20 @@ export function AccountSection() {
         {!isGuest && <ChevronRight size={18} className="text-t2" />}
       </button>
 
+      {/* 游客升级为网络账号行：仅 guest 显示。紧接 keySource（guest 下 disabled）形成自然引导。 */}
+      {isGuest && (
+        <button
+          type="button"
+          onClick={() => setBindOpen(true)}
+          className={cn(
+            'mt-1 flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+          )}
+        >
+          <span className="text-[13px] text-ink">升级为网络账号</span>
+          <ChevronRight size={18} className="text-t2" />
+        </button>
+      )}
+
       {/* 额度行：仅 keySource=builtin 显示。sessionStale 时灰色 + 提示重新登录。 */}
       {showQuotaRow && (
         <button
@@ -351,11 +463,30 @@ export function AccountSection() {
       />
       <QuotaSheet open={quotaOpen} onClose={() => setQuotaOpen(false)} />
       <PlansSheet open={plansOpen} onClose={() => setPlansOpen(false)} />
+      <BindNetworkSheet
+        open={bindOpen}
+        onClose={() => setBindOpen(false)}
+        onSuccess={() => {
+          setBindOpen(false)
+          setToast('已升级为网络账号')
+        }}
+      />
       {nickOpen && (
         <NicknameSheet
           initial={account.nickname}
           onClose={() => setNickOpen(false)}
         />
+      )}
+
+      {/* 瞬时 toast：固定底部居中，2.5s 自动消失。 */}
+      {toast && (
+        <div
+          className="pointer-events-none fixed bottom-24 left-1/2 z-[60] -translate-x-1/2 rounded-btn bg-ink/90 px-4 py-2 text-[13px] text-white shadow-sheet animate-fade-in"
+          role="status"
+          aria-live="polite"
+        >
+          {toast}
+        </div>
       )}
     </Card>
   )
