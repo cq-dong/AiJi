@@ -1,7 +1,7 @@
 // Port interfaces (PRD §7.3). PWA-agnostic; adapters implement these.
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
-import type { Aggregate, AggregateScopeType, Category, Draft, Entry, EntryAi, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
 
 export interface StoragePort {
   listEntries(): Promise<Entry[]>
@@ -48,6 +48,13 @@ export interface StoragePort {
   trashEntry(id: string): Promise<void>
   recoverEntry(id: string): Promise<void>
   purgeExpired(): Promise<number>
+  // AI Chat · conversations (docs/design/ai-chat-impl-plan.md §3)。MVP 单会话 id=1；
+  // 多会话 schema 已就位，v1.1 铺 listConversations UI。getConversation 载入、
+  // saveConversation upsert（messages 内嵌数组整体覆写）、deleteConversation 清会话。
+  listConversations(): Promise<Conversation[]>
+  getConversation(id: string): Promise<Conversation | undefined>
+  saveConversation(c: Conversation): Promise<void>
+  deleteConversation(id: string): Promise<void>
 }
 
 export interface CapturePort {
@@ -96,6 +103,17 @@ export interface LlmPort {
     detailLevel?: number,
     id?: string,
   ): Promise<Aggregate>
+  // AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md)。两轮：intent 解析问句→结构化 query；
+  // answer 基于本地召回的 cites 作答 + 引用。调用方在两轮之间跑 localRecall。
+  // intent 轮：解析「上个月关于 X 的想法」→ scope(时间 range) + keywords。无时间意图时 scope=null。
+  parseChatIntent(question: string, nowIso: string): Promise<ChatQuery>
+  // answer 轮：基于传入 cites（已压缩）+ 对话历史作答。铁律：citedEntryIds 必须来自 cites.id；
+  // port 层后校验剔非法 id。空 cites 调用方应直接走「库内未找到依据」不调此方法。
+  answerChat(opts: {
+    question: string
+    cites: ChatCite[] // 已压缩的 top-K 召回条目（LLM 作答的上下文素材）
+    conversation: { role: 'user' | 'assistant'; content: string }[] // 先前多轮对话
+  }): Promise<ChatAnswer>
 }
 
 export interface SecretStorePort {

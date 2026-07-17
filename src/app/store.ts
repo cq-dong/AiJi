@@ -1,6 +1,7 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, Draft, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
 import { scopeRange } from '@/domain/dateRange'
+import { localRecall } from '@/ui/screens/chat/helpers'
 import { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedReminders, seedSettings, seedTags } from '@/data/seed'
 import { di } from './di'
 
@@ -73,6 +74,19 @@ interface UiState {
   updateEntry: (id: string, patch: Partial<Entry>) => Promise<void>
   updateEntryAi: (entryId: string, patch: Partial<EntryAi>) => Promise<void>
   primeLocation: () => void
+  // AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md)。MVP 单会话 id=1。
+  // conversation null = 尚未载入/无会话（首次 sendMessage lazy-create）。chatLoading 驱动
+  // 两轮 loading 文案（intent 理解问题 / recall 检索库中 / answer 组织回答）。
+  conversation: Conversation | null
+  chatLoading: 'idle' | 'intent' | 'recall' | 'answer'
+  sendMessage: (text: string) => Promise<void>
+  clearConversation: () => Promise<void>
+  // 语音输入（chat 屏复用 CapturePort.startAudio 的 live STT；transcript 流入输入框，不落库不存媒体）。
+  // 与 capture 切片分离：chat 语音是临时的，不进 Entry/草稿；blob 丢弃（stopAudio 仍返，适配器要 stop 释放 mic）。
+  chatVoice: { recording: boolean; interim: string; finalized: string; micDenied: boolean }
+  startChatVoice: () => Promise<void>
+  stopChatVoice: () => Promise<string> // 返回 transcript（finalized+interim.trim），调用方写入输入框
+  allowChatMic: () => void
 }
 
 const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined, title: undefined }
@@ -147,6 +161,41 @@ function scheduleReminders(): void {
   }
 }
 
+// ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md §4) ──────────────
+// MVP 单会话 id=1。多会话时改 CHAT_CONVERSATION_ID 为 list + UI 选会话。
+const CHAT_CONVERSATION_ID = '1'
+// answer 轮塞入的先前对话条数（滑动窗，token 预算——不全量塞历史）。
+const CHAT_HISTORY_WINDOW = 6
+
+// 同会话同问题缓存（hash(question + entries 签名)）：entries 数量/最新 updatedAt 不变即复用上次
+// answer，免两轮付费 LLM。内存态不持久——重载空，可接受。entries 变（新记/删/改）即失效。
+const chatAnswerCache = new Map<string, ChatAnswer>()
+
+function chatCacheKey(question: string, entries: Entry[]): string {
+  const norm = question.trim().toLowerCase()
+  const sig = entries.length + ':' + (entries[0]?.updatedAt ?? '')
+  return `${norm}::${sig}`
+}
+
+// conversation null → 空会话单行（首次 sendMessage lazy-create）。
+function ensureConversation(c: Conversation | null): Conversation {
+  return c ?? { id: CHAT_CONVERSATION_ID, messages: [], updatedAt: new Date().toISOString() }
+}
+
+function appendMessage(c: Conversation, m: ChatMessage): Conversation {
+  return { ...c, messages: [...c.messages, m], updatedAt: m.createdAt }
+}
+
+// 从 conversation 取最近 N 条 {role, content} 作 answer LLM 对话历史（不含当前问题——
+// buildAnswerPrompt 把当前问题作为最后一轮 user 追加，故此处只给先前轮次）。跳过 error 消息。
+function chatHistory(conv: Conversation | null, limit: number): { role: 'user' | 'assistant'; content: string }[] {
+  if (!conv) return []
+  return conv.messages
+    .filter((m) => !m.error)
+    .slice(-limit)
+    .map((m) => ({ role: m.role, content: m.content }))
+}
+
 export const useUiStore = create<UiState>((set, get) => ({
   capture: emptyDraft,
   online: true,
@@ -162,6 +211,9 @@ export const useUiStore = create<UiState>((set, get) => ({
   trashed: [],
   recalculating: {},
   justSaved: false,
+  conversation: null,
+  chatLoading: 'idle',
+  chatVoice: { recording: false, interim: '', finalized: '', micDenied: false },
   hydrate: async () => {
     if (get().hydrated) return
     try {
@@ -187,6 +239,11 @@ export const useUiStore = create<UiState>((set, get) => ({
       scheduleReminders()
       // Wave 4: 恢复最近草稿（跨刷新/重启续记）。多草稿里取最新一条载入 capture（仅当 capture 空）。
       await get().loadDraft()
+      // AI Chat: 载入单会话 id=1（无则首次 sendMessage 时 lazy-create）。
+      try {
+        const conv = await di.storage.getConversation(CHAT_CONVERSATION_ID)
+        if (conv) set({ conversation: conv })
+      } catch (e) { console.error('[store] loadConversation failed', e) }
     } catch (e) {
       // 载入失败：保持 seed 兜底，标记已尝试避免反复重试（存储失败不阻断 UI）
       console.error('[store] hydrate failed', e)
@@ -618,4 +675,107 @@ export const useUiStore = create<UiState>((set, get) => ({
     await di.storage.saveEntryAi(next)
     set((s) => ({ aiByEntry: { ...s.aiByEntry, [entryId]: next } }))
   },
+  // ── AI Chat · sendMessage (docs/design/ai-chat-impl-plan.md §4) ──────────
+  // intent(LLM) → 本地 localRecall → answer(LLM) → 落 conversation。离线直接拒绝（不假装降级）。
+  // 防幻觉层 3：空 cites 不调 answer LLM，直接「库内未找到依据」裸答拒绝。同问缓存命中跳两轮。
+  sendMessage: async (text) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const { online, conversation, entries } = get()
+    const now = new Date().toISOString()
+
+    // 离线拒绝：追加 error 消息，UI 显禁用提示，不调 LLM。
+    if (!online) {
+      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: '离线中，连上网再问。', createdAt: now, error: true }
+      const conv = appendMessage(ensureConversation(conversation), errMsg)
+      set({ conversation: conv, chatLoading: 'idle' })
+      void di.storage.saveConversation(conv).catch((e) => console.error('[store] saveConversation(offline) failed', e))
+      return
+    }
+
+    // 1. 乐观追加用户消息 + intent 阶段。先落库用户消息（即使后续 LLM 失败也保留对话记录）。
+    const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: trimmed, createdAt: now }
+    let conv = appendMessage(ensureConversation(conversation), userMsg)
+    set({ conversation: conv, chatLoading: 'intent' })
+    void di.storage.saveConversation(conv).catch((e) => console.error('[store] saveConversation(user) failed', e))
+
+    // 缓存命中：跳两轮付费 LLM，直接追加缓存 answer。
+    const cached = chatAnswerCache.get(chatCacheKey(trimmed, entries))
+    if (cached) {
+      const aiMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: cached.answer, citedEntryIds: cached.citedEntryIds, createdAt: new Date().toISOString() }
+      conv = appendMessage(conv, aiMsg)
+      set({ conversation: conv, chatLoading: 'idle' })
+      void di.storage.saveConversation(conv).catch((e) => console.error('[store] saveConversation(cached) failed', e))
+      return
+    }
+
+    try {
+      // 2. intent 轮：解析问句 → ChatQuery（scope/keywords/categorySlugs）。
+      const query = await di.llm.parseChatIntent(trimmed, new Date().toISOString())
+
+      // 3. 本地召回（recall 阶段，纯函数，毫秒级）。
+      set({ chatLoading: 'recall' })
+      const { aiByEntry, tags } = get()
+      const cites = localRecall(query, entries, aiByEntry, tags)
+
+      // 4. answer 轮：空 cites 不调 LLM（防幻觉层 3）；非空则基于 cites 作答 + 后校验剔非法 id（适配器已做）。
+      set({ chatLoading: 'answer' })
+      const answer: ChatAnswer =
+        cites.length === 0
+          ? { answer: '库内未找到依据。可以换个问法，或告诉我大致的时间、关键词。', citedEntryIds: [] }
+          : await di.llm.answerChat({ question: trimmed, cites, conversation: chatHistory(conversation, CHAT_HISTORY_WINDOW) })
+
+      // 缓存（entries 签名不变即复用）。
+      chatAnswerCache.set(chatCacheKey(trimmed, entries), answer)
+
+      const aiMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: answer.answer, citedEntryIds: answer.citedEntryIds, createdAt: new Date().toISOString() }
+      conv = appendMessage(conv, aiMsg)
+      set({ conversation: conv, chatLoading: 'idle' })
+      void di.storage.saveConversation(conv).catch((e) => console.error('[store] saveConversation(answer) failed', e))
+    } catch (e) {
+      // 任一 LLM 轮失败：追加 error 消息（不抛——UI 显重试态而非卡 loading）。
+      console.error('[store] sendMessage failed', e)
+      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: '问答出了点问题，稍后重试。', createdAt: new Date().toISOString(), error: true }
+      conv = appendMessage(conv, errMsg)
+      set({ conversation: conv, chatLoading: 'idle' })
+      void di.storage.saveConversation(conv).catch((e2) => console.error('[store] saveConversation(err) failed', e2))
+    }
+  },
+  clearConversation: async () => {
+    // 清空当前会话消息（保留 id=1 行，messages=[]）。下次 sendMessage 重新开始。
+    const conv = ensureConversation(get().conversation)
+    const cleared: Conversation = { ...conv, messages: [], updatedAt: new Date().toISOString() }
+    set({ conversation: cleared, chatLoading: 'idle' })
+    void di.storage.saveConversation(cleared).catch((e) => console.error('[store] clearConversation failed', e))
+  },
+  startChatVoice: async () => {
+    // 复用 CapturePort.startAudio 的 WebSpeech live STT（zh-CN interim+final）。
+    // transcript 写 chatVoice.finalized/interim，chat 屏实时渲染进输入框；blob 丢弃。
+    set((s) => ({ chatVoice: { ...s.chatVoice, finalized: '', interim: '', micDenied: false } }))
+    try {
+      await di.capture.startAudio({
+        onInterim: (t) => set((s) => ({ chatVoice: { ...s.chatVoice, interim: t } })),
+        onFinal: (t) => set((s) => ({ chatVoice: { ...s.chatVoice, finalized: s.chatVoice.finalized + t, interim: '' } })),
+      })
+      set((s) => ({ chatVoice: { ...s.chatVoice, recording: true } }))
+    } catch (e) {
+      // getUserMedia NotAllowedError → micDenied；NotFoundError/SecurityError 也走这里。
+      console.error('[store] chat startAudio failed', e)
+      set((s) => ({ chatVoice: { ...s.chatVoice, recording: false, micDenied: true } }))
+    }
+  },
+  stopChatVoice: async () => {
+    if (!get().chatVoice.recording) return ''
+    try {
+      // stopAudio 释放 mic track + MediaRecorder；blob 忽略（chat 不存媒体）。
+      await di.capture.stopAudio()
+    } catch (e) {
+      console.error('[store] chat stopAudio failed', e)
+    }
+    const cur = get().chatVoice
+    const transcript = (cur.finalized + cur.interim).trim()
+    set({ chatVoice: { recording: false, interim: '', finalized: '', micDenied: false } })
+    return transcript
+  },
+  allowChatMic: () => set((s) => ({ chatVoice: { ...s.chatVoice, micDenied: false } })),
 }))

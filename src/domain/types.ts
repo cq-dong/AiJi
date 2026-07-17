@@ -158,3 +158,50 @@ export interface Settings {
   // changing this marks existing digests stale → recompute at new verbosity.
   aggregateDetailLevel: 1 | 2 | 3 | 4 | 5
 }
+
+// ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────
+// MVP: 单会话（conversations 表 id=1 单行），messages 内嵌数组。多会话 schema 预留，v1.1 再用。
+
+// LLM intent 轮解析问句→结构化 query。scope 为时间约束（null=不限时间）；
+// keywords 用于本地 substring 召回；categorySlugs 可选过滤。LLM 不参与检索，只解析意图。
+export interface ChatQuery {
+  scope: { type: AggregateScopeType; range: string } | null
+  keywords: string[]
+  categorySlugs?: string[]
+}
+
+// 压缩传给 answer LLM 的召回条目（token 预算：top-8 × ≤120 字 excerpt ≈ 3-4K input）。
+export interface ChatCite {
+  id: string
+  createdAt: string
+  categorySlug: string
+  tags: string[]
+  summary?: string
+  textExcerpt: string
+}
+
+export type ChatMessageRole = 'user' | 'assistant'
+
+// 用户消息只存 content；AI 消息存 content + citedEntryIds（后校验剔非法后的子集）。
+// error 非空时 content 是失败文案、citedEntryIds 空。
+export interface ChatMessage {
+  id: string
+  role: ChatMessageRole
+  content: string
+  citedEntryIds?: string[]
+  createdAt: string
+  error?: boolean
+}
+
+// MVP 单会话：固定 id=1。多会话时改 schema + listConversations，UI 不动。
+export interface Conversation {
+  id: string
+  messages: ChatMessage[]
+  updatedAt: string
+}
+
+// LLM answer 轮返回。citedEntryIds 必须来自传入 cites 的 id 集——port 层后校验剔非法。
+export interface ChatAnswer {
+  answer: string
+  citedEntryIds: string[]
+}

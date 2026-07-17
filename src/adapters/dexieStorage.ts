@@ -1,6 +1,6 @@
 import { db } from '@/data/db'
 import type { StoragePort } from '@/ports'
-import type { Aggregate, AggregateScopeType, Draft, Entry, Reminder } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Conversation, Draft, Entry, Reminder } from '@/domain/types'
 import {
   seedAggregates,
   seedCategories,
@@ -233,5 +233,21 @@ export const dexieStorage: StoragePort = {
       await db.reminders.where('entryId').equals(e.id).delete()
     }
     return expired.length
+  },
+  // AI Chat · conversations (docs/design/ai-chat-impl-plan.md §3)。MVP 单会话 id=1，
+  // messages 内嵌数组——saveConversation 整体覆写（无 message 级 diff，简单优先）。
+  async listConversations(): Promise<Conversation[]> {
+    const all = await db.conversations.toArray()
+    // 最近更新在上——单会话时仅 1 行，多会话时倒序。
+    return all.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  },
+  async getConversation(id: string): Promise<Conversation | undefined> {
+    return db.conversations.get(id)
+  },
+  async saveConversation(c: Conversation): Promise<void> {
+    await db.conversations.put(c)
+  },
+  async deleteConversation(id: string): Promise<void> {
+    await db.conversations.delete(id)
   },
 }

@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Aggregate, Category, Draft, Entry, EntryAi, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, Category, Conversation, Draft, Entry, EntryAi, Reminder, Settings, Tag } from '@/domain/types'
 
 // IndexedDB schema (PRD §7.3). UI 层先用 mock 适配器，schema 已就位待接入。
 export class AiJiDB extends Dexie {
@@ -16,6 +16,9 @@ export class AiJiDB extends Dexie {
   // Wave 4: multi-row capture drafts (keyPath id, string). Lets users pause multiple
   // in-progress entries + resume any. Wave 3 was single-row key=1.
   drafts!: Table<Draft, string>
+  // AI Chat · 单会话 MVP（conversations 表 id=1 单行，messages 内嵌数组）。
+  // 多会话 schema 已就位（id 索引），v1.1 再铺 listConversations UI。
+  conversations!: Table<Conversation, string>
 
   constructor() {
     super('aiji')
@@ -74,6 +77,19 @@ export class AiJiDB extends Dexie {
       drafts: 'id, updatedAt',
     }).upgrade(async (tx) => {
       await tx.table('drafts').clear()
+    })
+    // v6: AI Chat · conversations 表（keyPath id, updatedAt 索引）。MVP 单会话 id=1。
+    // .stores() 非增量——所有 store 逐字重声明。纯加表，无 keyPath 变更，安全迁移。
+    this.version(6).stores({
+      entries: 'id, createdAt, updatedAt, status, deletedAt',
+      entryAi: 'id, entryId, version',
+      categories: 'slug, usageCount',
+      tags: 'slug, usageCount',
+      aggregates: 'id, scope.type, scope.range, stale',
+      settings: '++id',
+      reminders: 'id, dueAt, status, entryId',
+      drafts: 'id, updatedAt',
+      conversations: 'id, updatedAt',
     })
   }
 }
