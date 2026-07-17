@@ -166,6 +166,13 @@ export interface Settings {
   // Vision: classify 附图/视频帧总开关（默认 true）；videoFrameIntervalSec=视频抽帧间隔（默认 10s）。
   videoVisionEnabled: boolean
   videoFrameIntervalSec: number
+  // 独立 VLM（vision-language model）走多模态 classify，文本 classify 仍走主 LLM（DeepSeek）。
+  // 典型：vlmModel=qwen3.5-flash on Aliyun PI。vlmKeyRef='vlm:key' → SecretStorePort。
+  // 未配（undefined）→ 含图条目 classify 回落主 LLM（若主 LLM 不支持 image_url 则 §5.2 降级纯文本）。
+  vlmProvider: string
+  vlmUrl?: string
+  vlmModel?: string
+  vlmKeyRef?: string
 }
 
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────

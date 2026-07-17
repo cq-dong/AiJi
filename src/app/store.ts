@@ -60,6 +60,7 @@ interface UiState {
   setOnline: (v: boolean) => void
   setSettings: (patch: Partial<Settings>) => void
   setLlmConfig: (url: string, model: string, key: string) => void
+  setVlmConfig: (url: string, model: string, key: string) => void
   setSttConfig: (model: string, key: string) => void
   processEntry: (entryId: string) => Promise<void>
   recomputeAggregate: (scope: AggregateScopeType, range?: string, detailLevel?: number) => Promise<void>
@@ -423,6 +424,16 @@ export const useUiStore = create<UiState>((set, get) => ({
     void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
     if (key) void di.secrets.set('llm:key', key).catch((e) => console.error('[store] setLlmKey failed', e))
     else void di.secrets.delete('llm:key').catch((e) => console.error('[store] deleteLlmKey failed', e))
+  },
+  setVlmConfig: (url, model, key) => {
+    const cur = get().settings
+    // 同 setLlmConfig（D8）：独立 VLM 多模态端点。key 清空 → vlmKeyRef undefined + 删 'vlm:key'。
+    // 未配 vlmUrl/vlmModel/vlmKeyRef → classify 含图回落主 LLM（§5.2 再降级纯文本）。
+    const next = { ...cur, vlmUrl: url, vlmModel: model, vlmKeyRef: key ? 'vlm:key' : undefined }
+    set({ settings: next })
+    void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+    if (key) void di.secrets.set('vlm:key', key).catch((e) => console.error('[store] setVlmKey failed', e))
+    else void di.secrets.delete('vlm:key').catch((e) => console.error('[store] deleteVlmKey failed', e))
   },
   setSttConfig: (model, key) => {
     const cur = get().settings

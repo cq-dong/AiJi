@@ -145,4 +145,8 @@ export const seedSettings = {
   sttUrl: undefined,
   videoVisionEnabled: true,
   videoFrameIntervalSec: 10,
+  vlmProvider: 'VLM · BYOK',
+  vlmUrl: undefined,
+  vlmModel: undefined,
+  vlmKeyRef: undefined,
 }

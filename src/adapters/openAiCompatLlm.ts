@@ -375,21 +375,31 @@ export const openAiCompatLlm: LlmPort = {
         }
       }
     }
+    // VLM 路由：含图且独立 VLM 已配（vlmUrl+vlmModel+vlm:key）→ 视觉 fetch 走 VLM 端点（如 qwen3.5-flash
+    // on Aliyun PI）；否则回落主 LLM。文本条目始终走主 LLM。降级（§5.2）去图纯文本重发走同一端点。
+    let vlmKey: string | undefined
+    if (images.length > 0 && settings.vlmUrl && settings.vlmModel) {
+      vlmKey = await di.secrets.get('vlm:key')
+    }
+    const useVlm = images.length > 0 && !!settings.vlmUrl && !!settings.vlmModel && !!vlmKey
+    const fUrl = useVlm ? settings.vlmUrl! : url
+    const fModel = useVlm ? settings.vlmModel! : model
+    const fKey = useVlm ? vlmKey! : apiKey
     // thinking 关闭：v4-flash/pro 默认走 reasoning_content（content 空），关掉后 JSON 直出 content，适配器才读得到。
     // DeepSeek 私有参数——非 DeepSeek endpoint 不发（isDeepSeek 守门），免得严格 OpenAI 兼容服务返 400。
-    const bodyOf = (msgs: ChatMessage[]) => ({ model, messages: msgs, max_tokens: 512, temperature: 0.3, ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}) })
-    let res = await fetch(url, {
+    const bodyOf = (msgs: ChatMessage[], m: string, u: string) => ({ model: m, messages: msgs, max_tokens: 512, temperature: 0.3, ...(isDeepSeek(u, m) ? { thinking: { type: 'disabled' } } : {}) })
+    let res = await fetch(fUrl, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(bodyOf(messages)),
+      headers: { Authorization: `Bearer ${fKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(bodyOf(messages, fModel, fUrl)),
     })
     if (!res.ok && images.length > 0) {
       // 静默降级：model 不支持 image_url（常见 400）→ 去图纯文本重发，不崩不提示。
       const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags)
-      res = await fetch(url, {
+      res = await fetch(fUrl, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(bodyOf(textMsgs)),
+        headers: { Authorization: `Bearer ${fKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyOf(textMsgs, fModel, fUrl)),
       })
     }
     if (!res.ok) {
@@ -439,7 +449,7 @@ export const openAiCompatLlm: LlmPort = {
       summary: parsed.summary,
       // B4: 仅 LLM 建议，不调度——用户在 TodoConfirm(B6) 确认后才建 Reminder
       reminderSuggestion: parsed.reminderSuggestion,
-      modelUsed: model,
+      modelUsed: fModel,
       createdAt: now,
     }
     return ai

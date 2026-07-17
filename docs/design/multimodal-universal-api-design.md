@@ -20,6 +20,7 @@
 | `videoVisionEnabled` 总开关 | 默认 true | model 不支持 / 省成本时可关 |
 | vision 不支持降级 | 静默去图纯文本 | 不打扰，不崩 |
 | 照片 | durationSec=0，不抽帧，整张压缩 | 无时长 |
+| **独立 VLM 端点**（2026-07-17 增补） | 视觉 classify 走独立 VLM（`vlmUrl`/`vlmModel`/`vlm:key`），文本 classify 仍走主 LLM（DeepSeek） | 主 LLM 多为纯文本模型；多模态 model（如 qwen3.5-flash on Aliyun PI）单独配，互不污染。未配 → 含图回落主 LLM（§5.2 再降级纯文本） |
 
 ---
 
@@ -62,6 +63,11 @@ sttMode: 'stream' | 'whisper'        // 默认 'stream'
 sttUrl?: string                       // stream=DashScope WS base；whisper=OpenAI REST base
 videoFrameIntervalSec: number         // 默认 10
 videoVisionEnabled: boolean           // 默认 true
+// 独立 VLM（2026-07-17 增补）
+vlmProvider: string                   // 默认 'VLM · BYOK'（显示回退）
+vlmUrl?: string                       // 完整 chat completions URL（适配器 fetch verbatim，须含 /chat/completions）
+vlmModel?: string                     // e.g. 'qwen3.5-flash'
+vlmKeyRef?: string                    // 'vlm:key' → SecretStorePort
 ```
 
 现有 `llmUrl / llmModel / apiKeyRef / sttModel / sttKeyRef` 不动。
@@ -138,7 +144,7 @@ capture 实时预览（WebSpeech）不变。
   // ... 每帧/每图一项
 ]}
 ```
-6. 发给 chat completion（model 用户填，支持多模态就 work）
+6. 发给 chat completion。**VLM 路由（2026-07-17 增补）**：含图 + VLM 已配（`vlmUrl`+`vlmModel`+`vlm:key`）→ fetch 走 VLM 端点；否则走主 LLM。`EntryAi.modelUsed` 记实际所用模型。
 7. 图描述纳入 `EntryAi.summary / category`（prompt 要求 LLM 描述图内容用于分类 + 摘要）
 
 ### 5.2 降级

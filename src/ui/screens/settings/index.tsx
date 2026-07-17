@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { ChevronRight, X } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, ChevronRight, X } from 'lucide-react'
 import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
@@ -12,15 +12,123 @@ type Theme = 'light' | 'dark' | 'system'
 const inputCls =
   'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
 
+// 自定义下拉（替代原生 <select>——iOS 上原生 select 弹系统轮盘选择器，与卡片设计严重不搭）。
+function SelectDropdown({
+  value,
+  options,
+  onChange,
+  placeholder = '选择…',
+}: {
+  value: string
+  options: { value: string; label: string }[]
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  type DropStyle = { top?: number; bottom?: number; left?: number; width?: number; maxHeight?: number }
+  const [dropStyle, setDropStyle] = useState<DropStyle>({})
+
+  useEffect(() => {
+    if (!open || !buttonRef.current) return
+    const rect = buttonRef.current.getBoundingClientRect()
+    const vh = window.innerHeight
+    const margin = 8
+    const spaceBelow = vh - rect.bottom - margin
+    const spaceAbove = rect.top - margin
+    const itemH = 40
+    const listH = options.length * itemH + 8
+    const needH = Math.min(listH, 240)
+    if (spaceBelow >= needH || spaceBelow >= spaceAbove) {
+      setDropStyle({ top: rect.bottom + 4, left: rect.left, width: rect.width, maxHeight: spaceBelow })
+    } else {
+      setDropStyle({ bottom: vh - rect.top + 4, left: rect.left, width: rect.width, maxHeight: spaceAbove })
+    }
+  }, [open, options.length])
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  useEffect(() => {
+    function onResize() {
+      if (open) setOpen(false)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [open])
+
+  const selected = options.find((o) => o.value === value)
+  return (
+    <div ref={ref} className="relative">
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(inputCls, 'flex items-center justify-between text-left', !selected && 'text-t2')}
+      >
+        <span className="truncate">{selected?.label ?? placeholder}</span>
+        <ChevronDown
+          size={16}
+          strokeWidth={2}
+          className={cn('shrink-0 text-t2 transition-transform duration-base ease-out', open && 'rotate-180')}
+        />
+      </button>
+      {open && (
+        <div
+          className="fixed z-50 overflow-y-auto rounded-card border border-brd bg-card shadow-sheet"
+          style={dropStyle}
+        >
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => {
+                onChange(o.value)
+                setOpen(false)
+              }}
+              className={cn(
+                'flex w-full items-center px-3 py-2.5 text-[13px] transition-colors duration-base ease-out',
+                value === o.value ? 'bg-priS text-pri' : 'text-ink hover:bg-page',
+              )}
+            >
+              {value === o.value ? (
+                <Check size={14} strokeWidth={2} className="mr-2 shrink-0 text-pri" />
+              ) : (
+                <span className="mr-2 w-3.5 shrink-0" />
+              )}
+              <span className="truncate">{o.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // LLM 模型预设。选「自定义…」时展开一个自由 input。
 const LLM_MODEL_PRESETS = [
-  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
-  { value: 'gpt-4o', label: 'GPT-4o' },
-  { value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
-  { value: 'qwen-plus', label: 'Qwen Plus' },
-  { value: 'gemini-2-flash', label: 'Gemini 2 Flash' },
+  'deepseek-v4-flash',
+  'gpt-4o',
+  'claude-sonnet-5',
+  'qwen-plus',
+  'gemini-2-flash',
 ] as const
 const CUSTOM_SENTINEL = '__custom'
+
+// VLM（视觉多模态）模型预设。含图条目 classify 走此端点；未配则回落主 LLM。
+const VLM_MODEL_PRESETS = [
+  'qwen3.5-flash',
+  'qwen-vl-max',
+  'gpt-4o',
+  'claude-sonnet-5',
+  'gemini-2-flash',
+] as const
 
 // STT 双模式：stream=DashScope WS paraformer；whisper=OpenAI 兼容 REST。
 const STT_MODES = ['stream', 'whisper'] as const
@@ -191,7 +299,7 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
   const setLlmConfig = useUiStore((s) => s.setLlmConfig)
   const [url, setUrl] = useState(settings.llmUrl ?? '')
   const initialModel = settings.llmModel ?? ''
-  const initialSelect = LLM_MODEL_PRESETS.some((p) => p.value === initialModel)
+  const initialSelect = LLM_MODEL_PRESETS.some((p) => p === initialModel)
     ? initialModel
     : initialModel
       ? CUSTOM_SENTINEL
@@ -253,18 +361,15 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label className="text-[11px] text-t2">模型</label>
-            <select
-              className={inputCls}
+            <SelectDropdown
               value={modelSelect}
-              onChange={(e) => setModelSelect(e.target.value)}
-            >
-              {LLM_MODEL_PRESETS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
-                </option>
-              ))}
-              <option value={CUSTOM_SENTINEL}>自定义…</option>
-            </select>
+              options={[
+                ...LLM_MODEL_PRESETS.map((p) => ({ value: p, label: p })),
+                { value: CUSTOM_SENTINEL, label: '自定义…' },
+              ]}
+              onChange={(v) => setModelSelect(v)}
+              placeholder="选择模型"
+            />
             {modelSelect === CUSTOM_SENTINEL && (
               <input
                 className={cn(inputCls, 'mt-2')}
@@ -440,6 +545,155 @@ function SttSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+// VLM sheet：含图条目分类的多模态端点（BYOK）。结构镜像 ByokSheet：
+// url 必须是完整 chat completions URL（适配器不补 /chat/completions）。
+function VlmSheet({ onClose }: { onClose: () => void }) {
+  const settings = useUiStore((s) => s.settings)
+  const setVlmConfig = useUiStore((s) => s.setVlmConfig)
+  const [url, setUrl] = useState(settings.vlmUrl ?? '')
+  const initialModel = settings.vlmModel ?? ''
+  const initialSelect = VLM_MODEL_PRESETS.some((p) => p === initialModel)
+    ? initialModel
+    : initialModel
+      ? CUSTOM_SENTINEL
+      : 'qwen3.5-flash'
+  const [modelSelect, setModelSelect] = useState(initialSelect)
+  const [modelCustom, setModelCustom] = useState(
+    initialSelect === CUSTOM_SENTINEL ? initialModel : '',
+  )
+  const [key, setKey] = useState('')
+  const hasKey = settings.vlmKeyRef === 'vlm:key'
+
+  // 连通性测试：同 ByokSheet——di.llm.ping 直传表单值；key 留空时适配器回落已存 secret。
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<PingResult | null>(null)
+
+  const resolvedModel =
+    modelSelect === CUSTOM_SENTINEL ? modelCustom.trim() : modelSelect
+
+  async function handlePing() {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const r = await di.llm.ping({
+        url: url.trim(),
+        model: resolvedModel || 'qwen3.5-flash',
+        key: key.trim(),
+      })
+      setTestResult(r)
+    } catch (e) {
+      setTestResult({ ok: false, error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-bold text-ink">视觉分类 VLM</p>
+          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-t3">BYOK · 含图条目的多模态分类端点 · 未配则回落主 LLM</p>
+
+        <div className="mt-3 space-y-3">
+          <div>
+            <label className="text-[11px] text-t2">API URL（完整 chat completions）</label>
+            <input
+              className={inputCls}
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://…/v1/chat/completions"
+            />
+            <p className="mt-1 text-[11px] text-t3">完整 chat completions URL（适配器不补 /chat/completions）。Aliyun PI 例：…/compatible-mode/v1/chat/completions</p>
+          </div>
+          <div>
+            <label className="text-[11px] text-t2">模型</label>
+            <SelectDropdown
+              value={modelSelect}
+              options={[
+                ...VLM_MODEL_PRESETS.map((p) => ({ value: p, label: p })),
+                { value: CUSTOM_SENTINEL, label: '自定义…' },
+              ]}
+              onChange={(v) => setModelSelect(v)}
+              placeholder="选择模型"
+            />
+            {modelSelect === CUSTOM_SENTINEL && (
+              <input
+                className={cn(inputCls, 'mt-2')}
+                value={modelCustom}
+                onChange={(e) => setModelCustom(e.target.value)}
+                placeholder="模型名"
+              />
+            )}
+          </div>
+          <div>
+            <label className="text-[11px] text-t2">
+              API Key{hasKey ? '（已设置，留空不变）' : ''}
+            </label>
+            <input
+              className={inputCls}
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder={hasKey ? '••••••（留空保持不变）' : 'sk-…'}
+            />
+          </div>
+        </div>
+
+        {/* 连通性测试 */}
+        <div className="mt-3">
+          <button
+            type="button"
+            disabled={testing}
+            onClick={() => void handlePing()}
+            className={cn(
+              'h-[38px] w-full rounded-btn text-[12px] font-medium transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+              testing
+                ? 'bg-brd text-t3'
+                : 'border border-brd bg-card text-t2',
+            )}
+          >
+            {testing ? '测试中…' : '测试连通'}
+          </button>
+          {testResult && (
+            <p
+              className={cn(
+                'mt-2 text-[11px]',
+                testResult.ok ? 'text-catProject' : 'text-catFail',
+              )}
+            >
+              {testResult.ok
+                ? `✓ +${testResult.latencyMs ?? '?'}ms`
+                : `✗ ${testResult.error ?? '未知错误'}`}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            className="h-[38px] flex-1 rounded-btn"
+            onClick={() => {
+              setVlmConfig(url.trim(), resolvedModel || 'qwen3.5-flash', key)
+              onClose()
+            }}
+          >
+            保存
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function VisionSection({
   settings,
   setSettings,
@@ -498,6 +752,7 @@ export default function Settings() {
   const hasEntries = useUiStore((s) => s.entries.length > 0)
   const [editing, setEditing] = useState(false)
   const [editingStt, setEditingStt] = useState(false)
+  const [editingVlm, setEditingVlm] = useState(false)
 
   return (
     <div className="px-4 pb-4 pt-4">
@@ -558,7 +813,17 @@ export default function Settings() {
             hasKey={settings.sttKeyRef === 'stt:key'}
             onClick={() => setEditingStt(true)}
           />
+          <div className="my-3 h-px bg-brd" />
+          <ModelRow
+            label="视觉分类 VLM"
+            value={settings.vlmModel || settings.vlmProvider}
+            hasKey={settings.vlmKeyRef === 'vlm:key'}
+            onClick={() => setEditingVlm(true)}
+          />
         </div>
+        <p className="mt-3 text-[11px] text-t3">
+          未配置时，含图条目回落主 LLM 分类（主 LLM 不支持图像则自动降级纯文本）。
+        </p>
       </Card>
 
       {/* 视觉 */}
@@ -610,6 +875,7 @@ export default function Settings() {
 
       {editing && <ByokSheet onClose={() => setEditing(false)} />}
       {editingStt && <SttSheet onClose={() => setEditingStt(false)} />}
+      {editingVlm && <VlmSheet onClose={() => setEditingVlm(false)} />}
     </div>
   )
 }
