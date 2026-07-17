@@ -161,7 +161,9 @@ export default function Capture() {
   useEffect(() => {
     if (!saving) return
     void finishSave()
-    if (!skipNavigateRef.current) navigate('/')
+    if (!skipNavigateRef.current) {
+      navigate('/')
+    }
     skipNavigateRef.current = false
   }, [saving, finishSave, navigate])
 
@@ -292,7 +294,8 @@ export default function Capture() {
   const handleSave = async () => {
     const hasAudio = parts.some((p) => p.type === 'audio')
     if (hasAudio) {
-      const eligible = isGuest || (keySource === 'byok' && !(await di.secrets.get('stt:key')))
+      const sttKey = await di.secrets.get('stt:key')
+      const eligible = isGuest || (keySource === 'byok' && !sttKey)
       if (eligible) {
         skipNavigateRef.current = true
         setActionToast({
