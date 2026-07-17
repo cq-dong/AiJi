@@ -166,3 +166,34 @@ getUserMedia hangs / is unavailable in the headless chrome-devtools-mcp browser.
 ### N6 — Pre-existing stuck "处理中" entries on home (16 of 32 entries lack entryAi)
 16 entries show "AI 正在分类 · 已转写 处理中" — these were captured in prior sessions (before D7 fix / before the dev key was set) and never reached a terminal status. No auto-retry mechanism exists on reload (M11 reprocess double-click guard is DEFERRED by design). These are pre-existing test artifacts in the dev DB, NOT a regression. D7's NEW-behavior (mark failed not stuck) is confirmed on the fresh capture. Flagging only because the home screen looks noisy with stuck entries — a "reprocess all stuck" maintenance action (out of this gate's scope) would clean it up.
 
+
+---
+
+## Round: 提醒三联修 (Reminder-creator consolidation) — 2026-07-17
+
+Date: 2026-07-17
+Verifier: acceptance agent (Playwright MCP, 390×844, real DeepSeek BYOK live)
+Scope: 3 fixes — (1) merged "创建待办"+"提醒我" into single `<ReminderCreator>` (创建待办 primary + 忽略 ghost + time chips + editable label); (2) persistent anti-repop via `ai.todoDismissed=true` on both confirm + dismiss, detail gate `!ai.todoDismissed && !reminders.some(r=>r.entryId===entry.id)`; (3) time default = AI-detected chip when `reminderSuggestion.dueAt` present, else 今天 23:59.
+
+### Verdict: LGTM — 0 defects
+
+| item | verdict | evidence |
+|------|---------|----------|
+| V1 modal default = AI chip (not 23:59) | PASS | Entry "明天上午10点提醒我开会讨论预算" → modal chip "AI · 明天 10:00" had `bg-pri` (rgb(79,70,229)); all others `bg-card` white. 创建待办 → Dexie reminder `dueAt=2026-07-18T10:00:00+08:00` (NOT today 23:59), label="开会讨论预算", status=pending; entryAi `todoDismissed=true`, `reminderSuggestion` cleared. |
+| V2 anti-repop (build path) | PASS | Same entry → 回首页 → 进 detail: no "AI 检测到 · 待办" title, no 提醒时间 chips, no 创建待办/忽略 buttons. AI panel (category 待办 / tags reminder,work / title / summary) renders normally. Gate holds (todoDismissed=true). |
+| V2 anti-repop (忽略 path) | PASS | Entry "后天下午4点提醒我去取快递" → modal 忽略 → Dexie: entryAi `todoDismissed=true`, `reminderSuggestion` cleared, `reminders` table has NO row for this entryId. 回首页进 detail: no ReminderCreator card. |
+| V3 no-time entry detail inline | PASS | Entry "该买菜了" (LLM category=errand, no reminderSuggestion, facets empty) → home NO modal (correct, no suggestion). Detail DID render inline ReminderCreator (below AI panel). Default chip "今天 23:59" had `bg-pri`; no "AI ·" chip present. Chips: 今天23:59/明天09:00/明天18:00/后天09:00/周六09:00/自定义. |
+| V3 自定义 datetime-local | PASS | Click 自定义 chip → revealed `<input type="datetime-local">` (verified via `input.type`). Set value 2026-07-20T10:30 → 创建待办 → Dexie reminder `dueAt=2026-07-20T02:30:00.000Z` (= local 10:30 +08:00), status=pending, todoDismissed=true. |
+| R1 non-todo entry no modal/card | PASS | Entry "今天天气不错，云朵像棉花糖" (LLM category=life, facets.mood=轻松, no suggestion) → home NO modal; detail NO ReminderCreator card (no 创建待办, no 提醒时间). |
+| R2 label editable + persisted | PASS | Detail inline card label input changed "买菜" → "买菜带袋子" → 创建待办 → Dexie `reminders.label="买菜带袋子"` (edited value persisted). |
+
+Defect count: 0. No P0/P1/P2. All three fixes behave as specified; reminder creation, persistence, anti-repop, and time-default logic all verified against live DeepSeek classify + Dexie reads.
+
+### Files touched (read-only reference, no source edits by verifier)
+- `src/ui/components/ReminderCreator.tsx` (buildPicks L59-76, default L90, confirm L169-170, dismiss L179-186)
+- `src/ui/components/ReminderPopup.tsx` (modal gate L9-10, render L11-26)
+- `src/ui/layout/AppShell.tsx` (mount L42)
+- `src/ui/screens/detail/index.tsx` (inline gate L624, render L625-630)
+- `src/app/store.ts` (confirmReminder L582-617, pendingReminder set L500-501)
+- `src/adapters/dexieStorage.ts` (saveReminder L172-174)
+- `src/data/db.ts` (schema, tables entries/entryAi/reminders)
