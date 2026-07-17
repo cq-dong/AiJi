@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ChevronRight, X } from 'lucide-react'
 import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { exportZip } from '@/adapters/zipExport'
@@ -95,10 +96,6 @@ const THEMES: { key: Theme; label: string }[] = [
   { key: 'system', label: '跟随系统' },
 ]
 
-function ChevronRight() {
-  return <span className="text-[18px] leading-none text-t2">›</span>
-}
-
 function ChevronRow({
   label,
   value,
@@ -112,12 +109,12 @@ function ChevronRow({
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-4 text-left"
+      className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-4 text-left shadow-sm transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
     >
       <span className="text-[14px] font-medium text-ink">{label}</span>
       <span className="flex items-center gap-2">
         {value && <span className="text-[11px] text-t3">{value}</span>}
-        <ChevronRight />
+        <ChevronRight size={18} className="text-t2" />
       </span>
     </button>
   )
@@ -137,15 +134,15 @@ function ModelRow({
   // Key 状态点：绿点=已配置 Key，灰点=未配置。settings.*KeyRef 是"Key 已存"的引用，
   // 真实值在 SecretStorePort；这里只反映 ref 是否存在，让用户一眼看到 Key 配置情况。
   return (
-    <button type="button" onClick={onClick} className="flex w-full items-center justify-between text-left">
+    <button type="button" onClick={onClick} className="flex w-full items-center justify-between text-left transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
       <span className="text-[13px] font-medium text-ink">{label}</span>
       <span className="flex items-center gap-2">
         <span className="flex items-center gap-1">
-          <span className={cn('h-1.5 w-1.5 rounded-full', hasKey ? 'bg-emerald-500' : 'bg-t3')} />
+          <span className={cn('h-1.5 w-1.5 rounded-full', hasKey ? 'bg-catProject' : 'bg-t3')} />
           <span className="text-[11px] text-t3">{hasKey ? '已配置' : '未配置'}</span>
         </span>
         <span className="max-w-[120px] truncate text-[11px] text-t3">{value}</span>
-        <ChevronRight />
+        <ChevronRight size={18} className="text-t2" />
       </span>
     </button>
   )
@@ -162,12 +159,12 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
     'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
-      <div className="w-full max-w-[420px] rounded-screen bg-page p-4" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <p className="text-[17px] font-bold text-ink">文本 / 分类模型</p>
-          <button type="button" onClick={onClose} className="text-[16px] text-t3">
-            ✕
+          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+            <X size={18} strokeWidth={2} />
           </button>
         </div>
         <p className="mt-1 text-[11px] text-t3">BYOK · URL + 模型 + Key 本地存，不进源码</p>
@@ -236,12 +233,12 @@ function SttSheet({ onClose }: { onClose: () => void }) {
     'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40" onClick={onClose}>
-      <div className="w-full max-w-[420px] rounded-screen bg-page p-4" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <p className="text-[17px] font-bold text-ink">音频转写模型</p>
-          <button type="button" onClick={onClose} className="text-[16px] text-t3">
-            ✕
+          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+            <X size={18} strokeWidth={2} />
           </button>
         </div>
         <p className="mt-1 text-[11px] text-t3">BYOK · 阿里云 DashScope paraformer（WS 流式）· Key 本地存</p>
@@ -317,7 +314,7 @@ export default function Settings() {
                 type="button"
                 onClick={() => setSettings({ theme: t.key })}
                 className={cn(
-                  'h-8 flex-1 rounded-[16px] text-[12px] font-medium transition',
+                  'h-11 flex-1 rounded-[16px] text-[12px] font-medium transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
                   active ? 'bg-pri text-white' : 'border border-brd bg-card text-t2',
                 )}
               >

@@ -46,7 +46,7 @@ export function EntryRow({ entry, ai, category }: EntryRowProps) {
         }
       }}
       padded={false}
-      className="relative cursor-pointer p-3 pl-4 transition active:scale-[0.99]"
+      className="relative cursor-pointer p-3 pl-4 transition duration-base ease-out active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
     >
       <span className={cn('absolute left-0 top-0 bottom-0 w-1', bar)} />
       <h3 className="line-clamp-1 text-[14px] font-medium leading-tight text-ink">{title}</h3>

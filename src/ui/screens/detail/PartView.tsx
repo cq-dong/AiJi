@@ -79,15 +79,18 @@ function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durationSec:
   }
   return (
     <div className="flex items-center gap-2 h-[28px] rounded-[14px] bg-priS px-2">
-      <button
-        type="button"
-        onClick={toggle}
-        disabled={disabled}
-        aria-label={playing ? '暂停' : '播放'}
-        className="flex size-3 items-center justify-center text-pri disabled:opacity-40"
-      >
-        {playing ? <PauseIcon className="size-[10px]" /> : <PlayTriangle className="size-[10px]" />}
-      </button>
+      <div className="relative flex items-center">
+        <span className={`flex size-3 items-center justify-center text-pri ${disabled ? 'opacity-40' : ''}`} aria-hidden="true">
+          {playing ? <PauseIcon className="size-[10px]" /> : <PlayTriangle className="size-[10px]" />}
+        </span>
+        <button
+          type="button"
+          onClick={toggle}
+          disabled={disabled}
+          aria-label={playing ? '暂停' : '播放'}
+          className="absolute left-1/2 top-1/2 size-11 -translate-x-1/2 -translate-y-1/2 cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed"
+        />
+      </div>
       <Waveform />
       <span className="ml-auto text-[11px] font-medium tabular-nums text-pri">{formatDuration(durationSec)}</span>
       {status === 'ready' && url && (

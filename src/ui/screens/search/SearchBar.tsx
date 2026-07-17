@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { X } from 'lucide-react'
 import { cn } from '@/ui/components'
 
 interface SearchBarProps {
@@ -42,9 +43,9 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
           type="button"
           aria-label="清除"
           onClick={() => onChange('')}
-          className="shrink-0 px-1 text-[16px] leading-none text-t3 active:opacity-70"
+          className="flex size-11 shrink-0 items-center justify-center rounded-btn text-t3 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
-          ✕
+          <X size={18} strokeWidth={2} />
         </button>
       )}
     </div>

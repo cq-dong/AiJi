@@ -166,7 +166,7 @@ function ReminderConfirm({
   }
 
   const inputCls =
-    'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
+    'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
 
   return (
     <div className="flex flex-col gap-3 rounded-card bg-priS p-4">
@@ -244,7 +244,7 @@ function AiEditSheet({
     }
   }
 
-  const inputCls = 'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
+  const inputCls = 'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
 
   return (
     <Sheet
@@ -314,7 +314,7 @@ function PartsEditSheet({
     }
   }
 
-  const inputCls = 'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
+  const inputCls = 'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
 
   return (
     <Sheet
@@ -386,8 +386,8 @@ function ConfirmDeleteDialog({
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
-      <button type="button" aria-label="取消" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/40" />
-      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card bg-card p-4">
+      <button type="button" aria-label="取消" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/40 animate-fade-in" />
+      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card bg-card p-4 animate-fade-in shadow-lg">
         <h3 className="text-[14px] font-bold text-ink">移到回收站</h3>
         <p className="text-[12px] leading-relaxed text-t2">移到回收站？30 天内可在回收站恢复。</p>
         <div className="flex items-center gap-2 pt-1">

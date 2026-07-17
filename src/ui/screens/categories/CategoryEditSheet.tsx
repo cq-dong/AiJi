@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { X } from 'lucide-react'
 import type { Category } from '@/domain/types'
 import { Button, cn } from '@/ui/components'
 
@@ -57,7 +58,7 @@ export function CategoryEditSheet({
         aria-label="关闭"
         onClick={onClose}
         className={cn(
-          'absolute inset-0 bg-ink/40 transition-opacity duration-200',
+          'absolute inset-0 bg-ink/40 animate-fade-in transition-opacity duration-200',
           entered ? 'opacity-100' : 'opacity-0',
         )}
       />
@@ -66,7 +67,7 @@ export function CategoryEditSheet({
         aria-modal="true"
         aria-label="编辑类别"
         className={cn(
-          'relative rounded-t-card bg-card px-4 pt-3 pb-6 shadow-[0_-8px_30px_rgba(0,0,0,0.12)] transition-transform duration-200',
+          'relative rounded-t-card bg-card px-4 pt-3 pb-6 shadow-sheet animate-slide-up transition-transform duration-200',
           entered ? 'translate-y-0' : 'translate-y-full',
         )}
       >
@@ -78,9 +79,9 @@ export function CategoryEditSheet({
             type="button"
             onClick={onClose}
             aria-label="关闭"
-            className="grid size-8 place-items-center rounded-btn text-t3 active:scale-95"
+            className="grid size-11 place-items-center rounded-btn text-t3 transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
           >
-            ✕
+            <X size={18} strokeWidth={2} />
           </button>
         </div>
 
@@ -107,11 +108,11 @@ export function CategoryEditSheet({
                   onClick={() => setAccent(a)}
                   aria-label={hex}
                   aria-pressed={selected}
-                  className="flex flex-col items-center gap-1"
+                  className="flex cursor-pointer flex-col items-center gap-1 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 >
                   <span
                     className={cn(
-                      'size-9 rounded-full',
+                      'size-11 rounded-full',
                       DOT[a],
                       selected
                         ? 'ring-2 ring-ink ring-offset-2'
@@ -137,7 +138,7 @@ export function CategoryEditSheet({
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className="text-[13px] font-medium text-catFail active:opacity-60"
+              className="cursor-pointer text-[13px] font-medium text-catFail transition duration-base ease-out active:opacity-60 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             >
               删除类别
             </button>
@@ -156,7 +157,7 @@ export function CategoryEditSheet({
                 <button
                   type="button"
                   onClick={() => onDelete(category.slug)}
-                  className="inline-flex h-9 items-center justify-center rounded-btn bg-catFail px-4 text-[12px] font-medium text-card active:scale-[0.98]"
+                  className="inline-flex h-11 cursor-pointer items-center justify-center rounded-btn bg-catFail px-4 text-[12px] font-medium text-card transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 >
                   确认删除
                 </button>

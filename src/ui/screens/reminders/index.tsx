@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { ChevronRight } from 'lucide-react'
 import { Button } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 
@@ -74,7 +75,7 @@ export default function Reminders() {
             <EmptyPlaceholder text="暂无待提醒事项" />
           ) : (
             pending.map((r) => (
-              <div key={r.id} className="rounded-card border border-brd bg-card p-3">
+              <div key={r.id} className="rounded-card border border-brd bg-card p-3 shadow-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
                   <span className="rounded-chip bg-priS px-2 py-0.5 text-[11px] font-medium text-pri">
@@ -84,7 +85,7 @@ export default function Reminders() {
                 <button
                   type="button"
                   onClick={() => navigate(`/detail/${r.entryId}`)}
-                  className="mt-2 block text-left text-[13px] text-ink underline"
+                  className="mt-2 block min-h-11 py-2 text-left text-[13px] text-ink underline transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 >
                   {r.label}
                 </button>
@@ -112,12 +113,12 @@ export default function Reminders() {
             fired.map((r) => (
               <div
                 key={r.id}
-                className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3"
+                className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3 shadow-sm"
               >
                 <button
                   type="button"
                   onClick={() => navigate(`/detail/${r.entryId}`)}
-                  className="flex flex-1 items-center justify-between text-left"
+                  className="flex flex-1 items-center justify-between text-left transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 >
                   <div className="flex flex-col items-start gap-1">
                     <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
@@ -127,7 +128,7 @@ export default function Reminders() {
                     <span className="rounded-chip bg-priS px-2 py-0.5 text-[11px] font-medium text-t2">
                       {STATUS_LABELS[r.status]}
                     </span>
-                    <span className="text-[16px] text-t3">›</span>
+                    <ChevronRight size={16} className="text-t3" />
                   </div>
                 </button>
                 <Button variant="ghost" size="sm" className="ml-2 text-t3" onClick={() => void dismissReminder(r.id)}>
@@ -149,12 +150,12 @@ export default function Reminders() {
             missed.map((r) => (
               <div
                 key={r.id}
-                className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3"
+                className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3 shadow-sm"
               >
                 <button
                   type="button"
                   onClick={() => navigate(`/detail/${r.entryId}`)}
-                  className="flex flex-1 items-center justify-between text-left"
+                  className="flex flex-1 items-center justify-between text-left transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 >
                   <div className="flex flex-col items-start gap-1">
                     <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
@@ -164,7 +165,7 @@ export default function Reminders() {
                     <span className="rounded-chip bg-priS px-2 py-0.5 text-[11px] font-medium text-catFail">
                       {STATUS_LABELS[r.status]}
                     </span>
-                    <span className="text-[16px] text-t3">›</span>
+                    <ChevronRight size={16} className="text-t3" />
                   </div>
                 </button>
                 <Button variant="ghost" size="sm" className="ml-2 text-t3" onClick={() => void dismissReminder(r.id)}>

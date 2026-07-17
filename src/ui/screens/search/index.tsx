@@ -40,7 +40,7 @@ function EmptySearch({ onPick, suggestions }: { onPick: (s: string) => void; sug
             key={s}
             type="button"
             onClick={() => onPick(s)}
-            className="h-8 rounded-full bg-priS px-4 text-[12px] font-medium text-pri active:opacity-70"
+            className="min-h-11 cursor-pointer rounded-full bg-priS px-4 text-[12px] font-medium text-pri transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
           >
             {s}
           </button>
@@ -66,7 +66,7 @@ function ChipRow({ label, chips, active, onPick }: ChipRowProps) {
           type="button"
           onClick={() => onPick('all')}
           className={cn(
-            'h-7 shrink-0 rounded-full border px-3 text-[12px] font-medium transition',
+            'min-h-11 shrink-0 cursor-pointer rounded-full border px-3 text-[12px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
             active === 'all' ? 'border-transparent bg-pri text-card' : 'border-brd bg-card text-t2',
           )}
         >
@@ -78,7 +78,7 @@ function ChipRow({ label, chips, active, onPick }: ChipRowProps) {
             type="button"
             onClick={() => onPick(c.slug)}
             className={cn(
-              'h-7 shrink-0 rounded-full border px-3 text-[12px] font-medium transition',
+              'min-h-11 shrink-0 cursor-pointer rounded-full border px-3 text-[12px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
               active === c.slug ? 'border-transparent bg-pri text-card' : 'border-brd bg-card text-t2',
             )}
           >
@@ -202,7 +202,7 @@ export default function Search() {
             <button
               type="button"
               onClick={clearFilters}
-              className="self-start text-[11px] font-medium text-pri active:opacity-70"
+              className="self-start min-h-11 cursor-pointer px-2 text-[11px] font-medium text-pri transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             >
               清除筛选
             </button>

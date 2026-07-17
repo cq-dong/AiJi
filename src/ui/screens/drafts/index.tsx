@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bookmark, Trash2 } from 'lucide-react'
+import { ArrowLeft, Bookmark, Trash2 } from 'lucide-react'
 import { Button, Card, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import type { Draft } from '@/domain/types'
@@ -14,9 +14,9 @@ function TopBar({ onBack }: { onBack: () => void }) {
         type="button"
         onClick={onBack}
         aria-label="返回"
-        className="flex size-9 items-center justify-center text-[28px] leading-none font-light text-t2"
+        className="flex size-11 cursor-pointer items-center justify-center rounded-btn text-t2 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
       >
-        ‹
+        <ArrowLeft size={22} strokeWidth={2} />
       </button>
       <h1 className="text-[24px] font-bold leading-tight text-ink">草稿</h1>
     </div>
@@ -58,7 +58,7 @@ function DraftRow({
           type="button"
           onClick={handleResume}
           disabled={resuming}
-          className="flex-1 px-3 py-3 text-left disabled:opacity-50"
+          className="flex-1 cursor-pointer px-3 py-3 text-left transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-50"
         >
           <p className="line-clamp-1 text-[14px] font-medium text-ink">{title}</p>
           {preview && (
@@ -72,7 +72,7 @@ function DraftRow({
           type="button"
           onClick={handleDelete}
           aria-label="删除草稿"
-          className="flex w-10 items-center justify-center text-t3 active:text-catFail"
+          className="flex size-11 cursor-pointer items-center justify-center text-t3 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card active:text-catFail"
         >
           <Trash2 size={16} />
         </button>

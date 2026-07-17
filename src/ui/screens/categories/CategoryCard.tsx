@@ -76,7 +76,7 @@ export function CategoryCard({ category, snippet, liveCount, onClick, onLongPres
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       className={cn(
-        'h-[140px] p-4 flex flex-col gap-2.5 transition select-none',
+        'h-[140px] p-4 flex flex-col gap-2.5 transition duration-base ease-out select-none focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
         onClick && 'cursor-pointer active:scale-[0.99]',
       )}
     >

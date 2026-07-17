@@ -18,7 +18,7 @@ export function SearchResultCard({ entry, ai, category, now, onClick }: SearchRe
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      className="flex cursor-pointer flex-col gap-1 p-4 transition active:scale-[0.99]"
+      className="flex cursor-pointer flex-col gap-1 p-4 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
     >
       {title && <p className="line-clamp-1 text-[13px] font-medium text-ink">{title}</p>}
       <p className="line-clamp-2 text-[12px] text-t2">{previewText(entry, ai)}</p>

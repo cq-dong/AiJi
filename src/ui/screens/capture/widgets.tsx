@@ -100,7 +100,7 @@ export function CaptureHeader({
         type="button"
         onClick={onClose}
         aria-label="关闭"
-        className="flex size-8 items-center justify-center rounded-full text-ink active:bg-page"
+        className="flex size-11 items-center justify-center rounded-full text-ink cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <X size={20} strokeWidth={2.2} />
       </button>
@@ -121,7 +121,7 @@ export function CaptureHeader({
         <button
           type="button"
           onClick={startEdit}
-          className="min-w-0 truncate text-[17px] font-bold text-ink"
+          className="min-w-0 truncate rounded-chip text-[17px] font-bold text-ink cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           {title || '新条目'}
         </button>
@@ -151,7 +151,7 @@ export function DraftHintBanner({ onDismiss }: { onDismiss: () => void }) {
         type="button"
         onClick={onDismiss}
         aria-label="关闭提示"
-        className="flex size-5 shrink-0 items-center justify-center rounded-full text-pri active:bg-pri/10"
+        className="flex size-11 shrink-0 items-center justify-center rounded-full text-pri cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-pri/10 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <X size={13} strokeWidth={2.4} />
       </button>
@@ -181,7 +181,7 @@ function RemoveButton({ onRemove }: { onRemove: () => void }) {
       type="button"
       onClick={onRemove}
       aria-label="删除片段"
-      className="flex size-6 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm active:scale-90"
+      className="flex size-11 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm cursor-pointer transition duration-base ease-out active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
     >
       <X size={13} strokeWidth={2.4} />
     </button>
@@ -207,7 +207,7 @@ export function FlowPart({
           type="button"
           onClick={onRemove}
           aria-label="删除文本"
-          className="absolute right-0 top-1 flex size-6 items-center justify-center rounded-full text-t3 active:bg-page"
+          className="absolute right-0 top-1 flex size-11 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           <X size={14} strokeWidth={2.2} />
         </button>
@@ -228,7 +228,7 @@ export function FlowPart({
           type="button"
           onClick={onRemove}
           aria-label="删除语音"
-          className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-t3 active:bg-card"
+          className="absolute right-1.5 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-card focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           <X size={14} strokeWidth={2.2} />
         </button>
@@ -309,12 +309,12 @@ function ToolButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'flex flex-1 flex-col items-center gap-1.5 py-1 active:scale-95 disabled:opacity-40',
+        'flex flex-1 flex-col items-center gap-1.5 py-1 cursor-pointer transition duration-base ease-out active:scale-95 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
       )}
     >
       <span
         className={cn(
-          'flex size-12 items-center justify-center rounded-card border transition',
+          'flex size-12 items-center justify-center rounded-card border',
           primary ? 'border-transparent bg-pri text-white' : 'border-brd bg-card text-ink',
         )}
       >
@@ -370,7 +370,7 @@ export function SaveBar({
         type="button"
         onClick={onClear}
         disabled={disabled || saving}
-        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 transition active:scale-[0.98] disabled:opacity-40"
+        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <Trash2 size={16} strokeWidth={2} />
         清空
@@ -379,7 +379,7 @@ export function SaveBar({
         type="button"
         onClick={onSaveDraft}
         disabled={disabled || saving}
-        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 transition active:scale-[0.98] disabled:opacity-40"
+        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <Bookmark size={16} strokeWidth={2} />
         存草稿
@@ -389,7 +389,7 @@ export function SaveBar({
         onClick={onSave}
         disabled={disabled || saving}
         className={cn(
-          'flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-btn text-[15px] font-medium transition active:scale-[0.99] disabled:opacity-40',
+          'flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-btn text-[15px] font-medium cursor-pointer transition duration-base ease-out active:scale-[0.99] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
           saving ? 'border border-brd bg-priS text-pri' : 'bg-pri text-white',
         )}
       >
@@ -442,7 +442,7 @@ export function VoiceBar({
         type="button"
         onClick={onStop}
         aria-label="停止录音"
-        className="ml-auto flex size-12 items-center justify-center rounded-full bg-pri text-white shadow-lg shadow-pri/30 active:scale-95"
+        className="ml-auto flex size-12 items-center justify-center rounded-full bg-pri text-white shadow-lg shadow-pri/30 cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <span className="block size-5 rounded-[3px] bg-white" />
       </button>
@@ -481,14 +481,14 @@ export function NoMicPanel({ onUseText, onRetry }: { onUseText: () => void; onRe
         <button
           type="button"
           onClick={onUseText}
-          className="flex h-11 flex-1 items-center justify-center rounded-btn bg-pri text-[13px] font-medium text-white active:scale-[0.98]"
+          className="flex h-11 flex-1 items-center justify-center rounded-btn bg-pri text-[13px] font-medium text-white cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           改用文本
         </button>
         <button
           type="button"
           onClick={onRetry}
-          className="flex h-11 flex-1 items-center justify-center rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 active:scale-[0.98]"
+          className="flex h-11 flex-1 items-center justify-center rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           再试一次
         </button>
@@ -515,8 +515,8 @@ export function TextEntrySheet({
   const canAdd = value.trim().length > 0
   return (
     <div className="absolute inset-0 z-30 flex flex-col justify-end" role="dialog" aria-label="文本输入">
-      <button type="button" aria-label="取消" tabIndex={-1} className="absolute inset-0 bg-black/30" onClick={onCancel} />
-      <div className="relative rounded-t-[20px] bg-card px-4 pb-5 pt-3 shadow-lg">
+      <button type="button" aria-label="取消" tabIndex={-1} className="absolute inset-0 bg-black/30 animate-fade-in" onClick={onCancel} />
+      <div className="relative rounded-t-[20px] bg-card px-4 pb-5 pt-3 shadow-sheet animate-slide-up">
         <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-brd" />
         <textarea
           name="captureText"
@@ -531,7 +531,7 @@ export function TextEntrySheet({
           <button
             type="button"
             onClick={onCancel}
-            className="flex h-11 flex-1 items-center justify-center rounded-btn border border-brd bg-card text-[14px] font-medium text-t2 active:scale-[0.98]"
+            className="flex h-11 flex-1 items-center justify-center rounded-btn border border-brd bg-card text-[14px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
           >
             取消
           </button>
@@ -539,7 +539,7 @@ export function TextEntrySheet({
             type="button"
             onClick={onAdd}
             disabled={!canAdd}
-            className="flex h-11 flex-1 items-center justify-center rounded-btn bg-pri text-[14px] font-medium text-white disabled:opacity-40 active:scale-[0.98]"
+            className="flex h-11 flex-1 items-center justify-center rounded-btn bg-pri text-[14px] font-medium text-white disabled:opacity-40 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
           >
             添加
           </button>
@@ -640,7 +640,7 @@ export function CameraView({
           type="button"
           onClick={handleClose}
           aria-label="关闭相机"
-          className="flex size-8 items-center justify-center rounded-full bg-white/15 active:scale-90"
+          className="flex size-11 items-center justify-center rounded-full bg-white/15 cursor-pointer transition duration-base ease-out active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           <X size={20} strokeWidth={2.2} />
         </button>
@@ -653,7 +653,7 @@ export function CameraView({
               onClick={() => switchMode(m)}
               disabled={recording || busy}
               className={cn(
-                'flex h-8 items-center justify-center gap-1 rounded-full px-3 text-[13px] font-medium transition disabled:opacity-60',
+                'flex min-h-11 items-center justify-center gap-1 rounded-full px-3 text-[13px] font-medium cursor-pointer transition duration-base ease-out active:scale-[0.97] disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
                 mode === m ? 'bg-white text-black' : 'text-white/80',
               )}
             >
@@ -667,7 +667,7 @@ export function CameraView({
           onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}
           disabled={recording}
           aria-label="切换摄像头"
-          className="flex size-8 items-center justify-center rounded-full bg-white/15 active:scale-90 disabled:opacity-40"
+          className="flex size-11 items-center justify-center rounded-full bg-white/15 cursor-pointer transition duration-base ease-out active:scale-90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           <Camera size={18} strokeWidth={2.2} />
         </button>
@@ -684,7 +684,7 @@ export function CameraView({
             <button
               type="button"
               onClick={handleClose}
-              className="mt-2 flex h-10 items-center justify-center rounded-btn bg-white/15 px-5 text-[13px] font-medium text-white active:scale-95"
+              className="mt-2 flex h-11 items-center justify-center rounded-btn bg-white/15 px-5 text-[13px] font-medium text-white cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
             >
               返回
             </button>
@@ -711,7 +711,7 @@ export function CameraView({
           disabled={busy || denied}
           aria-label={mode === 'video' ? (recording ? '停止录制' : '开始录制') : '拍照'}
           className={cn(
-            'flex items-center justify-center rounded-full border-4 border-white bg-white/10 transition active:scale-95 disabled:opacity-40',
+            'flex items-center justify-center rounded-full border-4 border-white bg-white/10 cursor-pointer transition duration-base ease-out active:scale-95 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
             recording ? 'size-16 border-red-500' : 'size-[68px]',
           )}
         >

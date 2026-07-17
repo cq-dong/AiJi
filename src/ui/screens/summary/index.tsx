@@ -96,7 +96,7 @@ export default function Summary() {
               type="button"
               onClick={() => onScopeChange(s.key)}
               className={[
-                'h-9 flex-1 rounded-[18px] text-[14px] font-medium transition',
+                'h-11 flex-1 cursor-pointer rounded-[18px] text-[14px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
                 active ? 'bg-pri text-white' : 'border border-brd bg-card text-t3',
               ].join(' ')}
             >
@@ -118,7 +118,7 @@ export default function Summary() {
                 type="button"
                 onClick={() => onLevelChange(level)}
                 className={[
-                  'h-7 flex-1 rounded-[10px] text-[11px] font-medium transition',
+                  'h-11 flex-1 cursor-pointer rounded-[10px] text-[11px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
                   active ? 'bg-card text-ink shadow-sm' : 'text-t3',
                 ].join(' ')}
               >

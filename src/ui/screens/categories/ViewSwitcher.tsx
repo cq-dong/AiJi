@@ -28,7 +28,7 @@ export function ViewSwitcher({ view, onChange }: ViewSwitcherProps) {
           onClick={() => onChange(v.key)}
           aria-pressed={view === v.key}
           className={cn(
-            'rounded-btn py-1.5 text-[12px] font-medium transition',
+            'rounded-btn py-1.5 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
             view === v.key
               ? 'bg-card text-ink shadow-sm'
               : 'text-t3 active:scale-95',

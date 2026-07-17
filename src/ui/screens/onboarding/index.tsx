@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Check } from 'lucide-react'
 import { Button } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 
@@ -56,7 +57,10 @@ export default function Onboarding() {
         </p>
         <ul className="mt-4 space-y-1 text-[12px] text-t3">
           {FEATURES.map((f) => (
-            <li key={f}>· {f}</li>
+            <li key={f} className="flex items-center gap-1.5">
+              <Check size={12} strokeWidth={2} className="text-pri" />
+              <span>{f}</span>
+            </li>
           ))}
         </ul>
       </div>

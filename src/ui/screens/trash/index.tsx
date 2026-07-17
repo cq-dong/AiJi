@@ -13,7 +13,7 @@ function TopBar({ onBack }: { onBack: () => void }) {
         type="button"
         onClick={onBack}
         aria-label="返回"
-        className="flex size-8 items-center justify-center text-t2"
+        className="flex size-11 cursor-pointer items-center justify-center rounded-btn text-t2 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
       >
         <ArrowLeft size={22} strokeWidth={2} />
       </button>
@@ -47,9 +47,9 @@ function ConfirmHardDeleteDialog({
         aria-label="取消"
         tabIndex={-1}
         onClick={onClose}
-        className="absolute inset-0 bg-black/40"
+        className="absolute inset-0 bg-black/40 animate-fade-in"
       />
-      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card bg-card p-4">
+      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card bg-card p-4 animate-fade-in shadow-lg">
         <h3 className="text-[14px] font-bold text-ink">永久删除</h3>
         <p className="text-[12px] leading-relaxed text-t2">永久删除？此操作不可恢复</p>
         <div className="flex items-center gap-2 pt-1">

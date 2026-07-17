@@ -100,7 +100,7 @@ export function DigestCard({
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
-              className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-pri"
+              className="mt-1.5 inline-flex min-h-11 cursor-pointer items-center gap-1 px-1 text-[11px] font-medium text-pri transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             >
               <svg
                 width="10"
@@ -148,7 +148,7 @@ export function DigestCard({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-[11px]"
+                className="h-11 px-2 text-[11px]"
                 onClick={onRegen}
               >
                 重新生成

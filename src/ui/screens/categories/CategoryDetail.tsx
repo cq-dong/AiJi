@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { ChevronLeft } from 'lucide-react'
 import type { Category, Entry, EntryAi, Facets, Tag } from '@/domain/types'
 import { Button, Card, EmptyState, cn } from '@/ui/components'
 import { EntryRow } from './EntryRow'
@@ -89,7 +90,7 @@ export function CategoryDetail({
             onClick={() => setGroupBy(o.key)}
             aria-pressed={groupBy === o.key}
             className={cn(
-              'rounded-btn py-1 text-[12px] font-medium transition',
+              'rounded-btn py-1 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
               groupBy === o.key
                 ? 'bg-card text-ink shadow-sm'
                 : 'text-t3 active:scale-95',
@@ -190,7 +191,7 @@ function DetailHeader({
   return (
     <div className="flex items-center gap-2">
       <Button variant="ghost" size="sm" onClick={onBack}>
-        ‹ 返回
+        <ChevronLeft size={16} /> 返回
       </Button>
       <span className={cn('size-3 rounded-full', dot)} />
       <span className="text-[17px] font-bold text-ink">{label}</span>

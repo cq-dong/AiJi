@@ -74,9 +74,9 @@ function ReadyBody({
         </div>
       )}
       <div className="flex items-center gap-4 pt-1">
-        <button type="button" onClick={onEdit} className="text-[12px] text-t3">编辑</button>
-        <button type="button" onClick={onReprocess} className="text-[12px] text-t3">重处理</button>
-        <button type="button" onClick={onDelete} className="text-[12px] text-catFail">删除</button>
+        <button type="button" onClick={onEdit} className="inline-flex min-h-11 items-center py-2.5 text-[12px] text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">编辑</button>
+        <button type="button" onClick={onReprocess} className="inline-flex min-h-11 items-center py-2.5 text-[12px] text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">重处理</button>
+        <button type="button" onClick={onDelete} className="inline-flex min-h-11 items-center py-2.5 text-[12px] text-catFail cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">删除</button>
       </div>
     </div>
   )
