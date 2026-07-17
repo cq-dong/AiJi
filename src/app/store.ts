@@ -36,6 +36,9 @@ interface UiState {
   trashed: Entry[] // Wave 4: 软删条目（deletedAt set）；hydrate 从 Dexie 载入 + purge >30d；回收站视图消费
   recalculating: Record<string, boolean> // key=`${scope}:${range}`；recomputeAggregate in-flight 标记，UI 据此显 spinner（与 stale 分离，失败不永转）
   justSaved: boolean // 刚保存 → 首页 toast + 置顶处理中卡片
+  // 保存后 LLM 检出 reminderSuggestion → 全局 ReminderPopup 即时确认。仅 finishSave(isFresh=true) 的
+  // processEntry 置；detail reprocess 走 isFresh=false 不弹。confirmReminder/忽略 → dismissPendingReminder。
+  pendingReminder: { entryId: string; dueAt: string; label: string } | null
   hydrate: () => Promise<void>
   startRecording: () => Promise<void>
   stopRecording: () => Promise<void>
@@ -57,12 +60,13 @@ interface UiState {
   trashEntry: (id: string) => Promise<void>
   recoverEntry: (id: string) => Promise<void>
   clearJustSaved: () => void
+  dismissPendingReminder: () => void
   setOnline: (v: boolean) => void
   setSettings: (patch: Partial<Settings>) => void
   setLlmConfig: (url: string, model: string, key: string) => void
   setVlmConfig: (url: string, model: string, key: string) => void
   setSttConfig: (model: string, key: string) => void
-  processEntry: (entryId: string) => Promise<void>
+  processEntry: (entryId: string, isFresh?: boolean) => Promise<void>
   recomputeAggregate: (scope: AggregateScopeType, range?: string, detailLevel?: number) => Promise<void>
   // Phase 9 Batch 2b · 提醒。processEntry 不自动建 Reminder（Q2：用户在 B6 TodoConfirm 确认）。
   confirmReminder: (entryId: string, dueAt: string, label: string) => Promise<void>
@@ -212,6 +216,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   trashed: [],
   recalculating: {},
   justSaved: false,
+  pendingReminder: null,
   conversation: null,
   chatLoading: 'idle',
   chatVoice: { recording: false, interim: '', finalized: '', micDenied: false },
@@ -317,7 +322,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       return
     }
     // 分类入队（火忘）：AI 失败只伤 AI 层（条目标 failed，UI 可重试），采集存储已落库不受影响
-    void get().processEntry(entry.id)
+    // isFresh=true → processEntry 完成若检出 reminderSuggestion 置 pendingReminder，AppShell 弹窗即时确认。
+    void get().processEntry(entry.id, true)
   },
   denyMic: () => set((s) => ({ capture: { ...s.capture, micDenied: true, recording: false } })),
   allowMic: () => set((s) => ({ capture: { ...s.capture, micDenied: false } })),
@@ -410,6 +416,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     scheduleReminders()
   },
   clearJustSaved: () => set({ justSaved: false }),
+  dismissPendingReminder: () => set({ pendingReminder: null }),
   setOnline: (v) => set({ online: v }),
   setSettings: (patch) => {
     const next = { ...get().settings, ...patch }
@@ -444,7 +451,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (key) void di.secrets.set('stt:key', key).catch((e) => console.error('[store] setSttKey failed', e))
     else void di.secrets.delete('stt:key').catch((e) => console.error('[store] deleteSttKey failed', e))
   },
-  processEntry: async (entryId) => {
+  processEntry: async (entryId, isFresh) => {
     try {
       // STT 终稿（保存后）：paraformer 重写音频/视频 transcript，比 WebSpeech live 预览准。
       // 无 stt:key → 跳过整步（用 WebSpeech 预览文本分类即可）；单 part 失败 → 回退预览文本，不阻断分类。
@@ -487,6 +494,11 @@ export const useUiStore = create<UiState>((set, get) => ({
           categories,
           tags,
         }))
+      }
+      // 保存后弹窗：仅新建条目（finishSave→isFresh=true）+ LLM 检出 reminderSuggestion 时置，
+      // AppShell 渲全局 ReminderPopup 让用户即时确认。detail 的 reprocess 走 isFresh=false 不弹。
+      if (isFresh && ai.reminderSuggestion) {
+        set({ pendingReminder: { entryId, dueAt: ai.reminderSuggestion.dueAt, label: ai.reminderSuggestion.label } })
       }
       // 分类成功 → 先把当日聚合置 stale，再触发重算。processEntry 必须置 stale 才能穿过
       // recomputeAggregate 的 skip-when-fresh 守卫——新条目 genuinely 让当日摘要过期。
@@ -589,8 +601,10 @@ export const useUiStore = create<UiState>((set, get) => ({
     // 不让 confirmReminder reject（Reminder 已落库是关键步，suggestion 清除是 cosmetic；reject 反致用户重试建重复）。
     // 深链直达 detail 时 hydrate 可能尚未载入 aiByEntry → 从 Dexie 取，确保 suggestion 仍被清掉。
     const ai = get().aiByEntry[entryId] ?? (await di.storage.getEntryAi(entryId))
-    if (ai?.reminderSuggestion) {
-      const cleared: EntryAi = { ...ai, reminderSuggestion: undefined }
+    if (ai?.reminderSuggestion || !ai?.todoDismissed) {
+      // 建 Reminder 即"已选择" → 同时清 suggestion 并置 todoDismissed，detail 三按钮卡
+      // 不再重弹（仅靠清 suggestion 反满足 TodoConfirm 显示条件；持久旗标才是真护栏）。
+      const cleared: EntryAi = { ...ai, reminderSuggestion: undefined, todoDismissed: true }
       try {
         await di.storage.saveEntryAi(cleared)
         set((s) => ({ aiByEntry: { ...s.aiByEntry, [entryId]: cleared } }))

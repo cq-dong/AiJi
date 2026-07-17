@@ -14,7 +14,7 @@ import {
   InterimBubble,
   NoMicPanel,
   SaveBar,
-  TextEntrySheet,
+  TextPartEditor,
   Toast,
   VoiceBar,
 } from './widgets'
@@ -40,6 +40,7 @@ export default function Capture() {
   const allowMic = useUiStore((s) => s.allowMic)
   const clearDraft = useUiStore((s) => s.clearDraft)
   const saveDraft = useUiStore((s) => s.saveDraft)
+  const primeLocation = useUiStore((s) => s.primeLocation)
 
   const [view, setView] = useState<View>('compose')
   const [elapsed, setElapsed] = useState(0)
@@ -73,6 +74,14 @@ export default function Capture() {
     return () => window.clearInterval(id)
   }, [recording])
 
+  // recordLocation 修复：capture 屏挂载即取地点，覆盖文本/相机/相册条目（此前仅语音
+  // startRecording 调 primeLocation → 其他条目类型 entry.location 恒丢）。幂等：recordLocation
+  // 关/已取则 no-op。等 hydrated 再取，避免 boot 竞态用 seed 默认覆盖用户已关的设置。
+  useEffect(() => {
+    if (!hydrated) return
+    primeLocation()
+  }, [hydrated, primeLocation])
+
   // Saving: persist + return home. (B3: 去掉原 1200ms 人工延迟——延迟期间条目只在 Zustand 内存，
   // 刷新/崩溃丢文本 part + 已 saveMedia 的 blob 成孤儿。finishSave (D7) 已 await saveEntry 落库；
   // saving 态在 await 期间自然驱动 SaveBar spinner，是真实落库耗时而非假延迟。)
@@ -104,6 +113,17 @@ export default function Capture() {
     setMediaUrls((m) => ({ ...m, [part.ref]: url }))
     void di.storage.saveMedia(part.ref, blob).catch((e) => console.error('[capture] saveMedia failed', e))
     addPart(part)
+  }
+
+  const editPart = (idx: number, content: string) => {
+    useUiStore.setState((s) => ({
+      capture: {
+        ...s.capture,
+        parts: s.capture.parts.map((p, i) =>
+          i === idx && p.type === 'text' ? { ...p, content } : p,
+        ),
+      },
+    }))
   }
 
   const removePart = (idx: number) => {
@@ -173,7 +193,7 @@ export default function Capture() {
   const handleSave = () => beginSave()
 
   const showHeader = view === 'compose'
-  const showEmpty = parts.length === 0 && !recording && !micDenied
+  const showEmpty = parts.length === 0 && !recording && !micDenied && !textOpen
   const liveTranscript = (finalized + interim).trim()
 
   return (
@@ -206,12 +226,21 @@ export default function Capture() {
             <EmptyCompose />
           ) : (
             <div className="flex flex-col gap-3 px-4 py-4">
+              {textOpen && (
+                <TextPartEditor
+                  value={textDraft}
+                  onChange={setTextDraft}
+                  onConfirm={submitText}
+                  onCancel={closeTextSheet}
+                />
+              )}
               {parts.map((p, i) => (
                 <FlowPart
                   key={i}
                   part={p}
                   mediaUrl={p.type === 'video' ? mediaUrls[p.ref] : undefined}
                   onRemove={() => removePart(i)}
+                  onEdit={(v) => editPart(i, v)}
                 />
               ))}
               {/* Wave 3 #2: interim transcription bubble — stays inline during recording */}
@@ -251,14 +280,6 @@ export default function Capture() {
           </footer>
         )
       )}
-
-      <TextEntrySheet
-        open={textOpen}
-        value={textDraft}
-        onChange={setTextDraft}
-        onAdd={submitText}
-        onCancel={closeTextSheet}
-      />
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
     </div>

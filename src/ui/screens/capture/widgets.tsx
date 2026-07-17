@@ -188,31 +188,83 @@ function RemoveButton({ onRemove }: { onRemove: () => void }) {
   )
 }
 
+// ── Text flow part: click the text to edit inline (reuses TextPartEditor).
+// Confirm updates content; Cancel reverts. Delete button stays. ──
+function TextFlowPart({
+  content,
+  onRemove,
+  onEdit,
+}: {
+  content: string
+  onRemove: () => void
+  onEdit: (next: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(content)
+  if (editing) {
+    return (
+      <div className="relative">
+        <TextPartEditor
+          value={draft}
+          onChange={setDraft}
+          onConfirm={() => {
+            const t = draft.trim()
+            if (t) onEdit(t)
+            setEditing(false)
+          }}
+          onCancel={() => {
+            setDraft(content)
+            setEditing(false)
+          }}
+        />
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="删除文本"
+          className="absolute right-1 top-1 flex size-9 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-pri/10 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+        >
+          <X size={14} strokeWidth={2.2} />
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="relative py-1 pr-7">
+      <button
+        type="button"
+        onClick={() => { setDraft(content); setEditing(true) }}
+        aria-label="编辑文本"
+        className="block w-full cursor-text rounded-chip text-left transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+      >
+        <p className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-ink">{content}</p>
+      </button>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="删除文本"
+        className="absolute right-0 top-1 flex size-11 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+      >
+        <X size={14} strokeWidth={2.2} />
+      </button>
+    </div>
+  )
+}
+
 // ── Flowing part block. Text is borderless (natural inline); audio is a compact
 // bar; photo/video render the actual media. Photos are video parts with durationSec=0. ──
 export function FlowPart({
   part,
   mediaUrl,
   onRemove,
+  onEdit,
 }: {
   part: EntryPart
   mediaUrl?: string
   onRemove: () => void
+  onEdit?: (next: string) => void
 }) {
   if (part.type === 'text') {
-    return (
-      <div className="relative py-1 pr-7">
-        <p className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-ink">{part.content}</p>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label="删除文本"
-          className="absolute right-0 top-1 flex size-11 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
-        >
-          <X size={14} strokeWidth={2.2} />
-        </button>
-      </div>
-    )
+    return <TextFlowPart content={part.content} onRemove={onRemove} onEdit={onEdit ?? (() => {})} />
   }
   if (part.type === 'audio') {
     return (
@@ -497,53 +549,53 @@ export function NoMicPanel({ onUseText, onRetry }: { onUseText: () => void; onRe
   )
 }
 
-// ── Text entry bottom sheet ──
-export function TextEntrySheet({
-  open,
+// ── Inline text-part editor: renders as an editing fragment card at the top
+// of the flow list (not in the footer). Confirm → becomes a text FlowPart;
+// Cancel → discarded. No modal, no footer takeover. ──
+export function TextPartEditor({
   value,
   onChange,
-  onAdd,
+  onConfirm,
   onCancel,
 }: {
-  open: boolean
   value: string
   onChange: (v: string) => void
-  onAdd: () => void
+  onConfirm: () => void
   onCancel: () => void
 }) {
-  if (!open) return null
-  const canAdd = value.trim().length > 0
+  const ref = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => { ref.current?.focus() }, [])
+  const canConfirm = value.trim().length > 0
   return (
-    <div className="absolute inset-0 z-30 flex flex-col justify-end" role="dialog" aria-label="文本输入">
-      <button type="button" aria-label="取消" tabIndex={-1} className="absolute inset-0 bg-black/30 animate-fade-in" onClick={onCancel} />
-      <div className="relative rounded-t-[20px] bg-card px-4 pb-5 pt-3 shadow-sheet animate-slide-up">
-        <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-brd" />
-        <textarea
-          name="captureText"
-          aria-label="条目内容"
-          autoFocus
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder="记下点什么…"
-          className="h-32 w-full resize-none rounded-card border border-brd bg-page p-3 text-[14px] leading-relaxed text-ink outline-none focus:border-pri"
-        />
-        <div className="mt-3 flex gap-3">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex h-11 flex-1 items-center justify-center rounded-btn border border-brd bg-card text-[14px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={onAdd}
-            disabled={!canAdd}
-            className="flex h-11 flex-1 items-center justify-center rounded-btn bg-pri text-[14px] font-medium text-white disabled:opacity-40 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
-          >
-            添加
-          </button>
-        </div>
+    <div className="rounded-card border border-pri/30 bg-priS/30 p-3" role="dialog" aria-label="文本片段编辑">
+      <textarea
+        ref={ref}
+        name="captureText"
+        aria-label="条目内容"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onConfirm()
+        }}
+        placeholder="记一句…"
+        className="h-24 w-full resize-none bg-transparent text-[14px] leading-relaxed text-ink outline-none placeholder:text-t3"
+      />
+      <div className="mt-2 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="flex h-9 items-center justify-center rounded-btn px-4 text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={!canConfirm}
+          className="flex h-9 items-center justify-center rounded-btn bg-pri px-4 text-[13px] font-medium text-white disabled:opacity-40 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+        >
+          确认
+        </button>
       </div>
     </div>
   )

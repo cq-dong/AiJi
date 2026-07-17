@@ -204,7 +204,7 @@ function DetailHeader({
         type="button"
         aria-label="导出该类别"
         onClick={() => void exportCategoryZip(slug)}
-        className="ml-auto grid size-9 cursor-pointer place-items-center rounded-btn text-t2 transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        className="ml-auto grid size-11 cursor-pointer place-items-center rounded-btn text-t2 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
       >
         <Download size={18} strokeWidth={2} />
       </button>

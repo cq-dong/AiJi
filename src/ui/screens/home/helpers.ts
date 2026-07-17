@@ -93,3 +93,11 @@ export function firstText(parts: EntryPart[]): string {
   }
   return ''
 }
+
+// 首个可作为缩略图的媒体 part（图片或视频首帧）。无则 undefined。
+export function firstThumbRef(parts: EntryPart[]): string | undefined {
+  for (const p of parts) {
+    if (p.type === 'video') return p.ref
+  }
+  return undefined
+}

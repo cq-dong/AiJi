@@ -187,7 +187,7 @@ export default function Search() {
               value={filters.dateFrom}
               onChange={(e) => setCustomFrom(e.target.value)}
               aria-label="起始日期"
-              className="h-7 min-w-0 flex-1 rounded-btn border border-brd bg-card px-2 text-[12px] text-ink outline-none focus:border-pri/40"
+              className="h-9 min-w-0 flex-1 cursor-text rounded-btn border border-brd bg-card px-2 text-[12px] text-ink transition duration-base ease-out focus:border-pri/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             />
             <span className="shrink-0 text-t3">–</span>
             <input
@@ -195,7 +195,7 @@ export default function Search() {
               value={filters.dateTo}
               onChange={(e) => setCustomTo(e.target.value)}
               aria-label="结束日期"
-              className="h-7 min-w-0 flex-1 rounded-btn border border-brd bg-card px-2 text-[12px] text-ink outline-none focus:border-pri/40"
+              className="h-9 min-w-0 flex-1 cursor-text rounded-btn border border-brd bg-card px-2 text-[12px] text-ink transition duration-base ease-out focus:border-pri/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             />
           </div>
           {hasFilters && (

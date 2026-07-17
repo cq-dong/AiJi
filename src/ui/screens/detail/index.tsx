@@ -1,37 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Button, EmptyState } from '@/ui/components'
+import { Button, Card, EmptyState, ReminderCreator, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
 import { exportEntryZip, shareEntry, canShareEntry } from '@/adapters/zipExport'
 import type { EntryAi, EntryPart, EntryStatus } from '@/domain/types'
-import { PartView } from './PartView'
+import { AudioPlayer, VideoThumb } from './PartView'
 import { AiPanel, type AiState } from './AiPanel'
 import { Sheet } from './Sheet'
-import { formatTitle, formatDuration, partTypeLabel, tagLabel } from './helpers'
-import { ChevronLeft, MapPin, MoreHorizontal } from 'lucide-react'
-
-// ISO 8601 → datetime-local input format (YYYY-MM-DDTHH:MM, local time)
-function isoToLocalInput(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-// datetime-local input value → ISO 8601 string
-function localInputToIso(local: string): string {
-  const d = new Date(local)
-  if (Number.isNaN(d.getTime())) return new Date().toISOString()
-  return d.toISOString()
-}
-
-// 「创建待办」无具体时间 → 默认今日 23:59 到点（domain 无 Todo 类型，复用 Reminder）。
-function endOfTodayIso(): string {
-  const d = new Date()
-  d.setHours(23, 59, 0, 0)
-  return d.toISOString()
-}
+import { formatTitle, formatDateTime, formatDuration, partTypeLabel, tagLabel } from './helpers'
+import { ChevronLeft, MapPin, MoreHorizontal, Pencil, Trash2 } from 'lucide-react'
 
 function statusToAiState(s: EntryStatus): AiState {
   if (s === 'processing') return 'processing'
@@ -68,139 +46,163 @@ function TopBar({ title, onBack, onMore }: { title: string; onBack: () => void; 
   )
 }
 
-function TodoConfirm({
-  entryId,
-  title,
-  suggestion,
-  onDismissed,
-}: {
-  entryId: string
-  title: string
-  suggestion?: { dueAt: string; label: string }
-  onDismissed: () => void
-}) {
-  // domain 只有 Reminder（无 Todo 类型）。「待办/提醒我」均建 Reminder，区别在 dueAt 来源：
-  // 待办 → 今日 23:59（无具体时间）；提醒我 → 用 LLM 建议 dueAt（无建议亦回落今日 23:59）。
-  // 忽略 → 清 reminderSuggestion（有建议才写）+ 本地藏卡。
-  const [busy, setBusy] = useState(false)
-  const label = suggestion?.label ?? title
-  const remindDue = suggestion?.dueAt ?? endOfTodayIso()
-
-  const run = async (fn: () => Promise<void>) => {
-    setBusy(true)
-    try {
-      await fn()
-      onDismissed()
-    } finally {
-      setBusy(false)
+// 记录视图：片段自然合并的阅读流。连续文本合并成块，音视频保留播放器，不显示每片时间戳/模态标签。
+function RecordView({ parts }: { parts: EntryPart[] }) {
+  type Group = { type: 'text'; contents: string[] } | { type: 'media'; part: EntryPart }
+  const groups: Group[] = []
+  for (const p of parts) {
+    if (p.type === 'text') {
+      const last = groups[groups.length - 1]
+      if (last && last.type === 'text') last.contents.push(p.content)
+      else groups.push({ type: 'text', contents: [p.content] })
+    } else {
+      groups.push({ type: 'media', part: p })
     }
   }
-
   return (
-    <div className="flex flex-col gap-2 rounded-card bg-catPending/10 p-4">
-      <div className="flex items-center gap-2">
-        <span className="size-2 rounded-full bg-catPending" />
-        <p className="text-[12px] font-bold text-catPending">LLM 检测到 · 待办</p>
-      </div>
-      <p className="text-[13px] font-medium text-ink">「{title}」</p>
-      <p className="text-[11px] text-t3">作为待办创建？可设提醒时间。</p>
-      <div className="flex items-center gap-2 pt-1">
-        <Button
-          type="button"
-          size="sm"
-          variant="primary"
-          disabled={busy}
-          onClick={() => run(() => useUiStore.getState().confirmReminder(entryId, endOfTodayIso(), label))}
-        >
-          创建待办
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={busy}
-          onClick={() => run(() => useUiStore.getState().confirmReminder(entryId, remindDue, label))}
-        >
-          提醒我
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="text-t3"
-          disabled={busy}
-          onClick={() =>
-            run(async () => {
-              if (suggestion) await useUiStore.getState().updateEntryAi(entryId, { reminderSuggestion: undefined })
-            })
-          }
-        >
-          忽略
-        </Button>
-      </div>
+    <div className="flex flex-col gap-4">
+      {groups.map((g, i) => {
+        if (g.type === 'text') {
+          return (
+            <div key={i} className="flex flex-col gap-2">
+              {g.contents.map((c, j) => (
+                <p key={j} className="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-ink">{c}</p>
+              ))}
+            </div>
+          )
+        }
+        const p = g.part
+        if (p.type === 'audio') {
+          return (
+            <div key={i} className="flex flex-col gap-2">
+              <AudioPlayer mediaRef={p.ref} durationSec={p.durationSec} />
+              {p.transcript && (
+                <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-t2">{p.transcript}</p>
+              )}
+            </div>
+          )
+        }
+        if (p.type === 'video') {
+          return (
+            <div key={i} className="flex flex-col gap-2">
+              <VideoThumb mediaRef={p.ref} durationSec={p.durationSec} />
+              {p.transcript && (
+                <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-t2">{p.transcript}</p>
+              )}
+            </div>
+          )
+        }
+        return null
+      })}
     </div>
   )
 }
 
-function ReminderConfirm({
-  entryId,
-  suggestion,
-  onDismissed,
+// 原态视图的单片段卡：文本可 inline 编辑（确认→更新 content，取消→还原），所有片段可删除。
+function SourcePartView({
+  part,
+  iso,
+  onRemove,
+  onEditText,
 }: {
-  entryId: string
-  suggestion: { dueAt: string; label: string }
-  onDismissed: () => void
+  part: EntryPart
+  iso: string
+  onRemove: () => void
+  onEditText: (content: string) => void
 }) {
-  const [dueAt, setDueAt] = useState(() => isoToLocalInput(suggestion.dueAt))
-  const [label, setLabel] = useState(suggestion.label)
-  const [confirming, setConfirming] = useState(false)
-
-  const handleConfirm = async () => {
-    setConfirming(true)
-    try {
-      await useUiStore.getState().confirmReminder(entryId, localInputToIso(dueAt), label)
-      onDismissed()
-    } finally {
-      setConfirming(false)
-    }
-  }
-
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(part.type === 'text' ? part.content : '')
+  const helper = `${formatDateTime(iso)} · ${partTypeLabel(part)}${
+    part.type !== 'text' ? ' ' + formatDuration(part.durationSec) : ''
+  }`
   const inputCls =
     'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
-
   return (
-    <div className="flex flex-col gap-3 rounded-card bg-priS p-4">
-      <div className="flex items-center gap-2">
-        <span className="size-2 rounded-full bg-pri" />
-        <p className="text-[12px] font-bold text-pri">AI 建议 · 提醒</p>
+    <Card className="relative flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2 pr-9">
+        <p className="text-[11px] text-t3">{helper}</p>
       </div>
-      <div className="flex flex-col gap-2">
-        <label className="text-[11px] text-t2">提醒时间</label>
-        <input
-          type="datetime-local"
-          value={dueAt}
-          onChange={(e) => setDueAt(e.target.value)}
-          className={inputCls}
-        />
-        <label className="text-[11px] text-t2">提醒内容</label>
-        <input
-          type="text"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          className={inputCls}
-        />
-      </div>
-      <div className="flex items-center gap-2 pt-1">
-        <Button type="button" size="sm" variant="primary" onClick={handleConfirm} disabled={confirming}>
-          确认提醒
-        </Button>
-        <Button type="button" size="sm" variant="ghost" className="text-t3" onClick={onDismissed}>
-          忽略
-        </Button>
-      </div>
-    </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="删除片段"
+        className="absolute right-1 top-1 flex size-9 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-pri/10 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+      >
+        <Trash2 size={14} strokeWidth={2.2} />
+      </button>
+      {part.type === 'text' && (
+        editing ? (
+          <div className="flex flex-col gap-2">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={4}
+              autoFocus
+              className={inputCls}
+            />
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  const t = draft.trim()
+                  if (t) onEditText(t)
+                  setEditing(false)
+                }}
+              >
+                确认
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="text-t3"
+                onClick={() => {
+                  setDraft(part.content)
+                  setEditing(false)
+                }}
+              >
+                取消
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="relative pr-9">
+            <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{part.content}</p>
+            <button
+              type="button"
+              onClick={() => { setDraft(part.content); setEditing(true) }}
+              aria-label="编辑文本"
+              className="absolute right-0 top-0 flex size-9 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-pri/10 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+            >
+              <Pencil size={13} strokeWidth={2.2} />
+            </button>
+          </div>
+        )
+      )}
+      {part.type === 'audio' && (
+        <>
+          {part.transcript && (
+            <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{part.transcript}</p>
+          )}
+          <AudioPlayer mediaRef={part.ref} durationSec={part.durationSec} />
+        </>
+      )}
+      {part.type === 'video' && (
+        <>
+          <VideoThumb mediaRef={part.ref} durationSec={part.durationSec} />
+          {part.transcript && (
+            <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-t2">{part.transcript}</p>
+          )}
+        </>
+      )}
+    </Card>
   )
 }
+
+// 旧 TodoConfirm + ReminderConfirm 两卡已合并成共享 ReminderCreator（修"23:59 异常/两按钮无差别/重弹"）。
+// 渲染条件见下方：errand||event||reminderSuggestion 且 !todoDismissed 且 该条目无 Reminder。
 
 // AI 面板编辑：改 title / summary / category / tags → updateEntryAi(entryId, patch)。
 function AiEditSheet({
@@ -466,18 +468,17 @@ export default function Detail() {
   const [asyncAi, setAsyncAi] = useState<EntryAi | undefined>(undefined)
   const [aiLoading, setAiLoading] = useState(false)
   const [reprocessing, setReprocessing] = useState(false)
-  // B6: 本地旗标——确认/忽略后隐藏提醒卡。keyed by entry id，不持久化。
-  const [reminderHidden, setReminderHidden] = useState<Record<string, boolean>>({})
-  // 待办卡本地旗标——创建/提醒/忽略后藏卡（TodoConfirm 基于 errand/event 显，不随 reminderSuggestion 变）。
-  const [todoHidden, setTodoHidden] = useState<Record<string, boolean>>({})
   // 编辑/删除 sheet 本地开关。编辑 AI 面板走 updateEntryAi；手动编辑 parts 走 updateEntry；删除走 deleteEntry + 返回首页。
   const [editingAi, setEditingAi] = useState(false)
   const [editingParts, setEditingParts] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  // 详情视图：record=片段自然合并的阅读流（默认）；source=片段式原态，可编辑/删除单片段。
+  const [viewMode, setViewMode] = useState<'record' | 'source'>('record')
 
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
+  const reminders = useUiStore((s) => s.reminders)
   const found = id ? entries.find((e) => e.id === id) : undefined
   const aiFromStore = id ? aiByEntry[id] : undefined
 
@@ -540,6 +541,17 @@ export default function Detail() {
 
   const entry = found
   const ai = aiFromStore ?? asyncAi
+  // 原态视图：单片段删除 / 文本片段编辑 → updateEntry(id, { parts })。
+  const removePartAt = (idx: number) => {
+    if (!id) return
+    const next = entry.parts.filter((_, i) => i !== idx)
+    void useUiStore.getState().updateEntry(id, { parts: next })
+  }
+  const editPartAt = (idx: number, content: string) => {
+    if (!id) return
+    const next = entry.parts.map((p, i) => (i === idx && p.type === 'text' ? { ...p, content } : p))
+    void useUiStore.getState().updateEntry(id, { parts: next })
+  }
   const baseState: AiState = statusToAiState(entry.status)
   // 重处理中：乐观显示 processing（processEntry 不即改 status，需本地旗标过渡；
   // store 在完成时 bump updatedAt，上面 effect 据此清旗标，state 回落到真值）。
@@ -559,9 +571,46 @@ export default function Detail() {
         onMore={() => setMoreOpen(true)}
       />
 
-      {entry.parts.map((part, i) => (
-        <PartView key={i} part={part} iso={entry.createdAt} />
-      ))}
+      <div className="flex items-center gap-1 self-start rounded-btn bg-page p-1">
+        <button
+          type="button"
+          onClick={() => setViewMode('record')}
+          aria-pressed={viewMode === 'record'}
+          className={cn(
+            'rounded-btn px-3 py-1 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            viewMode === 'record' ? 'bg-card text-ink shadow-sm' : 'text-t3 active:scale-95',
+          )}
+        >
+          记录
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode('source')}
+          aria-pressed={viewMode === 'source'}
+          className={cn(
+            'rounded-btn px-3 py-1 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            viewMode === 'source' ? 'bg-card text-ink shadow-sm' : 'text-t3 active:scale-95',
+          )}
+        >
+          原态
+        </button>
+      </div>
+
+      {viewMode === 'record' ? (
+        <RecordView parts={entry.parts} />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {entry.parts.map((part, i) => (
+            <SourcePartView
+              key={i}
+              part={part}
+              iso={entry.createdAt}
+              onRemove={() => removePartAt(i)}
+              onEditText={(c) => editPartAt(i, c)}
+            />
+          ))}
+        </div>
+      )}
 
       <AiPanel
         state={state}
@@ -572,20 +621,12 @@ export default function Detail() {
         onDelete={() => setConfirmingDelete(true)}
       />
 
-      {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event) && !ai.reminderSuggestion && !todoHidden[entry.id] && (
-        <TodoConfirm
+      {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event || !!ai.reminderSuggestion) && !ai.todoDismissed && !reminders.some((r) => r.entryId === entry.id) && (
+        <ReminderCreator
           entryId={entry.id}
           title={ai.titleSuggestion ?? ''}
           suggestion={ai.reminderSuggestion}
-          onDismissed={() => setTodoHidden((h) => ({ ...h, [entry.id]: true }))}
-        />
-      )}
-
-      {state === 'ready' && ai?.reminderSuggestion && !reminderHidden[entry.id] && (
-        <ReminderConfirm
-          entryId={entry.id}
-          suggestion={ai.reminderSuggestion}
-          onDismissed={() => setReminderHidden((h) => ({ ...h, [entry.id]: true }))}
+          onDone={() => {}}
         />
       )}
 

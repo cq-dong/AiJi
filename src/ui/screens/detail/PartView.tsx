@@ -1,10 +1,67 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { EntryPart } from '@/domain/types'
 import { Card } from '@/ui/components'
 import { di } from '@/app/di'
 import { formatDateTime, formatDuration, partTypeLabel } from './helpers'
 
 const BAR_HEIGHTS = [4, 11, 6, 13, 8, 15, 10, 5, 12, 7, 14, 9, 4, 11, 6, 13, 8, 15, 10, 5, 12, 7, 14, 9]
+
+// 点击图片 → 显示边框 + 右下角拖拽手柄；拖手柄沿对角线自由缩放（30%~160%）。
+// 外层 overflow-x-auto：放大超过容器宽时可横向滚动看全图，缩小则居中无留白。
+function ImageZoomable({ src }: { src: string }) {
+  const [pct, setPct] = useState(100)
+  const [active, setActive] = useState(false)
+  const dragRef = useRef<{ x: number; start: number } | null>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  const onHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    e.preventDefault()
+    dragRef.current = { x: e.clientX, start: pct }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const onHandleMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return
+    const dx = e.clientX - dragRef.current.x
+    const w = wrapRef.current?.getBoundingClientRect().width || 300
+    const next = Math.min(160, Math.max(30, dragRef.current.start + (dx / w) * 100))
+    setPct(next)
+  }
+  const onHandleUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+    dragRef.current = null
+    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* pointer already released */ }
+  }
+
+  return (
+    <div className="overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div ref={wrapRef} className="relative mx-auto block" style={{ width: `${pct}%` }}>
+        <img
+          src={src}
+          alt=""
+          onClick={() => setActive((a) => !a)}
+          className="block w-full cursor-pointer rounded-[12px] object-cover"
+        />
+        {active && (
+          <>
+            <div className="pointer-events-none absolute inset-0 rounded-[12px] ring-2 ring-pri" />
+            <div
+              role="slider"
+              aria-label="缩放图片"
+              aria-valuenow={Math.round(pct)}
+              aria-valuemin={30}
+              aria-valuemax={160}
+              onPointerDown={onHandleDown}
+              onPointerMove={onHandleMove}
+              onPointerUp={onHandleUp}
+              onPointerCancel={onHandleUp}
+              className="absolute -bottom-2 -right-2 size-6 cursor-nwse-resize rounded-full border-2 border-pri bg-card shadow touch-none"
+            />
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function PlayTriangle({ className }: { className?: string }) {
   return (
@@ -33,7 +90,7 @@ function Waveform() {
   )
 }
 
-function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durationSec: number }) {
+export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durationSec: number }) {
   // Fetch the persisted blob from OPFS (A2). Seed parts have no blob → static/disabled.
   const [status, setStatus] = useState<'loading' | 'ready' | 'none'>('loading')
   const [url, setUrl] = useState<string | null>(null)
@@ -100,7 +157,7 @@ function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durationSec:
   )
 }
 
-function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durationSec: number }) {
+export function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durationSec: number }) {
   // 取真实媒体 blob：durationSec===0 → 图片（<img>）；>0 → 视频（<video controls>）。
   // seed parts 无 blob → 显式「视频/图片不可用（样例）」静默态，与音频不可用一致。
   const [status, setStatus] = useState<'loading' | 'ready' | 'none'>('loading')
@@ -135,7 +192,7 @@ function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durationSec: 
 
   if (status === 'ready' && url) {
     if (durationSec === 0) {
-      return <img src={url} alt="" className="w-full rounded-[12px] object-cover" />
+      return <ImageZoomable src={url} />
     }
     return <video controls src={url} className="w-full rounded-[12px]" />
   }

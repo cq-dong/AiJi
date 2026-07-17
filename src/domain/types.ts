@@ -81,6 +81,9 @@ export interface EntryAi {
   // label is a short summary the user can edit in TodoConfirm (B6).
   // The suggestion is NOT a scheduled Reminder — user must confirm to create one (B5).
   reminderSuggestion?: { dueAt: string; label: string }
+  // 用户已对"是否建待办"做出选择（创建或忽略）→ 持久旗标，detail 不再重复弹三按钮卡。
+  // 仅 local state 会在屏卸载/重进时重置导致重现；此字段随 EntryAi 落 Dexie。
+  todoDismissed?: boolean
   modelUsed: string
   createdAt: string
 }

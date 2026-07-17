@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, Eraser, Mic, Square } from 'lucide-react'
+import { ArrowUp, ChevronLeft, Eraser, Mic, Square } from 'lucide-react'
 import { Chip, Spinner } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import type { ChatMessage, Entry } from '@/domain/types'
@@ -8,14 +8,14 @@ import type { ChatMessage, Entry } from '@/domain/types'
 // 裸路由顶栏：返回 ‹ + 标题「问 AI」+ 清空会话（Eraser）。
 function TopBar({ onBack, onClear, canClear }: { onBack: () => void; onClear: () => void; canClear: boolean }) {
   return (
-    <div className="flex h-9 shrink-0 items-center justify-between px-4">
+    <div className="flex h-12 shrink-0 items-center justify-between px-2">
       <button
         type="button"
         onClick={onBack}
         aria-label="返回"
-        className="flex size-9 items-center justify-center text-[28px] leading-none font-light text-t2"
+        className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
       >
-        ‹
+        <ChevronLeft size={24} strokeWidth={2} />
       </button>
       <h1 className="text-[24px] font-bold leading-tight text-ink">问 AI</h1>
       <button
@@ -23,7 +23,7 @@ function TopBar({ onBack, onClear, canClear }: { onBack: () => void; onClear: ()
         onClick={onClear}
         disabled={!canClear}
         aria-label="清空会话"
-        className="flex size-9 items-center justify-center rounded-full text-t2 disabled:opacity-30 active:bg-page"
+        className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-30 disabled:active:scale-100"
       >
         <Eraser size={18} />
       </button>

@@ -73,7 +73,7 @@ export default function Onboarding() {
           value={apiKey}
           onChange={(e) => setApiKey(e.target.value)}
           placeholder="粘贴你的 DeepSeek / OpenAI API Key"
-          className="mt-1 h-9 w-full rounded-btn border border-brd bg-card px-3 text-[12px] text-ink placeholder:text-t3"
+          className="mt-1 h-11 w-full cursor-text rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         />
         <p className="mt-1.5 text-[11px] leading-relaxed text-t3">
           没有 key 也能记，AI 功能会降级；采集和存储照常可用。

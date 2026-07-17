@@ -139,7 +139,6 @@ export function AiPanel({
     <Card className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <h2 className="text-[13px] font-bold text-ink">AI 处理</h2>
-        <Chip tone="pending">上送云端</Chip>
       </div>
       {state === 'ready' && ai && (
         <ReadyBody

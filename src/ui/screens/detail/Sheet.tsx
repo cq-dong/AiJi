@@ -31,7 +31,7 @@ export function Sheet({
             type="button"
             onClick={onClose}
             aria-label="关闭"
-            className="-mr-1 flex size-8 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page focus-visible:ring-2 focus-visible:ring-pri/40"
+            className="-mr-1 flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] cursor-pointer focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
           >
             <X size={18} strokeWidth={2} />
           </button>
