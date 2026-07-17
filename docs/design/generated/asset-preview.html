@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AiJi 视觉资产预览</title>
+<style>
+  :root{
+    --page:#f7f7fa; --card:#fff; --ink:#14141a; --t2:#6b6b75; --t3:#9a9aa5;
+    --pri:#4f46e5; --priS:#eeedfd; --brd:#ececef;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);
+    font-family:"Noto Sans SC",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  header{max-width:920px;margin:0 auto;padding:32px 20px 8px}
+  header h1{font-size:28px;font-weight:700;margin:0 0 6px}
+  header p{color:var(--t2);font-size:13px;margin:0 0 4px;line-height:1.6}
+  header .meta{color:var(--t3);font-size:11px;margin-top:8px}
+  .group{max-width:920px;margin:0 auto;padding:24px 20px 0}
+  .group h2{font-size:17px;font-weight:700;margin:0 0 14px;
+    display:flex;align-items:center;gap:10px}
+  .group h2::before{content:"";display:block;width:4px;height:18px;
+    background:var(--pri);border-radius:2px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+  .card{background:var(--card);border:1px solid var(--brd);border-radius:16px;
+    overflow:hidden;display:flex;flex-direction:column}
+  .card .imgwrap{background:repeating-conic-gradient(#f1f1f3 0% 25%,#fbfbfd 0% 50%) 50%/20px 20px;
+    min-height:160px;display:flex;align-items:center;justify-content:center;padding:16px}
+  .card .imgwrap.checker-transparent{background:#fff}
+  .card img{max-width:100%;max-height:300px;object-fit:contain;border-radius:8px;display:block}
+  .card.checker .imgwrap{background:repeating-conic-gradient(#e9e9ee 0% 25%,#fff 0% 50%) 50%/18px 18px}
+  .card .body{padding:14px 16px 16px}
+  .card .name{font-size:14px;font-weight:600;color:var(--ink);margin:0 0 4px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .card .role{font-size:12px;color:var(--t2);line-height:1.6;margin:0 0 10px}
+  .card .role b{color:var(--pri);font-weight:600}
+  .card .tag{display:inline-block;font-size:10px;font-weight:500;padding:2px 8px;
+    background:var(--priS);color:var(--pri);border-radius:999px;margin-bottom:8px}
+  .card details{border-top:1px dashed var(--brd);padding-top:10px;margin-top:4px}
+  .card summary{font-size:11px;color:var(--t3);cursor:pointer;list-style:none;
+    font-weight:500;letter-spacing:.02em}
+  .card summary::-webkit-details-marker{display:none}
+  .card summary::before{content:"▸ ";color:var(--t3)}
+  .card details[open] summary::before{content:"▾ "}
+  .card .prompt{font-size:12px;color:var(--t2);line-height:1.65;white-space:pre-wrap;
+    margin:8px 0 0;font-family:inherit}
+  footer{max-width:920px;margin:0 auto;padding:24px 20px 48px;color:var(--t3);
+    font-size:11px;line-height:1.7;border-top:1px solid var(--brd);margin-top:24px}
+  footer a{color:var(--pri);text-decoration:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>AiJi 视觉资产预览</h1>
+  <p>14 张图：8 张 UI 插画/品牌资产（2026-07-16 批）+ 6 张 logo 候选（早批）。<br>
+  工具：美团 美境AI设计师（gpt-image-2），sessionId <code>1026591</code>。</p>
+  <p class="meta">文档见同目录 IMAGE_ASSETS.md（8 张新图的路径/prompt/定位作用）。本页为临时预览，未接入 src/。</p>
+</header>
+
+<section class="group">
+  <h2>A. UI 插画 · 接入 EmptyState / onboarding hero</h2>
+  <div class="grid">
+
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-ui-onboarding-hero.png" alt="onboarding hero"></div>
+      <div class="body">
+        <span class="tag">4:5 · onboarding</span>
+        <p class="name">aiji-ui-onboarding-hero</p>
+        <p class="role"><b>定位：</b>onboarding 首屏 hero 区，替代「记」字 logo 占位。表达「异构碎片 → AI 涌现分类」。</p>
+        <details><summary>prompt</summary><p class="prompt">AiJi「记」品牌主插画。概念：异构的记录碎片从画面四周向中央汇聚——一个想法气泡、一个项目节点小方块、一段音频波形线、一张照片缩略图、一个生活时刻小图标，形态各异、模态混合。中央是一颗靛蓝四芒 AI 灵感火花，碎片围绕火花自然聚成两三个无标签的群（不写类别名），表达「随手捕获→AI 涌现分类」。主色靛蓝 #4f46e5，底色近白 #f7f7fa，碎片点缀 teal #0d9488 / 琥珀 #d97706 / 红 #dc2626。扁平现代插画，圆润友好，柔和阴影，大量留白。no text, no letters, no words。竖屏 4:5。</p></details>
+      </div>
+    </div>
+
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-ui-home-empty.png" alt="home empty"></div>
+      <div class="body">
+        <span class="tag">1024² · home</span>
+        <p class="name">aiji-ui-home-empty</p>
+        <p class="role"><b>定位：</b>home 首次无条目 EmptyState 的 icon 槽，替代 Mic 图标圆。</p>
+        <details><summary>prompt</summary><p class="prompt">AiJi 空状态插画。概念：一颗靛蓝四芒灵感火花悬在中央，下方一支斜置钢笔笔尖轻点，笔尖处散开几粒微小光点，像「准备记一笔」的起点。整体留白充足、安静、邀请感。主色靛蓝 #4f46e5 单色 + 极淡 priS #eeedfd，底色近白 #f7f7fa。扁平现代极简插画，圆润线条，柔和。no text。1024x1024。</p></details>
+      </div>
+    </div>
+
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-ui-categories-empty.png" alt="categories empty"></div>
+      <div class="body">
+        <span class="tag">1024² · categories</span>
+        <p class="name">aiji-ui-categories-empty</p>
+        <p class="role"><b>定位：</b>categories 首次无类别 EmptyState，替代 HubIcon 方块。强化「类别涌现」。</p>
+        <details><summary>prompt</summary><p class="prompt">AiJi 空状态插画，主题「类别会涌现」。概念：几个异构小碎片散落画面，彼此间几条极淡虚线正自然连接、聚拢成两三个无标签的群，像分类在自动浮现。中央一颗靛蓝 AI 火花作连接核心。主色靛蓝 #4f46e5，碎片点缀 teal #0d9488 / 琥珀 #d97706，底色近白 #f7f7fa。no text。1024x1024。</p></details>
+      </div>
+    </div>
+
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-ui-search-initial.png" alt="search initial"></div>
+      <div class="body">
+        <span class="tag">1024² · search</span>
+        <p class="name">aiji-ui-search-initial</p>
+        <p class="role"><b>定位：</b>search 首次未搜索 EmptyState，置于 chip 列表上方。「先记下，再回找」。</p>
+        <details><summary>prompt</summary><p class="prompt">AiJi 空状态插画，主题「记一笔，再来找」。概念：一只简化的放大镜，镜片中心是一颗靛蓝灵感火花而非普通镜片，镜柄末端连接一支小钢笔——暗示「先记下，再回找」。主色靛蓝 #4f46e5，底色近白 #f7f7fa，极淡 priS #eeedfd。no text。1024x1024。</p></details>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="group">
+  <h2>B. 品牌资产 · icon / OG / splash / store-hero</h2>
+  <div class="grid">
+
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-brand-app-icon.png" alt="app icon maskable" style="border-radius:0"></div>
+      <div class="body">
+        <span class="tag">1024² · maskable</span>
+        <p class="name">aiji-brand-app-icon</p>
+        <p class="role"><b>定位：</b>PWA manifest maskable 图标（带安全区），替代 public/icon-512.png 混合版。</p>
+        <details><summary>prompt</summary><p class="prompt">AiJi app 图标，maskable 带安全区。概念：满版靛蓝渐变背景（#4f46e5 → 略深 #3b3acb），中央居中放抽象「记」标记——一支斜置钢笔笔尖 + 笔尖处一颗四芒 AI 火花，标记占画面中央 60% 安全区内。满版无圆角（系统裁切）。no text。1024x1024。</p></details>
+      </div>
+    </div>
+
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-brand-og-share.png" alt="og share"></div>
+      <div class="body">
+        <span class="tag">16:9 · OG</span>
+        <p class="name">aiji-brand-og-share</p>
+        <p class="role"><b>定位：</b>OG / 社交分享卡（link preview ~1200×630）。含字标 + tagline。</p>
+        <details><summary>prompt</summary><p class="prompt">AiJi 社交分享卡。左下到右上靛蓝渐变底，右侧散落几颗异构记录碎片 + 一颗四芒 AI 火花。左侧大面积留白渐变上居中排品牌字标「AiJi 记」（拉丁无衬线粗体 + Noto Sans SC 粗体，靛蓝 #4f46e5），字标下 tagline「随手记，AI 帮你理」。横屏 16:9。</p></details>
+      </div>
+    </div>
+
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-brand-splash.png" alt="splash"></div>
+      <div class="body">
+        <span class="tag">9:16 · splash</span>
+        <p class="name">aiji-brand-splash</p>
+        <p class="role"><b>定位：</b>PWA 启动屏背景。满版靛蓝渐变 + 白色火花 + 白色字标。</p>
+        <details><summary>prompt</summary><p class="prompt">AiJi 启动屏。满版靛蓝 #4f46e5 到深靛 #3b3acb 竖向渐变，画面正中偏上一颗白色四芒灵感火花（极简、发光），火花正下方居中排白色品牌字标「AiJi 记」（无衬线粗体）。竖屏 9:16。</p></details>
+      </div>
+    </div>
+
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-brand-store-hero.png" alt="store hero"></div>
+      <div class="body">
+        <span class="tag">9:16 · store</span>
+        <p class="name">aiji-brand-store-hero</p>
+        <p class="role"><b>定位：</b>应用商店宣传图竖屏 hero 帧。下半留白叠 UI 截图。含字标 + tagline。</p>
+        <details><summary>prompt</summary><p class="prompt">AiJi 应用商店宣传图，竖屏。上半部靛蓝 #4f46e5 实色区，居中一颗大号白色四芒 AI 火花 + 几粒异构碎片环绕；火花下方居中排白色品牌字标「AiJi 记」，再下一行较小白色 tagline「随手记，AI 帮你理」。下半部近白 #f7f7fa 区纯净留白。竖屏 9:16。</p></details>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<section class="group">
+  <h2>C. Logo 候选（早批 · 无 prompt 存档）</h2>
+  <div class="grid">
+
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-logo-a1-penspark.png" alt="a1 penspark"></div>
+      <div class="body"><span class="tag">logo</span><p class="name">a1-penspark</p><p class="role">笔尖 + 火花，主候选。</p></div>
+    </div>
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-logo-a2-ji-glyph.png" alt="a2 ji glyph"></div>
+      <div class="body"><span class="tag">logo</span><p class="name">a2-ji-glyph</p><p class="role">「记」字图形化方案。</p></div>
+    </div>
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-logo-a3-anywhere.png" alt="a3 anywhere"></div>
+      <div class="body"><span class="tag">logo</span><p class="name">a3-anywhere</p><p class="role">「随手记」概念变体。</p></div>
+    </div>
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-logo-b1-min-pen.png" alt="b1 min pen"></div>
+      <div class="body"><span class="tag">logo</span><p class="name">b1-min-pen</p><p class="role">极简笔形。</p></div>
+    </div>
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-logo-b2-dot-pen.png" alt="b2 dot pen"></div>
+      <div class="body"><span class="tag">logo</span><p class="name">b2-dot-pen</p><p class="role">点笔变体。</p></div>
+    </div>
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-logo-b3-ji-geo.png" alt="b3 ji geo"></div>
+      <div class="body"><span class="tag">logo</span><p class="name">b3-ji-geo</p><p class="role">「记」几何变体。</p></div>
+    </div>
+    <div class="card checker">
+      <div class="imgwrap"><img src="aiji-app-icon.png" alt="prior app icon"></div>
+      <div class="body"><span class="tag">icon · 早批</span><p class="name">aiji-app-icon</p><p class="role">早批 app 图标（非 maskable）。</p></div>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  🎨 本批图由 美境AI设计师 生成 | <a href="https://aidesign.meituan.com/creativeAssistant/1026591" target="_blank" rel="noopener">前往美境</a><br>
+  临时预览页，起自 <code>docs/design/generated/</code> 的 python 静态服务器。看完可删 asset-preview.html。
+</footer>
+
+</body>
+</html>
