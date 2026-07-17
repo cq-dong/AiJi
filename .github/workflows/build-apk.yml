@@ -1,8 +1,13 @@
 name: Build Android APK
 
-# tag v* 触发：构建 web → sync 进 android 工程 → assembleDebug → 发 GitHub Release。
-# 本机无安卓工具链，全部在 CI 装 JDK17 + Android SDK。
+# 两种触发：
+# - workflow_dispatch：手动跑，产出 APK artifact（私有自测，从 Actions run 页下载，不公开发版）。
+# - push tag v*：公开发版，发 GitHub Release。
+# 本机无安卓工具链，CI 装 JDK21 + Android SDK。
+# JDK 必须 21：android/app/capacitor.build.gradle 声明 sourceCompatibility/targetCompatibility
+# VERSION_21（Capacitor 8 要求），JDK 17 编译必挂。
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -26,7 +31,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -38,14 +43,23 @@ jobs:
         run: npm run build
 
       - name: Sync version into gradle
-        # tag 版号写进 versionName；versionCode 用 run_number 单调递增（debug 签名下足够）。
-        # 保持原生「系统设置里的版本」与 __APP_VERSION__（package.json）一致。
-        # 锚定 defaultConfig 块内的 versionCode/versionName 行，避免日后加 flavor 被误改。
+        # 版本单一真源 = package.json version。读出写进 versionName，保证
+        # 原生「系统设置里的版本」== __APP_VERSION__（vite define 烘焙自同一 package.json）。
+        # tag 触发时额外断言 tag==package.json，防漂移（tag v0.2.0 但忘 bump package.json
+        # → in-app 自报 0.1.0 vs APK 0.2.0，更新检测会误判自己过期）。
+        # versionCode 用 run_number 单调递增（debug 签名下足够区分版本）。
         run: |
-          TAG=${GITHUB_REF_NAME#v}
-          echo "version=$TAG"
+          VER=$(node -p "require('./package.json').version")
+          echo "package.json version=$VER"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG=${GITHUB_REF_NAME#v}
+            if [[ "$TAG" != "$VER" ]]; then
+              echo "::error::tag v$TAG != package.json $VER —— 先 bump package.json 再打 tag"
+              exit 1
+            fi
+          fi
           sed -i -E "s/^(\s*)versionCode .*/\1versionCode ${{ github.run_number }}/" android/app/build.gradle
-          sed -i -E "s/^(\s*)versionName \".*\"/\1versionName \"$TAG\"/" android/app/build.gradle
+          sed -i -E "s/^(\s*)versionName \".*\"/\1versionName \"$VER\"/" android/app/build.gradle
           grep -nE "versionCode|versionName" android/app/build.gradle
 
       - name: Sync Capacitor
@@ -56,13 +70,24 @@ jobs:
         run: ./gradlew assembleDebug
 
       - name: Rename APK
-        # 固定资产名 aiji.apk → 稳定直链 releases/latest/download/aiji.apk。
+        # 固定资产名 aiji.apk → 稳定直链 releases/latest/download/aiji.apk（tag 发版时）。
         run: |
           mkdir -p release
           cp android/app/build/outputs/apk/debug/app-debug.apk release/aiji.apk
           ls -la release/
 
+      - name: Upload APK artifact
+        # workflow_dispatch（私有自测）：上传为 artifact，从 Actions run 页下载。不发 Release。
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiji-apk
+          path: release/aiji.apk
+          retention-days: 14
+
       - name: Release
+        # tag 触发：发公开 GitHub Release。
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: release/aiji.apk
