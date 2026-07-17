@@ -11,4 +11,7 @@ export interface Account {
   plan: AccountPlan
   createdAt: string
   boundAt?: string
+  // 头像 data URL（base64 JPEG）。供个人中心展示 + AI 内置模型读取（Slice B）；
+  // data URL 形式存 localStorage（随 Account 一起持久化），避免额外存储依赖。
+  avatar?: string
 }

@@ -757,7 +757,7 @@ export default function Settings() {
 
   return (
     <div className="px-4 pb-4 pt-4">
-      <h1 className="text-[24px] font-bold text-ink">设置</h1>
+      <h1 className="text-[24px] font-bold text-ink">个人中心</h1>
 
       {/* 外观 */}
       <Card className="mt-4">
