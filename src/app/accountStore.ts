@@ -34,6 +34,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       di.auth
         .refresh()
         .then((s) => {
+          if (!get().account) return
           localSession.set(s)
           set({ session: s, sessionStale: false })
         })

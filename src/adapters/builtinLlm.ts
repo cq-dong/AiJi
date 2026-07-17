@@ -76,8 +76,8 @@ export const builtinLlm: LlmPort = {
     const categories = await di.storage.listCategories()
     const tags = await di.storage.listTags()
     const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags)
-    mockQuotaInternal.bumpLlm()
     const raw = await chat(messages)
+    mockQuotaInternal.bumpLlm()
     const parsed = parseJson(raw)
     const now = new Date().toISOString()
     const dedupTags = [...new Set(parsed.tags ?? [])]
@@ -129,9 +129,9 @@ export const builtinLlm: LlmPort = {
     if (valid.length === 0) throw new Error('条目无文本可聚合')
     const clampedLevel = Math.min(5, Math.max(1, detailLevel ?? 3))
     const messages = buildAggregatePrompt(valid, scope, clampedLevel)
+    const raw = await chat(messages)
     mockQuotaInternal.bumpLlm()
     mockQuotaInternal.bumpAgg()
-    const raw = await chat(messages)
     const parsed = parseAggregateJson(raw)
     // ⚠️ Aggregate 构造：逐行对照 openAiCompatLlm.aggregate 同段（scope/summary/highlights 字段）
     const now = new Date().toISOString()
@@ -152,16 +152,16 @@ export const builtinLlm: LlmPort = {
   async parseChatIntent(question, nowIso) {
     assertNetwork()
     const messages = buildIntentPrompt(question, toLocalIso(nowIso))
-    mockQuotaInternal.bumpLlm()
     const raw = await chat(messages)
+    mockQuotaInternal.bumpLlm()
     return parseIntentJson(raw)
   },
 
   async answerChat({ question, cites, conversation }) {
     assertNetwork()
     const messages = buildAnswerPrompt(question, cites, conversation)
-    mockQuotaInternal.bumpLlm()
     const raw = await chat(messages)
+    mockQuotaInternal.bumpLlm()
     const parsed = parseAnswerJson(raw)
     const validIds = new Set(cites.map((c) => c.id))
     const citedEntryIds = parsed.citedEntryIds.filter((cid) => validIds.has(cid))
