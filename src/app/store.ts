@@ -4,6 +4,7 @@ import { scopeRange } from '@/domain/dateRange'
 import { localRecall } from '@/ui/screens/chat/helpers'
 import { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedReminders, seedSettings, seedTags } from '@/data/seed'
 import { di } from './di'
+import { useAccountStore } from './accountStore'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：首屏 seed 兜底即时渲染，
 // hydrate() 异步从 Dexie 载入真实条目（含历史保存）替换；finishSave 同时落库 + 入队分类。
@@ -66,6 +67,7 @@ interface UiState {
   setLlmConfig: (url: string, model: string, key: string) => void
   setVlmConfig: (url: string, model: string, key: string) => void
   setSttConfig: (model: string, key: string) => void
+  setKeySource: (source: 'byok' | 'builtin') => void
   processEntry: (entryId: string, isFresh?: boolean) => Promise<void>
   recomputeAggregate: (scope: AggregateScopeType, range?: string, detailLevel?: number) => Promise<void>
   // Phase 9 Batch 2b · 提醒。processEntry 不自动建 Reminder（Q2：用户在 B6 TodoConfirm 确认）。
@@ -451,12 +453,23 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (key) void di.secrets.set('stt:key', key).catch((e) => console.error('[store] setSttKey failed', e))
     else void di.secrets.delete('stt:key').catch((e) => console.error('[store] deleteSttKey failed', e))
   },
+  setKeySource: (source) => {
+    const account = useAccountStore.getState().account
+    if (source === 'builtin' && (!account || account.type === 'guest')) return
+    const next = { ...get().settings, keySource: source }
+    set({ settings: next })
+    void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+  },
   processEntry: async (entryId, isFresh) => {
     try {
       // STT 终稿（保存后）：paraformer 重写音频/视频 transcript，比 WebSpeech live 预览准。
       // 无 stt:key → 跳过整步（用 WebSpeech 预览文本分类即可）；单 part 失败 → 回退预览文本，不阻断分类。
-      const sttKey = await di.secrets.get('stt:key')
-      if (sttKey) {
+      const settings = await di.storage.getSettings()
+      const session = useAccountStore.getState().session
+      const shouldStt = (settings.keySource ?? 'byok') === 'byok'
+        ? !!(await di.secrets.get('stt:key'))
+        : !!session
+      if (shouldStt) {
         const fresh = await di.storage.getEntry(entryId)
         if (fresh) {
           let changed = false
