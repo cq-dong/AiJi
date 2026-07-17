@@ -86,7 +86,9 @@ public class ApkInstallerPlugin extends Plugin {
 
                 bridge.execute(() -> {
                     try {
-                        startActivity(intent);
+                        // Capacitor 8 的 Plugin 基类不暴露 startActivity(Intent)；
+                        // 经 getContext() 拿 Context 再调（Activity Context，FLAG_ACTIVITY_NEW_TASK 已设）。
+                        getContext().startActivity(intent);
                         call.resolve(new JSObject());
                     } catch (Exception e) {
                         call.reject("launch installer failed: " + e.getMessage());
