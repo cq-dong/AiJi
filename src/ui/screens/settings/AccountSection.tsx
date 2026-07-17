@@ -1,8 +1,11 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Camera, ChevronRight, User, X } from 'lucide-react'
-import { Button, Card } from '@/ui/components'
+import { Camera, Check, ChevronRight, User, X } from 'lucide-react'
+import { Button, Card, Sheet, cn } from '@/ui/components'
 import { useAccountStore } from '@/app/accountStore'
+import { useUiStore } from '@/app/store'
+import { useQuotaStore } from '@/app/quotaStore'
+import { QuotaSheet } from './QuotaSheet'
 
 // 头像压缩：FileReader 读为 data URL → Image → canvas 缩放至 256×256（contain）
 // → toDataURL('image/jpeg', 0.85)。任一步失败回落原始 data URL（不阻断选图）。
@@ -42,41 +45,51 @@ async function compressAvatar(file: File): Promise<string> {
   }
 }
 
-function NetworkSheet({ onClose }: { onClose: () => void }) {
+// KeySource 切换 sheet：网络账号可选「内置 Key（免费额度）」或「自己的 Key」。
+// setKeySource 内部有 guest 守卫（guest 选 builtin 时 no-op），但本 sheet 仅在网络账号下能打开，
+// 故此处直调即可。Sheet 原语无 open prop，调用方条件渲染 → 内部 `if (!open) return null`。
+function KeySourceSheet({
+  open,
+  onClose,
+  current,
+}: {
+  open: boolean
+  onClose: () => void
+  current: 'byok' | 'builtin'
+}) {
+  const setKeySource = useUiStore((s) => s.setKeySource)
+  if (!open) return null
+  const options: { value: 'byok' | 'builtin'; label: string }[] = [
+    { value: 'builtin', label: '内置 Key（免费额度）' },
+    { value: 'byok', label: '自己的 Key' },
+  ]
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">切换网络账号</p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="关闭"
-            className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-          >
-            <X size={18} strokeWidth={2} />
-          </button>
-        </div>
-        <div className="mt-3 h-px bg-brd" />
-        <p className="mt-3 text-[13px] leading-relaxed text-t2">
-          网络账号功能暂未开通，敬请期待
-        </p>
-        <Button
-          variant="primary"
-          size="sm"
-          className="mt-4 h-[38px] w-full rounded-btn"
-          onClick={onClose}
-        >
-          知道了
-        </Button>
+    <Sheet title="Key 来源" onClose={onClose}>
+      <div className="space-y-2 py-2">
+        {options.map((o) => {
+          const active = o.value === current
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => {
+                setKeySource(o.value)
+                onClose()
+              }}
+              className={cn(
+                'flex w-full items-center justify-between rounded-btn border px-4 py-3 text-left text-[13px] transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                active
+                  ? 'border-pri bg-priS text-pri'
+                  : 'border-brd bg-card text-ink',
+              )}
+            >
+              <span>{o.label}</span>
+              {active && <Check size={16} strokeWidth={2} className="text-pri" />}
+            </button>
+          )
+        })}
       </div>
-    </div>
+    </Sheet>
   )
 }
 
@@ -146,7 +159,11 @@ function NicknameSheet({
 export function AccountSection() {
   const navigate = useNavigate()
   const account = useAccountStore((s) => s.account)
-  const [sheetOpen, setSheetOpen] = useState(false)
+  const sessionStale = useAccountStore((s) => s.sessionStale)
+  const settings = useUiStore((s) => s.settings)
+  const quota = useQuotaStore((s) => s.quota)
+  const [keySourceOpen, setKeySourceOpen] = useState(false)
+  const [quotaOpen, setQuotaOpen] = useState(false)
   const [nickOpen, setNickOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -156,6 +173,13 @@ export function AccountSection() {
   const planLabel =
     account.plan === 'guest' ? '游客' : account.plan === 'free' ? '免费' : '付费'
   const initial = account.nickname.trim().charAt(0) || '我'
+
+  // keySource 未定义（旧数据）按 byok 处理。游客下 builtin 由 setKeySource 守卫拦截，UI 也禁用。
+  const keySource: 'byok' | 'builtin' = settings.keySource === 'builtin' ? 'builtin' : 'byok'
+  const isGuest = account.type === 'guest'
+  const keySourceLabel =
+    keySource === 'builtin' ? '内置 Key（免费额度）' : '自己的 Key'
+  const showQuotaRow = keySource === 'builtin'
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -232,15 +256,55 @@ export function AccountSection() {
 
       <div className="my-3 h-px bg-brd" />
 
-      {/* 切换网络账号：ChevronRow 风格，与 settings 其他行一致。 */}
+      {/* keySource 行：显当前来源，点开 KeySourceSheet 二选一。游客 disabled + 副标题。 */}
       <button
         type="button"
-        onClick={() => setSheetOpen(true)}
-        className="flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        onClick={() => !isGuest && setKeySourceOpen(true)}
+        disabled={isGuest}
+        className={cn(
+          'flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+          isGuest
+            ? 'cursor-not-allowed opacity-50'
+            : 'cursor-pointer active:scale-[0.97]',
+        )}
       >
-        <span className="text-[13px] text-ink">切换网络账号</span>
-        <ChevronRight size={18} className="text-t2" />
+        <span className="flex flex-col">
+          <span className="text-[13px] text-ink">{keySourceLabel}</span>
+          {isGuest && (
+            <span className="mt-0.5 text-[11px] text-t3">需先升级为网络账号</span>
+          )}
+        </span>
+        {!isGuest && <ChevronRight size={18} className="text-t2" />}
       </button>
+
+      {/* 额度行：仅 keySource=builtin 显示。sessionStale 时灰色 + 提示重新登录。 */}
+      {showQuotaRow && (
+        <button
+          type="button"
+          onClick={() => setQuotaOpen(true)}
+          className={cn(
+            'mt-1 flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            sessionStale && 'opacity-50',
+          )}
+        >
+          <span className="text-[13px] text-ink">
+            {quota === null ? (
+              '加载中…'
+            ) : (
+              <>
+                今日 LLM {quota.llmUsed}/{quota.llmLimit < 0 ? '∞' : quota.llmLimit} 次，
+                STT {quota.sttUsedSec}/{quota.sttLimitSec < 0 ? '∞' : quota.sttLimitSec} 秒
+                {sessionStale && (
+                  <span className="text-catPending">
+                    {' '}· 登录状态可能已过期，重新登录
+                  </span>
+                )}
+              </>
+            )}
+          </span>
+          <ChevronRight size={18} className="text-t2" />
+        </button>
+      )}
 
       {/* 退出登录：ghost 文字按钮，居中，更轻。 */}
       <button
@@ -254,7 +318,12 @@ export function AccountSection() {
         退出登录
       </button>
 
-      {sheetOpen && <NetworkSheet onClose={() => setSheetOpen(false)} />}
+      <KeySourceSheet
+        open={keySourceOpen}
+        onClose={() => setKeySourceOpen(false)}
+        current={keySource}
+      />
+      <QuotaSheet open={quotaOpen} onClose={() => setQuotaOpen(false)} />
       {nickOpen && (
         <NicknameSheet
           initial={account.nickname}
