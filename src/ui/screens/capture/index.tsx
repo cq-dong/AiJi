@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Capacitor } from '@capacitor/core'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
+import { enrichLocation } from '@/adapters/geocoding'
 import type { EntryPart } from '@/domain/types'
 import {
   CameraView,
@@ -82,6 +84,24 @@ export default function Capture() {
     primeLocation()
   }, [hydrated, primeLocation])
 
+  // D5: async reverse-geocode the captured coordinates into a human-readable
+  // address. Fires when location arrives (from primeLocation) and has no address
+  // yet. Non-blocking — if the user saves before the address comes back, the
+  // entry persists with lat/lng only. Guarded against re-enrichment (address set
+  // → skip) to avoid infinite loops.
+  useEffect(() => {
+    if (!location) return
+    if (location.address) return
+    let cancelled = false
+    void enrichLocation(location).then((enriched) => {
+      if (cancelled || !enriched.address) return
+      useUiStore.setState((s) => ({
+        capture: { ...s.capture, location: enriched },
+      }))
+    })
+    return () => { cancelled = true }
+  }, [location])
+
   // Saving: persist + return home. (B3: 去掉原 1200ms 人工延迟——延迟期间条目只在 Zustand 内存，
   // 刷新/崩溃丢文本 part + 已 saveMedia 的 blob 成孤儿。finishSave (D7) 已 await saveEntry 落库；
   // saving 态在 await 期间自然驱动 SaveBar spinner，是真实落库耗时而非假延迟。)
@@ -147,12 +167,23 @@ export default function Capture() {
   }
   const submitText = () => {
     const t = textDraft.trim()
-    if (t) addPart({ type: 'text', content: t })
+    if (t) addPart({ type: 'text', content: t, mediaType: 'text' })
     closeTextSheet()
   }
 
-  const handleVoice = () => {
-    if (micDenied) allowMic()
+  // D3: On Capacitor native (Android WebView), navigator.permissions.query is
+  // unreliable — it may return 'denied'/'prompt' even when the system permission
+  // is granted. Probe with an actual getUserMedia({audio:true}) call (via
+  // requestMicPermission) to avoid false-negative denial. If the probe succeeds,
+  // proceed to startRecording; if it fails, the NoMicPanel stays.
+  const handleVoice = async () => {
+    if (micDenied) {
+      allowMic()
+      if (Capacitor.isNativePlatform()) {
+        const ok = await di.capture.requestMicPermission()
+        if (!ok) return // truly denied — NoMicPanel re-shows via micDenied
+      }
+    }
     void startRecording()
   }
   const handleStopVoice = () => { void stopRecording() }
@@ -163,7 +194,7 @@ export default function Capture() {
     const r = await di.capture.pickMedia()
     if (!r) return
     addMediaPart(
-      { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)), mime: r.mime },
+      { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)), mime: r.mime, mediaType: r.kind === 'image' ? 'image' : 'video' },
       r.blob,
     )
   }
@@ -220,7 +251,18 @@ export default function Capture() {
           micDenied && !recording ? (
             <NoMicPanel
               onUseText={() => { allowMic(); setTextOpen(true) }}
-              onRetry={() => { allowMic(); void startRecording() }}
+              onRetry={() => {
+                allowMic()
+                // D3: native platform — probe with getUserMedia before retrying
+                // startRecording, to avoid false-negative from navigator.permissions.
+                if (Capacitor.isNativePlatform()) {
+                  void di.capture.requestMicPermission().then((ok) => {
+                    if (ok) void startRecording()
+                  })
+                } else {
+                  void startRecording()
+                }
+              }}
             />
           ) : showEmpty ? (
             <EmptyCompose />

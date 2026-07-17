@@ -5,6 +5,7 @@ import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
 import { exportZip } from '@/adapters/zipExport'
+import { importSampleData } from '@/adapters/dexieStorage'
 import { Toggle } from './Toggle'
 import { AccountSection } from './AccountSection'
 import type { UpdateInfo } from '@/ports'
@@ -887,6 +888,26 @@ export default function Settings() {
   const [editingStt, setEditingStt] = useState(false)
   const [editingVlm, setEditingVlm] = useState(false)
   const [editingAbout, setEditingAbout] = useState(false)
+  // D9: 导入示例数据状态。导入后 rehydrate 刷新 store；错误显红字提示。
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState<string | null>(null)
+  const [importOk, setImportOk] = useState(false)
+
+  async function handleImportSample() {
+    setImporting(true)
+    setImportMsg(null)
+    try {
+      await importSampleData()
+      await useUiStore.getState().rehydrate()
+      setImportOk(true)
+      setImportMsg('已导入示例数据')
+    } catch (e) {
+      setImportOk(false)
+      setImportMsg(e instanceof Error ? e.message : '导入失败')
+    } finally {
+      setImporting(false)
+    }
+  }
 
   return (
     <div className="px-4 pb-4 pt-4">
@@ -1002,6 +1023,26 @@ export default function Settings() {
           >
             分享
           </Button>
+        </div>
+
+        {/* D9: 示例数据导入——空库时可主动导入 12 条原型记录了解 App。 */}
+        <div className="mt-4 border-t border-brd pt-3">
+          <p className="text-[11px] text-t3">示例数据</p>
+          <p className="mt-0.5 text-[11px] text-t3">导入 12 条原型记录了解 App 功能</p>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-2 h-[38px] w-full rounded-btn"
+            disabled={importing}
+            onClick={() => void handleImportSample()}
+          >
+            {importing ? '导入中…' : '导入示例数据'}
+          </Button>
+          {importMsg && (
+            <p className={cn('mt-2 text-[11px]', importOk ? 'text-catProject' : 'text-catFail')}>
+              {importOk ? '✓ ' : '✗ '}{importMsg}
+            </p>
+          )}
         </div>
       </Card>
 

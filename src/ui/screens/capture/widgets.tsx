@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Capacitor } from '@capacitor/core'
 import {
   Bookmark,
   Camera,
@@ -134,7 +135,7 @@ export function CaptureHeader({
       {location && (
         <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] font-medium text-t2">
           <MapPin size={13} strokeWidth={2.2} className="text-pri" />
-          <span className="max-w-[120px] truncate">{location.label ?? `${location.lat.toFixed(3)}, ${location.lng.toFixed(3)}`}</span>
+          <span className="max-w-[120px] truncate">{location.address ?? location.label ?? `${location.lat.toFixed(3)}, ${location.lng.toFixed(3)}`}</span>
         </span>
       )}
     </div>
@@ -517,7 +518,11 @@ export function InterimBubble({ liveTranscript }: { liveTranscript: string }) {
 }
 
 // ── No-mic denial panel ──
+// D3: On Capacitor native, navigator.permissions.query is unreliable — the panel
+// may show even when the system permission is granted. The retry button probes
+// with an actual getUserMedia call (via requestMicPermission) to re-detect.
 export function NoMicPanel({ onUseText, onRetry }: { onUseText: () => void; onRetry: () => void }) {
+  const isNative = Capacitor.isNativePlatform()
   return (
     <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
       <div className="flex size-20 items-center justify-center rounded-full border border-brd bg-card">
@@ -526,7 +531,9 @@ export function NoMicPanel({ onUseText, onRetry }: { onUseText: () => void; onRe
       <div>
         <p className="text-[16px] font-bold text-ink">麦克风未授权</p>
         <p className="mt-2 max-w-[280px] text-[12px] leading-relaxed text-t2">
-          未获得麦克风权限 · 可在系统设置中开启，或改用文本记录
+          {isNative
+            ? '若已在系统设置中授权麦克风，点击「再试一次」重新检测。或改用文本记录。'
+            : '未获得麦克风权限 · 可在系统设置中开启，或改用文本记录'}
         </p>
       </div>
       <div className="flex w-full max-w-[280px] gap-3">
@@ -603,7 +610,11 @@ export function TextPartEditor({
 
 // ── Camera capture overlay. Owns startCamera/stopCamera lifecycle via effect.
 // Wave 3 #1: mode (photo/video) is internal state + segmented toggle at top.
-// 'photo' captures a still on shutter; 'video' toggles record on shutter. ──
+// 'photo' captures a still on shutter; 'video' toggles record on shutter.
+// D8: video recording needs CAMERA + RECORD_AUDIO. If startCamera({video,audio})
+// fails, we probe with {video-only} to distinguish camera-denied from mic-denied.
+// When mic is denied for video, camera still works for photos — we show a banner
+// and let the user switch to photo mode or record silent video. ──
 export function CameraView({
   onPart,
   onClose,
@@ -616,6 +627,9 @@ export function CameraView({
   const [facing, setFacing] = useState<'user' | 'environment'>('environment')
   const [recording, setRecording] = useState(false)
   const [denied, setDenied] = useState(false)
+  // D8: camera is granted but mic is not — video mode can preview (video-only
+  // stream) but recording will be silent. User should switch to photo or grant mic.
+  const [micDeniedForVideo, setMicDeniedForVideo] = useState(false)
   const [busy, setBusy] = useState(false)
 
   // Start camera on mount / facing switch / mode switch; release on unmount +
@@ -623,16 +637,43 @@ export function CameraView({
   useEffect(() => {
     let active = true
     void (async () => {
+      const withAudio = mode === 'video'
       const ok = await di.capture.startCamera({
         preview: videoRef.current ?? undefined,
         facingMode: facing,
-        withAudio: mode === 'video',
+        withAudio,
       })
       if (!active) {
         void di.capture.stopCamera()
         return
       }
-      if (!ok) setDenied(true)
+      if (ok) {
+        setDenied(false)
+        setMicDeniedForVideo(false)
+        return
+      }
+      // D8: startCamera with audio failed. If we were requesting audio (video
+      // mode), probe with video-only to check if the camera itself is granted.
+      if (withAudio) {
+        const probeOk = await di.capture.startCamera({
+          preview: videoRef.current ?? undefined,
+          facingMode: facing,
+          withAudio: false,
+        })
+        if (!active) {
+          void di.capture.stopCamera()
+          return
+        }
+        if (probeOk) {
+          // Camera works, mic doesn't — keep stream for photo mode / silent video.
+          setDenied(false)
+          setMicDeniedForVideo(true)
+          return
+        }
+      }
+      // Camera itself is denied (or probe also failed).
+      setDenied(true)
+      setMicDeniedForVideo(false)
     })()
     const onHide = () => { void di.capture.stopCamera() }
     window.addEventListener('pagehide', onHide)
@@ -648,7 +689,8 @@ export function CameraView({
     try {
       if (mode === 'photo') {
         const r = await di.capture.capturePhoto()
-        if (r) onPart({ type: 'video', ref: r.ref, durationSec: 0, mime: r.mime }, r.blob)
+        // D7: mark mediaType='image' so LLM prompt can chunk "以下图片内容：".
+        if (r) onPart({ type: 'video', ref: r.ref, durationSec: 0, mime: r.mime, mediaType: 'image' }, r.blob)
         void di.capture.stopCamera()
         onClose()
       } else {
@@ -658,7 +700,8 @@ export function CameraView({
         } else {
           const r = await di.capture.stopVideo()
           setRecording(false)
-          if (r) onPart({ type: 'video', ref: r.ref, durationSec: Math.max(1, Math.round(r.durationSec)), mime: r.mime }, r.blob)
+          // D7: mark mediaType='video' so LLM prompt can chunk "以下视频内容：".
+          if (r) onPart({ type: 'video', ref: r.ref, durationSec: Math.max(1, Math.round(r.durationSec)), mime: r.mime, mediaType: 'video' }, r.blob)
           void di.capture.stopCamera()
           onClose()
         }
@@ -724,6 +767,13 @@ export function CameraView({
           <Camera size={18} strokeWidth={2.2} />
         </button>
       </div>
+
+      {/* D8: mic denied for video — show banner so user knows recording will be silent */}
+      {micDeniedForVideo && mode === 'video' && !denied && (
+        <div className="shrink-0 bg-amber-500/90 px-4 py-2 text-center text-[12px] font-medium text-white">
+          录像需要麦克风权限，视频将无声。可切换到拍照，或在系统设置中开启麦克风。
+        </div>
+      )}
 
       <div className="relative flex-1 overflow-hidden">
         {denied ? (

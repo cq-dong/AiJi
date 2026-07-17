@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import { Button } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { importSampleData } from '@/adapters/dexieStorage'
 
 const FEATURES = ['多模态随手记', 'AI 自动涌现分类', '本地优先 + BYOK']
 
@@ -11,6 +12,9 @@ export default function Onboarding() {
   const [apiKey, setApiKey] = useState('')
   const [permGranted, setPermGranted] = useState(false)
   const [permDenied, setPermDenied] = useState(false)
+  // D9: 首启引导是否导入示例数据。导入后 rehydrate 让首页直接加载。
+  const [sampleImported, setSampleImported] = useState(false)
+  const [importing, setImporting] = useState(false)
 
   // 请求麦克风+摄像头授权。只需拿到授权标记，不持有 stream：成功后立即释放 tracks。
   const requestPermission = async () => {
@@ -30,7 +34,21 @@ export default function Onboarding() {
     }
   }
 
-  const onStart = () => {
+  // D9: 导入示例数据（12 条原型记录）。写入 Dexie 后标记已导入，onStart 时 rehydrate。
+  const handleImportSample = async () => {
+    if (sampleImported || importing) return
+    setImporting(true)
+    try {
+      await importSampleData()
+      setSampleImported(true)
+    } catch (e) {
+      console.error('[onboarding] importSampleData failed', e)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const onStart = async () => {
     // A2: 标记已 onboarding —— 之后再开不再重定向到这里（router OnboardingGate 据此放行）。
     useUiStore.getState().setSettings({ onboarded: true })
     const key = apiKey.trim()
@@ -40,6 +58,10 @@ export default function Onboarding() {
         'deepseek-v4-flash',
         key,
       )
+    }
+    // D9: 若导入了示例数据，rehydrate 让首页加载刚写入的条目。
+    if (sampleImported) {
+      await useUiStore.getState().rehydrate()
     }
     navigate('/')
   }
@@ -100,9 +122,25 @@ export default function Onboarding() {
         </Button>
       </div>
 
+      {/* D9: 示例数据导入（可选）——首启空库，用户可在此导入 12 条原型记录了解 App。 */}
+      <div className="mt-4 flex items-center justify-between rounded-card border border-brd bg-card p-3">
+        <div>
+          <p className="text-[13px] font-medium text-ink">导入示例数据</p>
+          <p className="mt-0.5 text-[11px] text-t3">12 条原型记录帮你快速了解 App</p>
+        </div>
+        <Button
+          size="sm"
+          variant={sampleImported ? 'secondary' : 'primary'}
+          disabled={importing}
+          onClick={() => void handleImportSample()}
+        >
+          {importing ? '导入中…' : sampleImported ? '已导入' : '导入'}
+        </Button>
+      </div>
+
       {/* CTA */}
       <div className="mt-auto pt-6">
-        <Button variant="primary" size="lg" className="w-full" onClick={onStart}>
+        <Button variant="primary" size="lg" className="w-full" onClick={() => void onStart()}>
           开始记
         </Button>
       </div>

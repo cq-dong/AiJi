@@ -34,7 +34,12 @@ export function MainLayout() {
     <div className="aji-frame flex flex-col bg-page">
       <Statusbar />
       <TopBar />
-      <main className="flex-1 overflow-y-auto pb-[100px]">
+      {/* D1: 内容区底部留 NavBottom(79) + safe-area-inset-bottom 的空间，
+          避免记录多时底部功能栏被系统导航栏遮挡。PWA 环境 inset=0。 */}
+      <main
+        className="flex-1 overflow-y-auto"
+        style={{ paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 0px))' }}
+      >
         <Outlet />
       </main>
       <Fab />
@@ -49,7 +54,11 @@ export function BareLayout() {
   return (
     <div className="aji-frame flex flex-col bg-page">
       <Statusbar />
-      <main className="flex-1 overflow-y-auto">
+      {/* D1: 裸层内容区底部留安全区空间，避免采集页底部操作 / 详情页底部按钮被系统导航栏遮挡。 */}
+      <main
+        className="flex-1 overflow-y-auto"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+      >
         <Outlet />
       </main>
     </div>

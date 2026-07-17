@@ -2,11 +2,11 @@ import { create } from 'zustand'
 import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
 import { scopeRange } from '@/domain/dateRange'
 import { localRecall } from '@/ui/screens/chat/helpers'
-import { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedReminders, seedSettings, seedTags } from '@/data/seed'
+import { seedSettings } from '@/data/seed'
 import { di } from './di'
 
-// 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：首屏 seed 兜底即时渲染，
-// hydrate() 异步从 Dexie 载入真实条目（含历史保存）替换；finishSave 同时落库 + 入队分类。
+// 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：D9 后首屏空状态（不再
+// seed 兜底），hydrate() 异步从 Dexie 载入真实条目替换；finishSave 同时落库 + 入队分类。
 interface CaptureDraft {
   parts: EntryPart[]
   recording: boolean
@@ -24,14 +24,14 @@ interface CaptureDraft {
 interface UiState {
   capture: CaptureDraft
   online: boolean
-  entries: Entry[] // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
-  aiByEntry: Record<string, EntryAi> // 首屏 seed 兜底，hydrate 从 Dexie 载入；processEntry 成功后补
-  categories: Category[] // 首屏 seed 兜底，hydrate 从 Dexie 载入（含涌现类别）
-  tags: Tag[] // 首屏 seed 兜底，hydrate 从 Dexie 载入（含涌现标签）
+  entries: Entry[] // D9: 首屏空状态（不再 seed 兜底），hydrate 后为 Dexie 真实数据
+  aiByEntry: Record<string, EntryAi> // D9: 首屏空，hydrate 从 Dexie 载入；processEntry 成功后补
+  categories: Category[] // D9: 首屏空，hydrate 从 Dexie 载入（含涌现类别）
+  tags: Tag[] // D9: 首屏空，hydrate 从 Dexie 载入（含涌现标签）
   hydrated: boolean // 是否已从 Dexie 载入
-  settings: Settings // 首屏 seed 兜底，hydrate 后为 Dexie 真实数据
-  aggregates: Aggregate[] // 首屏 seed 兜底，hydrate 从 Dexie 载入；recomputeAggregate 后更新
-  reminders: Reminder[] // 首屏 seed 兜底，hydrate 从 Dexie 载入；scheduleReminders 扫 pending 到点 fire
+  settings: Settings // 首屏 seedSettings 默认形状（非样例数据），hydrate 后为 Dexie 真实数据
+  aggregates: Aggregate[] // D9: 首屏空，hydrate 从 Dexie 载入；recomputeAggregate 后更新
+  reminders: Reminder[] // D9: 首屏空，hydrate 从 Dexie 载入；scheduleReminders 扫 pending 到点 fire
   drafts: Draft[] // Wave 4: multi-row capture drafts；hydrate 从 Dexie 载入；草稿视图消费
   trashed: Entry[] // Wave 4: 软删条目（deletedAt set）；hydrate 从 Dexie 载入 + purge >30d；回收站视图消费
   recalculating: Record<string, boolean> // key=`${scope}:${range}`；recomputeAggregate in-flight 标记，UI 据此显 spinner（与 stale 分离，失败不永转）
@@ -40,6 +40,8 @@ interface UiState {
   // processEntry 置；detail reprocess 走 isFresh=false 不弹。confirmReminder/忽略 → dismissPendingReminder。
   pendingReminder: { entryId: string; dueAt: string; label: string } | null
   hydrate: () => Promise<void>
+  // D9: 导入示例数据后重读 Dexie。重置 hydrated 跑 hydrate 全量载入（onboarding/settings 导入后调）。
+  rehydrate: () => Promise<void>
   startRecording: () => Promise<void>
   stopRecording: () => Promise<void>
   beginSave: () => void
@@ -204,14 +206,15 @@ function chatHistory(conv: Conversation | null, limit: number): { role: 'user' |
 export const useUiStore = create<UiState>((set, get) => ({
   capture: emptyDraft,
   online: true,
-  entries: seedEntries,
-  aiByEntry: Object.fromEntries(seedEntryAi.map((a) => [a.entryId, a])),
-  categories: seedCategories,
-  tags: seedTags,
+  // D9: 首屏空状态——不再 seed 兜底。hydrate() 从 Dexie 载入真实数据（dev 自动 seed / 用户导入）。
+  entries: [],
+  aiByEntry: {},
+  categories: [],
+  tags: [],
   hydrated: false,
   settings: seedSettings,
-  aggregates: seedAggregates,
-  reminders: seedReminders,
+  aggregates: [],
+  reminders: [],
   drafts: [],
   trashed: [],
   recalculating: {},
@@ -251,10 +254,15 @@ export const useUiStore = create<UiState>((set, get) => ({
         if (conv) set({ conversation: conv })
       } catch (e) { console.error('[store] loadConversation failed', e) }
     } catch (e) {
-      // 载入失败：保持 seed 兜底，标记已尝试避免反复重试（存储失败不阻断 UI）
+      // D9: 载入失败保持空状态（不再 seed 兜底），标记已尝试避免反复重试（存储失败不阻断 UI）
       console.error('[store] hydrate failed', e)
       set({ hydrated: true })
     }
+  },
+  rehydrate: async () => {
+    // D9: importSampleData 后重读 Dexie。重置 hydrated 让 hydrate 跳过守卫全量重载。
+    set({ hydrated: false })
+    await get().hydrate()
   },
   startRecording: async () => {
     set((s) => ({ capture: { ...s.capture, finalized: '', interim: '' } }))

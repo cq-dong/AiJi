@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import type { EntryPart } from '@/domain/types'
+import { MapPin } from 'lucide-react'
+import type { EntryPart, GeoPoint } from '@/domain/types'
 import { Card } from '@/ui/components'
 import { di } from '@/app/di'
 import { formatDateTime, formatDuration, partTypeLabel } from './helpers'
@@ -207,13 +208,78 @@ export function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durati
   )
 }
 
-export function PartView({ part, iso }: { part: EntryPart; iso: string }) {
+// D7: media type label for display. Prefers explicit `mediaType` field (set at
+// capture time); falls back to inferring from `part.type` + `durationSec` (so
+// pre-D7 parts without mediaType still display correctly).
+function mediaTypeLabel(part: EntryPart): string {
+  if (part.mediaType) {
+    switch (part.mediaType) {
+      case 'text': return '文本'
+      case 'image': return '图片'
+      case 'video': return '视频'
+      case 'audio': return '语音'
+    }
+  }
+  if (part.type === 'text') return '文本'
+  if (part.type === 'audio') return '语音'
+  // VideoPart with durationSec=0 is a photo; >0 is a video.
+  if (part.type === 'video') return part.durationSec === 0 ? '图片' : '视频'
+  return ''
+}
+
+// D7: media type badge — small colored chip distinguishing text/image/video/audio.
+// Helps the user (and visually signals to the LLM prompt builder) the modality.
+function MediaTypeBadge({ part }: { part: EntryPart }) {
+  const label = mediaTypeLabel(part)
+  // Color by modality: text=neutral, image=pri, video=teal, audio=amber.
+  const tone =
+    part.mediaType === 'image' || (part.mediaType === undefined && part.type === 'video' && part.durationSec === 0)
+      ? 'bg-priS text-pri'
+      : part.mediaType === 'video' || (part.mediaType === undefined && part.type === 'video' && part.durationSec > 0)
+        ? 'bg-teal-50 text-teal-600'
+        : part.mediaType === 'audio' || part.type === 'audio'
+          ? 'bg-amber-50 text-amber-600'
+          : 'bg-page text-t2'
+  return (
+    <span className={`shrink-0 rounded-chip px-1.5 py-0.5 text-[10px] font-medium ${tone}`}>
+      {label}
+    </span>
+  )
+}
+
+// D5: Location badge — shows a pin icon + address (or lat/lng fallback).
+// Exported so detail/index.tsx can import and display the entry's location
+// alongside the parts list. Displays `address` (reverse-geocoded) → `label`
+// (LLM/user-curated) → formatted lat/lng as last resort.
+export function LocationBadge({ location }: { location?: GeoPoint }) {
+  if (!location) {
+    return (
+      <p className="flex items-center gap-1 text-[11px] text-t3">
+        <MapPin size={12} strokeWidth={2} />
+        地点：未记录（设置中可开启）
+      </p>
+    )
+  }
+  const display = location.address ?? location.label ?? `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`
+  return (
+    <p className="flex items-center gap-1 text-[11px] text-t2">
+      <MapPin size={12} strokeWidth={2} className="shrink-0 text-pri" />
+      <span className="truncate">{display}</span>
+    </p>
+  )
+}
+
+export function PartView({ part, iso, location }: { part: EntryPart; iso: string; location?: GeoPoint }) {
   const helper = `${formatDateTime(iso)} · ${partTypeLabel(part)}${
     part.type !== 'text' ? ' ' + formatDuration(part.durationSec) : ''
   }`
   return (
     <Card className="flex flex-col gap-2">
-      <p className="text-[11px] text-t3">{helper}</p>
+      <div className="flex items-center gap-2">
+        <p className="text-[11px] text-t3">{helper}</p>
+        {/* D7: media type badge — distinguishes photo/video/audio/text */}
+        <MediaTypeBadge part={part} />
+      </div>
       {part.type === 'text' && (
         <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{part.content}</p>
       )}
@@ -233,6 +299,8 @@ export function PartView({ part, iso }: { part: EntryPart; iso: string }) {
           )}
         </>
       )}
+      {/* D5: show location on the first part's card (or wherever passed) */}
+      {location && <LocationBadge location={location} />}
     </Card>
   )
 }

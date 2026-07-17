@@ -11,31 +11,43 @@ import {
   seedTags,
 } from '@/data/seed'
 
-// PWA StoragePort 适配：entries/settings/entryAi/categories/tags/aggregates 走 Dexie（首屏空库时从
-// seed 灌入；settings 落库到单行 key=1，seed 兜底首启）。aggregates 真读 Dexie，空库时 seed 兜底。
-// entries 落库由 store.finishSave；entryAi/categories/tags 落库由处理管线（LlmPort 分类 + 涌现）；
-// aggregates 落库由 store.recomputeAggregate（LlmPort 聚合 → saveAggregate）。
+// D9: 生产环境不再自动灌 seed 数据——首装看到 12 条测试记录像数据泄露。
+// DEV 环境保留自动 seed 方便开发（import.meta.env.DEV 在 prod build 为 false，整块被
+// tree-shake）；生产环境空库，用户可在 onboarding/settings 主动调 importSampleData() 导入。
+// seedSettings 仍作 getSettings 默认形状兜底（默认配置，非样例数据）。
 let seeded = false
 async function ensureSeeded(): Promise<void> {
   if (seeded) return
-  const entriesEmpty = (await db.entries.count()) === 0
-  if (entriesEmpty) {
-    // 首启：灌完整原型数据集（条目 + 其 AI + 类别/标签库）。
-    await db.entries.bulkPut(seedEntries)
-    await db.categories.bulkPut(seedCategories)
-    await db.tags.bulkPut(seedTags)
-    await db.entryAi.bulkPut(seedEntryAi)
-  } else {
-    // 存量库（用户在过往阶段存过真实条目）：e1-e12 在 Phase 2 首启已灌入 Dexie，
-    // 故 seedEntryAi(ai1-ai12, entryId=e1-e12) 与之匹配不孤儿——补灌 categories/tags/entryAi。
-    if ((await db.categories.count()) === 0) await db.categories.bulkPut(seedCategories)
-    if ((await db.tags.count()) === 0) await db.tags.bulkPut(seedTags)
-    if ((await db.entryAi.count()) === 0) await db.entryAi.bulkPut(seedEntryAi)
+  if (import.meta.env.DEV) {
+    // DEV only：空库时灌完整原型数据集，方便开发调试（生产 build 此块被 tree-shake 掉）。
+    const entriesEmpty = (await db.entries.count()) === 0
+    if (entriesEmpty) {
+      await db.entries.bulkPut(seedEntries)
+      await db.categories.bulkPut(seedCategories)
+      await db.tags.bulkPut(seedTags)
+      await db.entryAi.bulkPut(seedEntryAi)
+    } else {
+      // 存量库（用户在过往阶段存过真实条目）：补灌 categories/tags/entryAi（若缺）。
+      if ((await db.categories.count()) === 0) await db.categories.bulkPut(seedCategories)
+      if ((await db.tags.count()) === 0) await db.tags.bulkPut(seedTags)
+      if ((await db.entryAi.count()) === 0) await db.entryAi.bulkPut(seedEntryAi)
+    }
+    if ((await db.aggregates.count()) === 0) await db.aggregates.bulkPut(seedAggregates)
+    if ((await db.reminders.count()) === 0) await db.reminders.bulkPut(seedReminders)
   }
-  // aggregates 空库时灌 seed 兜底（真重算后会覆盖）。
-  if ((await db.aggregates.count()) === 0) await db.aggregates.bulkPut(seedAggregates)
-  // reminders 空库时灌 seed 样例（Phase 9 Batch 2b）。
-  if ((await db.reminders.count()) === 0) await db.reminders.bulkPut(seedReminders)
+  seeded = true
+}
+
+// D9: 主动导入示例数据（onboarding 首启引导 / settings 数据管理按钮调用）。
+// 写入完整原型集（条目 + AI + 类别/标签/聚合/提醒）。幂等：已存在的行被覆盖（同主键 put）。
+// 调用后需 rehydrate store 才能刷新 UI（store.rehydrate 重读 Dexie）。
+export async function importSampleData(): Promise<void> {
+  await db.entries.bulkPut(seedEntries)
+  await db.categories.bulkPut(seedCategories)
+  await db.tags.bulkPut(seedTags)
+  await db.entryAi.bulkPut(seedEntryAi)
+  await db.aggregates.bulkPut(seedAggregates)
+  await db.reminders.bulkPut(seedReminders)
   seeded = true
 }
 

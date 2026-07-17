@@ -3,9 +3,16 @@
 
 export type PartType = 'text' | 'audio' | 'video'
 
+// D7: media type annotation for LLM prompt chunking. Distinguishes photos
+// (VideoPart durationSec=0) from videos, and labels source modality so the
+// LLM can chunk "以下图片内容：" / "以下语音转文字：" etc. Optional on all parts;
+// absent on pre-D7 parts → consumers infer from `type` (+ durationSec for photo).
+export type MediaType = 'text' | 'image' | 'video' | 'audio'
+
 export interface TextPart {
   type: 'text'
   content: string
+  mediaType?: MediaType
 }
 
 export interface AudioPart {
@@ -18,6 +25,7 @@ export interface AudioPart {
   // type. Carrying mime on the part lets export derive the right extension without
   // relying on OPFS filename→type inference. Absent on pre-D5 parts (→ fallback).
   mime?: string
+  mediaType?: MediaType
 }
 
 export interface VideoPart {
@@ -27,6 +35,7 @@ export interface VideoPart {
   transcript?: string
   // D5: capture-time MIME (see AudioPart.mime). 'image/jpeg' for photos.
   mime?: string
+  mediaType?: MediaType
 }
 
 export type EntryPart = TextPart | AudioPart | VideoPart
@@ -50,6 +59,11 @@ export interface GeoPoint {
   lat: number
   lng: number
   label?: string // 反查地点名（可选；LLM/后置填）
+  // D5: reverse-geocoded human-readable address (e.g. "北京市朝阳区望京街道").
+  // Async-filled after capture (enrichLocation); absent when offline/timeout →
+  // UI falls back to label ?? lat/lng. Separate from `label` (LLM-filled) to
+  // avoid clobbering user-curated labels on re-geocode.
+  address?: string
 }
 
 export interface Entry {

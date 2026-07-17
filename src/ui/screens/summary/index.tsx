@@ -3,6 +3,7 @@ import type { Aggregate, AggregateScopeType } from '@/domain/types'
 import { useUiStore } from '@/app/store'
 import { DigestCard } from './DigestCard'
 import { lastRanges, scopeRange } from './aggregate'
+import * as summaryCache from '@/adapters/summaryCache'
 
 type Scope = AggregateScopeType
 
@@ -36,11 +37,18 @@ export default function Summary() {
   const hydrated = useUiStore((s) => s.hydrated)
 
   const entryAi = useMemo(() => Object.values(aiByEntry), [aiByEntry])
-  // Precompute each entry's range key for the active scope (avoids O(n×m) per render).
-  const entryRanges = useMemo(
-    () => entries.map((e) => scopeRange(scope, new Date(e.createdAt))),
-    [entries, scope],
-  )
+  // Precompute entryIds by range key for the active scope (avoids O(n×m) per render
+  // and gives both count + ids for cache freshness + synthesis).
+  const entryIdsByRange = useMemo(() => {
+    const m = new Map<string, string[]>()
+    for (const e of entries) {
+      const r = scopeRange(scope, new Date(e.createdAt))
+      const arr = m.get(r)
+      if (arr) arr.push(e.id)
+      else m.set(r, [e.id])
+    }
+    return m
+  }, [entries, scope])
   const periods = useMemo(() => lastRanges(scope), [scope])
 
   // Refs to scan latest aggregates/recalculating without re-subscribing the effect
@@ -52,7 +60,10 @@ export default function Summary() {
 
   // Sweep: on scope / detailLevel / hydrate change, enqueue recompute for every
   // visible period that is missing OR stale OR generated at a different detail level.
-  // Sequential-ish (limited concurrency) so we don't fire 14 LLM calls at once.
+  // D6: skip recompute when no Dexie aggregate exists BUT the localStorage cache is
+  // fresh (shouldRefresh false + detailLevel matches) — 秒开 from cache, no wasted
+  // LLM call. The sweep still recomputes genuinely-stale periods (new entries filed,
+  // cross-day/cross-week rollover, detail-level change).
   useEffect(() => {
     if (!hydrated) return
     const missing: string[] = []
@@ -62,9 +73,21 @@ export default function Summary() {
       )
       const key = `${scope}:${range}`
       if (recalculatingRef.current[key] === true) continue
-      if (!cur || cur.stale || (cur.detailLevel ?? 3) !== detailLevel) {
-        missing.push(range)
+      const needsRecompute = !cur || cur.stale || (cur.detailLevel ?? 3) !== detailLevel
+      if (!needsRecompute) continue
+      // D6: no Dexie aggregate but cache fresh → skip LLM recompute (秒开 from cache).
+      // shouldRefresh for day-scope compares cached.entryCount vs current entry count,
+      // so a genuinely new entry still triggers recompute (count mismatch).
+      if (!cur) {
+        const count = entryIdsByRange.get(range)?.length ?? 0
+        const cached = summaryCache.get(scope, range)
+        const fresh =
+          cached !== null &&
+          !summaryCache.shouldRefresh(scope, range, count) &&
+          (cached.detailLevel ?? 3) === detailLevel
+        if (fresh) continue
       }
+      missing.push(range)
     }
     if (missing.length === 0) return
     void (async () => {
@@ -75,11 +98,42 @@ export default function Summary() {
         )
       }
     })()
-  }, [scope, detailLevel, hydrated, periods, recomputeAggregate])
+  }, [scope, detailLevel, hydrated, periods, recomputeAggregate, entryIdsByRange])
+
+  // D6: persist fresh aggregates to localStorage cache. When recompute completes and
+  // a fresh aggregate lands in store, mirror it to the cache so the next page entry
+  // reads from cache (秒开) without re-hitting the LLM. Also backfills the cache
+  // from pre-existing fresh Dexie aggregates on scope switch / entries change.
+  useEffect(() => {
+    for (const ag of aggregates) {
+      if (ag.scope.type !== scope) continue
+      if (ag.stale) continue
+      if (ag.summary.trim().length === 0) continue
+      const count = entryIdsByRange.get(ag.scope.range)?.length ?? 0
+      summaryCache.set(scope, ag.scope.range, {
+        content: ag.summary,
+        generatedAt: ag.createdAt,
+        entryCount: count,
+        highlights: ag.highlights,
+        modelUsed: ag.modelUsed,
+        detailLevel: ag.detailLevel,
+      })
+    }
+  }, [aggregates, scope, entryIdsByRange])
 
   const onScopeChange = (s: Scope) => setScope(s)
   const onLevelChange = (lvl: 1 | 2 | 3 | 4 | 5) => {
     setSettings({ aggregateDetailLevel: lvl })
+  }
+
+  // D6: manual refresh — clear cache (无视缓存) + trigger recompute. The store's
+  // fresh-skip guard may still short-circuit if the Dexie aggregate is fresh; that's
+  // the store's prerogative (out of this file's scope). Clearing the cache ensures
+  // the next entry re-evaluates freshness from scratch and the watch effect backfills
+  // from the latest Dexie aggregate.
+  const onRegen = (range: string) => {
+    summaryCache.clear(scope, range)
+    void recomputeAggregate(scope, range, detailLevel)
   }
 
   return (
@@ -137,28 +191,50 @@ export default function Summary() {
             (a) => a.scope.type === scope && a.scope.range === p.range,
           ) ?? null
           const isRecalculating = recalculatingMap[key] === true
-          const hasEntries = entryRanges.some((r) => r === p.range)
-          const showSkeleton = !current && (isRecalculating || hasEntries)
+          const entryIds = entryIdsByRange.get(p.range) ?? []
+          const hasEntries = entryIds.length > 0
 
-          if (current) {
+          // D6: cache fallback for 秒开. When the Dexie aggregate is missing or stale,
+          // consult the localStorage cache. If the cache is fresh (shouldRefresh false
+          // + detailLevel matches), synthesize an Aggregate from it and show content
+          // immediately — no spinner, no wasted LLM call.
+          const cached = summaryCache.get(scope, p.range)
+          const cacheFresh =
+            cached !== null &&
+            !summaryCache.shouldRefresh(scope, p.range, entryIds.length) &&
+            (cached.detailLevel ?? 3) === detailLevel
+
+          // Display priority: fresh Dexie aggregate > fresh cache > stale Dexie aggregate > null.
+          let display: Aggregate | null
+          let recalculating = isRecalculating
+          if (current && !current.stale) {
+            display = current
+          } else if (cacheFresh && cached) {
+            // 秒开: show cached content, suppress spinner (recompute may still run
+            // in the background for stale Dexie aggregate — when it lands, it replaces).
+            display = synthesizeFromCache(scope, p.range, cached, entryIds)
+            recalculating = false
+          } else {
+            display = current // may be stale (shows 已过期 chip) or null
+          }
+
+          const showSkeleton = !display && (isRecalculating || hasEntries)
+
+          if (display) {
             return (
               <DigestCard
                 key={key}
-                aggregate={current}
+                aggregate={display}
                 entryAi={entryAi}
                 categories={categories}
-                recalculating={isRecalculating}
-                onRegen={() => void recomputeAggregate(scope, p.range, detailLevel)}
+                recalculating={recalculating}
+                onRegen={() => onRegen(p.range)}
                 label={p.label}
                 rangeLabel={p.dateLabel}
               />
             )
           }
           if (showSkeleton) {
-            // D4: bind recalculating to the LIVE flag (was hardcoded `true` → perpetual
-            // "正在重新生成" after an LLM failure, since the store catch clears the flag
-            // but the placeholder kept lying that it's recalculating). Wire onRegen so a
-            // failed period shows 重新生成 (retry) instead of a dead spinner.
             return (
               <DigestCard
                 key={key}
@@ -166,7 +242,7 @@ export default function Summary() {
                 entryAi={entryAi}
                 categories={categories}
                 recalculating={isRecalculating}
-                onRegen={() => void recomputeAggregate(scope, p.range, detailLevel)}
+                onRegen={() => onRegen(p.range)}
                 label={p.label}
                 rangeLabel={p.dateLabel}
               />
@@ -187,6 +263,27 @@ export default function Summary() {
       </div>
     </div>
   )
+}
+
+// D6: synthesize a display-only Aggregate from a cache hit. entryIds come from the
+// current entries list (not cached) so the card's "{n} 条 · 挂链" count stays live.
+function synthesizeFromCache(
+  scope: Scope,
+  range: string,
+  cached: summaryCache.CachedSummary,
+  entryIds: string[],
+): Aggregate {
+  return {
+    id: `cache-${scope}-${range}`,
+    scope: { type: scope, range },
+    summary: cached.content,
+    highlights: cached.highlights ?? [],
+    entryIds,
+    modelUsed: cached.modelUsed ?? '',
+    createdAt: cached.generatedAt,
+    stale: false,
+    detailLevel: cached.detailLevel ?? 3,
+  }
 }
 
 // Placeholder lets the recalculating skeleton render before the real aggregate
