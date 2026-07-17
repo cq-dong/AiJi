@@ -4,6 +4,7 @@ import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { exportZip } from '@/adapters/zipExport'
 import { Toggle } from './Toggle'
+import { AccountSection } from './AccountSection'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -335,6 +336,9 @@ export default function Settings() {
         </div>
         <Toggle checked={recordLocation} onChange={(v) => setSettings({ recordLocation: v })} />
       </div>
+
+      {/* 账号 */}
+      <AccountSection />
 
       {/* AI 模型 */}
       <Card className="mt-3">

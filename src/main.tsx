@@ -6,7 +6,11 @@ import './index.css'
 import App from './App.tsx'
 import { queryClient } from '@/app/query'
 import { useUiStore } from '@/app/store'
+import { useAccountStore } from '@/app/accountStore'
 import { seedDevDefaults } from '@/app/devSeed'
+
+// Slice A: 账号身份从 localStorage 同步载入（快，无 I/O）。AccountGate 判定前 hydrated 须为 true。
+useAccountStore.getState().hydrate()
 
 // DEV-only：从 .env.local（gitignored）灌 BYOK 默认到 localStorage+Dexie，再 hydrate——
 // 手机走隧道加载同一 bundle 即自动拿到 key，免每台设备手填。seed 失败不阻断载入。
