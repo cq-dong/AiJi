@@ -157,6 +157,15 @@ export interface Settings {
   // Wave 3: aggregate digest verbosity (1-5, default 3). Stored on Aggregate so
   // changing this marks existing digests stale → recompute at new verbosity.
   aggregateDetailLevel: 1 | 2 | 3 | 4 | 5
+  // Multimodal + universal BYOK (2026-07-17). STT dual-mode: 'stream'=DashScope
+  // WS paraformer (works on public DashScope where REST is CORS/404-dead);
+  // 'whisper'=OpenAI-compatible REST /audio/transcriptions (PI / OpenAI / Groq).
+  // sttUrl: stream→DashScope WS base; whisper→OpenAI REST base (e.g. PI /compatible-mode/v1).
+  sttMode: 'stream' | 'whisper'
+  sttUrl?: string
+  // Vision: classify 附图/视频帧总开关（默认 true）；videoFrameIntervalSec=视频抽帧间隔（默认 10s）。
+  videoVisionEnabled: boolean
+  videoFrameIntervalSec: number
 }
 
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────

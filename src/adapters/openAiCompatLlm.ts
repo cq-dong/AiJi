@@ -1,12 +1,28 @@
 import type { LlmPort } from '@/ports'
 import type { Aggregate, AggregateScopeType, Category, ChatCite, ChatQuery, Entry, EntryAi, Facets, Tag } from '@/domain/types'
 import { di } from '@/app/di'
+import { compressImage, extractFrame, pickFrameTimes } from '@/adapters/visionMedia'
 
-// LlmPort PWA 适配：DeepSeek（OpenAI 兼容 chat）BYOK。key/url/model 从 Settings(llmUrl/llmModel)
-// + SecretStorePort('llm:key') 取——永不入源码。key 缺失 → throw，管线 catch 后条目标 failed
-// （AI-only 降级，采集存储不伤）。涌现：LLM 标的新类别/标签在此落库（它有 label 信息）。
+// LlmPort PWA 适配：OpenAI 兼容 chat completions（BYOK）。任意 OpenAI 兼容 endpoint 均可——
+// DeepSeek / Kimi / 通义 / Moonshot / OpenAI / Azure / OpenRouter / vLLM / Ollama / Aliyun PI
+// compatible-mode。isDeepSeek(url,model) 守门：仅 DeepSeek endpoint 发私有 thinking 参数，严格
+// 兼容服务不发（免 400）。key/url/model 从 Settings(llmUrl/llmModel) + SecretStorePort('llm:key')
+// 取——永不入源码。key 缺失 → throw，管线 catch 后条目标 failed（AI-only 降级，采集存储不伤）。
+// 涌现：LLM 标的新类别/标签在此落库（有 label 信息）。Vision（2026-07-17）：classify 附图/视频帧
+// （OpenAI image_url 多模态）；model 不支持 image_url 时静默降级去图纯文本重发，不崩。
+// aggregate/answerChat 不附图（控成本，图语义经 classify 进 summary 间接含）。
 
 const SECRET_KEY = 'llm:key'
+
+// OpenAI 兼容 message：content 可为纯文本或 image_url 多模态数组。buildPrompt 默认返纯文本
+// content；classify 在有图时把 user message 的 content 升级为多模态数组（image_url base64）。
+type VisionTextPart = { type: 'text'; text: string }
+type VisionImagePart = { type: 'image_url'; image_url: { url: string } }
+type MessageContent = string | Array<VisionTextPart | VisionImagePart>
+interface ChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: MessageContent
+}
 
 interface ClassifyResult {
   categorySlug: string
@@ -28,6 +44,29 @@ function entryText(entry: Entry): string {
     .join('\n')
 }
 
+// Vision：收集 entry 的 video parts 的图像 data URL。照片（durationSec<=0）整张压缩；
+// 视频抽帧（pickFrameTimes + extractFrame）后压缩。任一步失败跳过该帧，不崩。
+async function collectEntryImages(entry: Entry, intervalSec: number): Promise<string[]> {
+  const out: string[] = []
+  for (const p of entry.parts) {
+    if (p.type !== 'video') continue
+    const blob = await di.storage.getMedia(p.ref)
+    if (!blob) continue
+    if (p.durationSec <= 0) {
+      const url = await compressImage(blob)
+      if (url) out.push(url)
+    } else {
+      for (const t of pickFrameTimes(p.durationSec, intervalSec, 8)) {
+        const frame = await extractFrame(blob, t)
+        if (!frame) continue
+        const url = await compressImage(frame)
+        if (url) out.push(url)
+      }
+    }
+  }
+  return out
+}
+
 // createdAt 落库是 UTC（Z）；LLM 解析「明天下午3点」需用户本地时区信号——转成本地带偏移
 // ISO（如 2026-07-16T09:30:00+08:00），与 prompt 示例格式一致，LLM 才输出对的偏移。
 function toLocalIso(iso: string): string {
@@ -39,7 +78,7 @@ function toLocalIso(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}${offStr}`
 }
 
-function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[]) {
+function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[]): ChatMessage[] {
   const catList = categories.map((c) => `${c.slug}:${c.label}`).join(', ') || '（暂无）'
   const tagList = tags.map((t) => t.slug).join(', ') || '（暂无）'
   const system = `你是「AiJi」(AI 记) 的笔记分类助手。给定一条用户的「记」条目内容 + 条目创建时间 + 现有类别库 + 现有标签库，输出严格 JSON。
@@ -307,7 +346,7 @@ function parseAnswerJson(raw: string): { answer: string; citedEntryIds: string[]
   return { answer, citedEntryIds }
 }
 
-export const deepSeekLlm: LlmPort = {
+export const openAiCompatLlm: LlmPort = {
   async classify(entryId) {
     const settings = await di.storage.getSettings()
     const entry = await di.storage.getEntry(entryId)
@@ -317,16 +356,42 @@ export const deepSeekLlm: LlmPort = {
     const model = settings.llmModel || 'deepseek-v4-flash'
     if (!apiKey || !url) throw new Error('LLM BYOK 未配置（url/key 缺失）')
     const content = entryText(entry)
-    if (!content.trim()) throw new Error('条目无文本可分类')
+    const hasVideoParts = entry.parts.some((p) => p.type === 'video')
+    if (!content.trim() && !hasVideoParts) throw new Error('条目无文本/媒体可分类')
     const categories = await di.storage.listCategories()
     const tags = await di.storage.listTags()
+    const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags)
+    // Vision：附图/视频帧（OpenAI image_url 多模态）。videoVisionEnabled 关 → 纯文本。
+    let images: string[] = []
+    if (settings.videoVisionEnabled && hasVideoParts) {
+      images = await collectEntryImages(entry, settings.videoFrameIntervalSec)
+      if (images.length > 0) {
+        const userMsg = messages[messages.length - 1]
+        if (typeof userMsg.content === 'string') {
+          const imgNote = '\n\n（本条目另附图片/视频帧，请结合图像内容进行分类与摘要。）'
+          const textPart: VisionTextPart = { type: 'text', text: userMsg.content + imgNote }
+          const imgParts: VisionImagePart[] = images.map((u) => ({ type: 'image_url', image_url: { url: u } }))
+          userMsg.content = [textPart, ...imgParts]
+        }
+      }
+    }
     // thinking 关闭：v4-flash/pro 默认走 reasoning_content（content 空），关掉后 JSON 直出 content，适配器才读得到。
     // DeepSeek 私有参数——非 DeepSeek endpoint 不发（isDeepSeek 守门），免得严格 OpenAI 兼容服务返 400。
-    const res = await fetch(url, {
+    const bodyOf = (msgs: ChatMessage[]) => ({ model, messages: msgs, max_tokens: 512, temperature: 0.3, ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}) })
+    let res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages: buildPrompt(content, toLocalIso(entry.createdAt), categories, tags), max_tokens: 512, temperature: 0.3, ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}) }),
+      body: JSON.stringify(bodyOf(messages)),
     })
+    if (!res.ok && images.length > 0) {
+      // 静默降级：model 不支持 image_url（常见 400）→ 去图纯文本重发，不崩不提示。
+      const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags)
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyOf(textMsgs)),
+      })
+    }
     if (!res.ok) {
       const t = await res.text().catch(() => '')
       throw new Error(`LLM HTTP ${res.status}: ${t.slice(0, 200)}`)
@@ -497,5 +562,29 @@ export const deepSeekLlm: LlmPort = {
     const validIds = new Set(cites.map((c) => c.id))
     const citedEntryIds = parsed.citedEntryIds.filter((id) => validIds.has(id))
     return { answer: parsed.answer, citedEntryIds }
+  },
+  async ping(opts?: { url?: string; model?: string; key?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
+    const settings = await di.storage.getSettings()
+    // opts：设置页连通性测试传表单未保存值（测新填配置）；省略时回落已落库 settings + secrets。
+    // key 为空串视为省略——用户只改 url/model、保留旧 key 时，回落已存 secret，不误判 key 缺失。
+    const url = opts?.url ?? settings.llmUrl
+    const model = (opts?.model ?? settings.llmModel) || 'deepseek-v4-flash'
+    const apiKey = opts?.key || await di.secrets.get(SECRET_KEY)
+    if (!apiKey || !url) return { ok: false, error: 'url/key 缺失' }
+    const started = performance.now()
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}) }),
+      })
+      if (!res.ok) {
+        const t = await res.text().catch(() => '')
+        return { ok: false, error: `HTTP ${res.status}: ${t.slice(0, 120)}` }
+      }
+      return { ok: true, latencyMs: Math.round(performance.now() - started) }
+    } catch (e) {
+      return { ok: false, error: (e as Error).message.slice(0, 120) }
+    }
   },
 }

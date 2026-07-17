@@ -1,11 +1,47 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronRight, X } from 'lucide-react'
 import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { di } from '@/app/di'
 import { exportZip } from '@/adapters/zipExport'
 import { Toggle } from './Toggle'
+import type { Settings as SettingsType } from '@/domain/types'
 
 type Theme = 'light' | 'dark' | 'system'
+
+const inputCls =
+  'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
+
+// LLM 模型预设。选「自定义…」时展开一个自由 input。
+const LLM_MODEL_PRESETS = [
+  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
+  { value: 'gpt-4o', label: 'GPT-4o' },
+  { value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+  { value: 'qwen-plus', label: 'Qwen Plus' },
+  { value: 'gemini-2-flash', label: 'Gemini 2 Flash' },
+] as const
+const CUSTOM_SENTINEL = '__custom'
+
+// STT 双模式：stream=DashScope WS paraformer；whisper=OpenAI 兼容 REST。
+const STT_MODES = ['stream', 'whisper'] as const
+type SttMode = (typeof STT_MODES)[number]
+const STT_MODE_LABELS: Record<SttMode, string> = {
+  stream: '流式 (DashScope WS)',
+  whisper: 'Whisper (REST)',
+}
+const STT_URL_PLACEHOLDERS: Record<SttMode, string> = {
+  stream: 'wss://…/api-ws/v1/inference',
+  whisper: 'https://…/v1',
+}
+const STT_URL_HELP: Record<SttMode, string> = {
+  stream: '留空=用公共 DashScope 默认端点',
+  whisper: 'OpenAI 兼容 REST base，如 Aliyun PI 的 /compatible-mode/v1',
+}
+const STT_MODEL_PLACEHOLDERS: Record<SttMode, string> = {
+  stream: 'paraformer-realtime-v2',
+  whisper: 'whisper-1',
+}
+const STT_MODEL_DEFAULTS: Record<SttMode, string> = STT_MODEL_PLACEHOLDERS
 
 // 导出 Markdown：读 store 快照拼一份 Markdown，触发浏览器下载。
 // 只读现成字段（entries / aiByEntry / categories / tags），不调 di.storage。
@@ -148,15 +184,51 @@ function ModelRow({
   )
 }
 
+type PingResult = { ok: boolean; latencyMs?: number; error?: string }
+
 function ByokSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
   const setLlmConfig = useUiStore((s) => s.setLlmConfig)
   const [url, setUrl] = useState(settings.llmUrl ?? '')
-  const [model, setModel] = useState(settings.llmModel ?? '')
+  const initialModel = settings.llmModel ?? ''
+  const initialSelect = LLM_MODEL_PRESETS.some((p) => p.value === initialModel)
+    ? initialModel
+    : initialModel
+      ? CUSTOM_SENTINEL
+      : 'deepseek-v4-flash'
+  const [modelSelect, setModelSelect] = useState(initialSelect)
+  const [modelCustom, setModelCustom] = useState(
+    initialSelect === CUSTOM_SENTINEL ? initialModel : '',
+  )
   const [key, setKey] = useState('')
   const hasKey = settings.apiKeyRef === 'llm:key'
-  const inputCls =
-    'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
+
+  // 连通性测试：tiniest chat ping。测试前先把 url/model/key 同步进 store，再调 port。
+  // 不同步则 ping 读的是旧 settings，测不出刚填的新配置。
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<PingResult | null>(null)
+
+  const resolvedModel =
+    modelSelect === CUSTOM_SENTINEL ? modelCustom.trim() : modelSelect
+
+  async function handlePing() {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      // 测表单未保存值：url/model 直传；key 留空时适配器回落已存 secret
+      // （只改 url 不重填 key 也能测，不误删旧 key）。
+      const r = await di.llm.ping({
+        url: url.trim(),
+        model: resolvedModel || 'deepseek-v4-flash',
+        key: key.trim(),
+      })
+      setTestResult(r)
+    } catch (e) {
+      setTestResult({ ok: false, error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setTesting(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
@@ -176,17 +248,31 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
               className={inputCls}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://…/compatible-mode/v1/chat/completions"
+              placeholder="https://…/v1/chat/completions"
             />
           </div>
           <div>
             <label className="text-[11px] text-t2">模型</label>
-            <input
+            <select
               className={inputCls}
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              placeholder="deepseek-v4-flash"
-            />
+              value={modelSelect}
+              onChange={(e) => setModelSelect(e.target.value)}
+            >
+              {LLM_MODEL_PRESETS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+              <option value={CUSTOM_SENTINEL}>自定义…</option>
+            </select>
+            {modelSelect === CUSTOM_SENTINEL && (
+              <input
+                className={cn(inputCls, 'mt-2')}
+                value={modelCustom}
+                onChange={(e) => setModelCustom(e.target.value)}
+                placeholder="模型名"
+              />
+            )}
           </div>
           <div>
             <label className="text-[11px] text-t2">
@@ -202,6 +288,35 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        {/* 连通性测试 */}
+        <div className="mt-3">
+          <button
+            type="button"
+            disabled={testing}
+            onClick={() => void handlePing()}
+            className={cn(
+              'h-[38px] w-full rounded-btn text-[12px] font-medium transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+              testing
+                ? 'bg-brd text-t3'
+                : 'border border-brd bg-card text-t2',
+            )}
+          >
+            {testing ? '测试中…' : '测试连通'}
+          </button>
+          {testResult && (
+            <p
+              className={cn(
+                'mt-2 text-[11px]',
+                testResult.ok ? 'text-catProject' : 'text-catFail',
+              )}
+            >
+              {testResult.ok
+                ? `✓ +${testResult.latencyMs ?? '?'}ms`
+                : `✗ ${testResult.error ?? '未知错误'}`}
+            </p>
+          )}
+        </div>
+
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
             取消
@@ -211,7 +326,7 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
             size="sm"
             className="h-[38px] flex-1 rounded-btn"
             onClick={() => {
-              setLlmConfig(url.trim(), model.trim() || 'deepseek-v4-flash', key)
+              setLlmConfig(url.trim(), resolvedModel || 'deepseek-v4-flash', key)
               onClose()
             }}
           >
@@ -225,12 +340,13 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
 
 function SttSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
+  const setSettings = useUiStore((s) => s.setSettings)
   const setSttConfig = useUiStore((s) => s.setSttConfig)
+  const mode = settings.sttMode
+  const [url, setUrl] = useState(settings.sttUrl ?? '')
   const [model, setModel] = useState(settings.sttModel ?? '')
   const [key, setKey] = useState('')
   const hasKey = settings.sttKeyRef === 'stt:key'
-  const inputCls =
-    'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
@@ -241,16 +357,51 @@ function SttSheet({ onClose }: { onClose: () => void }) {
             <X size={18} strokeWidth={2} />
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-t3">BYOK · 阿里云 DashScope paraformer（WS 流式）· Key 本地存</p>
+        <p className="mt-1 text-[11px] text-t3">BYOK · DashScope paraformer（WS 流式）或 OpenAI 兼容 REST · Key 本地存</p>
 
         <div className="mt-3 space-y-3">
+          {/* 模式切换：stream / whisper。立即落 settings.sttMode。 */}
+          <div>
+            <label className="text-[11px] text-t2">转写模式</label>
+            <div className="mt-2 flex gap-2">
+              {STT_MODES.map((m) => {
+                const active = m === mode
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setSettings({ sttMode: m })}
+                    className={cn(
+                      'h-11 flex-1 rounded-[16px] text-[12px] font-medium transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                      active ? 'bg-pri text-white' : 'border border-brd bg-card text-t2',
+                    )}
+                  >
+                    {STT_MODE_LABELS[m]}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* URL：单字段，含义随 mode 变。 */}
+          <div>
+            <label className="text-[11px] text-t2">端点 URL</label>
+            <input
+              className={inputCls}
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder={STT_URL_PLACEHOLDERS[mode]}
+            />
+            <p className="mt-1 text-[11px] text-t3">{STT_URL_HELP[mode]}</p>
+          </div>
+
           <div>
             <label className="text-[11px] text-t2">模型</label>
             <input
               className={inputCls}
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              placeholder="paraformer-realtime-v2"
+              placeholder={STT_MODEL_PLACEHOLDERS[mode]}
             />
           </div>
           <div>
@@ -276,7 +427,8 @@ function SttSheet({ onClose }: { onClose: () => void }) {
             size="sm"
             className="h-[38px] flex-1 rounded-btn"
             onClick={() => {
-              setSttConfig(model.trim() || 'paraformer-realtime-v2', key)
+              setSttConfig(model.trim() || STT_MODEL_DEFAULTS[mode], key)
+              setSettings({ sttUrl: url.trim() || undefined })
               onClose()
             }}
           >
@@ -285,6 +437,56 @@ function SttSheet({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+  )
+}
+
+function VisionSection({
+  settings,
+  setSettings,
+}: {
+  settings: SettingsType
+  setSettings: (patch: Partial<SettingsType>) => void
+}) {
+  const [frameInput, setFrameInput] = useState(String(settings.videoFrameIntervalSec))
+  // hydrate 后 settings.videoFrameIntervalSec 才是真实值（mount 时还是 seed 默认）。
+  // 同步防显错（10 vs 60）+ 防 onBlur 用 stale 值静默回退已存值。
+  useEffect(() => setFrameInput(String(settings.videoFrameIntervalSec)), [settings.videoFrameIntervalSec])
+  return (
+    <Card className="mt-3">
+      <p className="text-[14px] font-bold text-ink">视觉</p>
+      <p className="mt-1 text-[11px] text-t3">视频/图片理解与抽帧间隔</p>
+
+      <div className="mt-3 flex items-center justify-between">
+        <div className="pr-3">
+          <p className="text-[13px] font-medium text-ink">视觉理解（classify 附图/视频帧）</p>
+          <p className="mt-0.5 text-[11px] text-t3">
+            关闭后 classify 仅用文本；model 不支持图像时自动降级纯文本。
+          </p>
+        </div>
+        <Toggle
+          checked={settings.videoVisionEnabled}
+          onChange={(v) => setSettings({ videoVisionEnabled: v })}
+        />
+      </div>
+
+      <div className={cn('mt-3', !settings.videoVisionEnabled && 'opacity-40')}>
+        <label className="text-[11px] text-t2">视频抽帧间隔（秒）</label>
+        <input
+          type="number"
+          min={1}
+          max={60}
+          value={frameInput}
+          onChange={(e) => setFrameInput(e.target.value)}
+          onBlur={() => {
+            const n = Math.min(60, Math.max(1, parseInt(frameInput, 10) || 10))
+            setFrameInput(String(n))
+            setSettings({ videoFrameIntervalSec: n })
+          }}
+          disabled={!settings.videoVisionEnabled}
+          className={inputCls}
+        />
+      </div>
+    </Card>
   )
 }
 
@@ -358,6 +560,9 @@ export default function Settings() {
           />
         </div>
       </Card>
+
+      {/* 视觉 */}
+      <VisionSection settings={settings} setSettings={setSettings} />
 
       {/* 导出与分享 */}
       <Card className="mt-3">

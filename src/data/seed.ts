@@ -141,4 +141,8 @@ export const seedSettings = {
   theme: 'light' as const,
   aggregateDetailLevel: 3 as const,
   onboarded: false,
+  sttMode: 'stream' as const,
+  sttUrl: undefined,
+  videoVisionEnabled: true,
+  videoFrameIntervalSec: 10,
 }

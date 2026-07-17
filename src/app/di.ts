@@ -1,15 +1,19 @@
 import { dexieStorage } from '@/adapters/dexieStorage'
 import { webCapture } from '@/adapters/webCapture'
-import { deepSeekLlm } from '@/adapters/deepSeekLlm'
-import { paraformerStt } from '@/adapters/paraformerStt'
+import { openAiCompatLlm } from '@/adapters/openAiCompatLlm'
+import { paraformerStreamStt } from '@/adapters/paraformerStreamStt'
+import { whisperRestStt } from '@/adapters/whisperRestStt'
 import { localStorageSecrets } from '@/adapters/localStorageSecrets'
 import { notifications } from '@/adapters/notifications'
 import type { CapturePort, LlmPort, SecretStorePort, StoragePort, SttPort } from '@/ports'
 
 // DI 根：注入端口适配器。entries 走 DexieStorage；capture 走 webCapture；
-// llm 走 deepSeekLlm（OpenAI 兼容 chat BYOK，key 在 SecretStorePort）；
-// stt 走 paraformerStt（DashScope realtime WS，保存后离线转写，live 预览仍用 WebSpeech）；
+// llm 走 openAiCompatLlm（OpenAI 兼容 chat BYOK，任意 OpenAI 兼容 endpoint，key 在 SecretStorePort）；
 // secrets 走 localStorage；notifications 走 PWA Notification 适配（前台 only，非 domain port）。
+// stt 走代理：按 settings.sttMode 选——stream=paraformer WS（公共 DashScope，REST CORS/404 死，
+// 只剩 WS）、whisper=OpenAI 兼容 REST /audio/transcriptions（Aliyun PI / OpenAI / Groq）。capture
+// 实时预览仍用 WebSpeech，本代理只负责保存后离线转写。
+
 export interface Di {
   storage: StoragePort
   capture: CapturePort
@@ -19,11 +23,20 @@ export interface Di {
   notifications: typeof notifications
 }
 
+// sttMode 在 settings 里，transcribe(ref) 签名固定，故每次按 settings 现选 adapter。
+const sttProxy: SttPort = {
+  async transcribe(ref) {
+    const settings = await dexieStorage.getSettings()
+    const adapter = settings.sttMode === 'whisper' ? whisperRestStt : paraformerStreamStt
+    return adapter.transcribe(ref)
+  },
+}
+
 export const di: Di = {
   storage: dexieStorage,
   capture: webCapture,
-  llm: deepSeekLlm,
-  stt: paraformerStt,
+  llm: openAiCompatLlm,
+  stt: sttProxy,
   secrets: localStorageSecrets,
   notifications,
 }
