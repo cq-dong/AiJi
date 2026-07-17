@@ -176,6 +176,8 @@ export interface Settings {
   vlmUrl?: string
   vlmModel?: string
   vlmKeyRef?: string
+  // Slice B：AI 调用来源。undefined 视同 'byok'；游客强制 'byok'（store 守卫）。
+  keySource?: 'byok' | 'builtin'
 }
 
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────
