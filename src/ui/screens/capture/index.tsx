@@ -122,6 +122,15 @@ export default function Capture() {
   urlsRef.current = mediaUrls
   useEffect(() => () => { Object.values(urlsRef.current).forEach((u) => URL.revokeObjectURL(u)) }, [])
 
+  // D1: 保存预检——byok-no-key / guest 含语音 part 时，显示转写失败 + 注册网络账号链接，
+  // 仍保存（条目落库→processEntry STT 失败→条目 failed，匹配 spec「条目 failed」）但抑制
+  // 即时 navigate，让 toast 留在屏上可点。3.5s 后自动回首页；点链接则清定时器去 /login。
+  const skipNavigateRef = useRef(false)
+  const navTimerRef = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (navTimerRef.current !== null) window.clearTimeout(navTimerRef.current)
+  }, [])
+
   // L1: 卸载时若在录音/相机 → 停 tracks，免麦克风指示灯/相机常驻（用户按 X 关、navigate 离开均触发 unmount）。
   // stopRecording 把在录音频 finalize 成 part 落到 store（post-unmount set 仍生效），stopCamera 释放相机流。
   useEffect(() => () => {
@@ -147,10 +156,13 @@ export default function Capture() {
   // Saving: persist + return home. (B3: 去掉原 1200ms 人工延迟——延迟期间条目只在 Zustand 内存，
   // 刷新/崩溃丢文本 part + 已 saveMedia 的 blob 成孤儿。finishSave (D7) 已 await saveEntry 落库；
   // saving 态在 await 期间自然驱动 SaveBar spinner，是真实落库耗时而非假延迟。)
+  // D1: skipNavigateRef 由 handleSave 预检置位——byok-no-key/guest 语音保存时抑制即时 navigate，
+  // 让 conversion toast 留屏可点；3.5s 后由 navTimer 自动回首页。
   useEffect(() => {
     if (!saving) return
     void finishSave()
-    navigate('/')
+    if (!skipNavigateRef.current) navigate('/')
+    skipNavigateRef.current = false
   }, [saving, finishSave, navigate])
 
   // Draft hint: if parts were empty on mount, check again after hydrate
@@ -273,7 +285,37 @@ export default function Capture() {
     setToast('已存草稿')
   }
 
-  const handleSave = () => beginSave()
+  // D1: 保存前预检——含 audio part 且用户为 guest 或 (byok 且未配 stt:key) 时，
+  // 显示「未配置语音 Key，转写将失败」+ 注册网络账号链接 toast，仍保存（条目经 processEntry
+  // STT 失败→failed，匹配 spec「条目 failed」），但抑制即时 navigate 让 toast 可点；
+  // 3.5s 后自动回首页，点链接则清定时器跳 /login。其余情况走正常保存+navigate。
+  const handleSave = async () => {
+    const hasAudio = parts.some((p) => p.type === 'audio')
+    if (hasAudio) {
+      const eligible = isGuest || (keySource === 'byok' && !(await di.secrets.get('stt:key')))
+      if (eligible) {
+        skipNavigateRef.current = true
+        setActionToast({
+          message: '未配置语音 Key，转写将失败',
+          actionLabel: '或注册网络账号用免费额度',
+          onAction: () => {
+            if (navTimerRef.current !== null) {
+              window.clearTimeout(navTimerRef.current)
+              navTimerRef.current = null
+            }
+            navigate('/login')
+          },
+        })
+        beginSave()
+        navTimerRef.current = window.setTimeout(() => {
+          navTimerRef.current = null
+          navigate('/')
+        }, 3500)
+        return
+      }
+    }
+    beginSave()
+  }
 
   const showHeader = view === 'compose'
   const showEmpty = parts.length === 0 && !recording && !micDenied && !textOpen

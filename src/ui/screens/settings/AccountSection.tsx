@@ -75,6 +75,11 @@ function KeySourceSheet({
               type="button"
               onClick={() => {
                 setKeySource(o.value)
+                // D2: 切到 builtin 后立即刷新额度——否则 quota 行显「加载中…」直到重载。
+                // hydrate 只在 boot 跑；session 内切换需显式 refresh。
+                if (o.value === 'builtin') {
+                  void useQuotaStore.getState().refresh()
+                }
                 onClose()
               }}
               className={cn(
