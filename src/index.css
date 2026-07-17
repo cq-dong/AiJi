@@ -16,6 +16,7 @@
   --c-pri: 79 70 229; /* #4f46e5 */
   --c-priS: 238 237 253; /* #eeedfd */
   --c-brd: 236 236 239; /* #ececef */
+  --aji-shadow: 20 20 26; /* 浅色：深墨落影 */
 }
 .dark {
   color-scheme: dark;
@@ -27,6 +28,24 @@
   --c-pri: 129 122 245;
   --c-priS: 41 39 71;
   --c-brd: 43 43 51;
+  --aji-shadow: 0 0 0; /* 深色：纯黑落影 */
+}
+
+/* 深色模式阴影提级：浅色 6-8% 黑在近黑底上几乎不可见，深色用更高 alpha 还原"抬升"感 */
+.dark .shadow-sm { box-shadow: 0 1px 2px rgb(var(--aji-shadow) / 0.24); }
+.dark .shadow-md { box-shadow: 0 4px 12px rgb(var(--aji-shadow) / 0.28); }
+.dark .shadow-lg { box-shadow: 0 8px 24px rgb(var(--aji-shadow) / 0.32); }
+.dark .shadow-sheet { box-shadow: 0 -8px 30px rgb(var(--aji-shadow) / 0.4); }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @layer base {

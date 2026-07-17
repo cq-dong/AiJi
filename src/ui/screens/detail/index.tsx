@@ -9,6 +9,7 @@ import { PartView } from './PartView'
 import { AiPanel, type AiState } from './AiPanel'
 import { Sheet } from './Sheet'
 import { formatTitle, formatDuration, partTypeLabel, tagLabel } from './helpers'
+import { ChevronLeft, MapPin, MoreHorizontal } from 'lucide-react'
 
 // ISO 8601 → datetime-local input format (YYYY-MM-DDTHH:MM, local time)
 function isoToLocalInput(iso: string): string {
@@ -46,9 +47,9 @@ function TopBar({ title, onBack, onMore }: { title: string; onBack: () => void; 
         type="button"
         onClick={onBack}
         aria-label="返回"
-        className="flex size-8 items-center justify-center text-[26px] leading-none font-light text-t2"
+        className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
       >
-        ‹
+        <ChevronLeft size={26} strokeWidth={2} />
       </button>
       <h1 className="flex-1 text-center text-[17px] font-bold text-ink">{title}</h1>
       {onMore ? (
@@ -56,12 +57,12 @@ function TopBar({ title, onBack, onMore }: { title: string; onBack: () => void; 
           type="button"
           onClick={onMore}
           aria-label="更多"
-          className="flex size-8 items-center justify-center text-[20px] leading-none text-t2"
+          className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
-          ···
+          <MoreHorizontal size={22} strokeWidth={2} />
         </button>
       ) : (
-        <span className="size-8" />
+        <span className="size-11" />
       )}
     </div>
   )
@@ -437,7 +438,7 @@ function MoreSheet({
         type="button"
         onClick={handleExport}
         disabled={exporting}
-        className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink active:scale-[0.99] disabled:opacity-50"
+        className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-50"
       >
         <span>导出</span>
         {exporting && <span className="text-[12px] text-t3">导出中…</span>}
@@ -446,7 +447,7 @@ function MoreSheet({
         <button
           type="button"
           onClick={handleShare}
-          className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink active:scale-[0.99]"
+          className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           <span>{shareLabel}</span>
         </button>
@@ -588,7 +589,7 @@ export default function Detail() {
         />
       )}
 
-      <p className="text-[11px] text-t3">◎ 地点：未记录（设置中可开启）</p>
+      <p className="flex items-center gap-1 text-[11px] text-t3"><MapPin size={12} strokeWidth={2} />地点：未记录（设置中可开启）</p>
 
       {editingAi && ai && (
         <AiEditSheet ai={ai} onSave={handleSaveAi} onClose={() => setEditingAi(false)} />

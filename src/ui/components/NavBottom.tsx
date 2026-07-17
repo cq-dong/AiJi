@@ -12,17 +12,29 @@ const TABS = [
 
 export function NavBottom() {
   return (
-    <nav className="absolute inset-x-0 bottom-0 z-20 h-[79px] border-t border-brd bg-card">
+    <nav className="absolute inset-x-0 bottom-0 z-20 h-[79px] border-t border-brd bg-card shadow-[0_-4px_12px_rgb(var(--aji-shadow)/0.04)]">
       <div className="grid grid-cols-5">
         {TABS.map(({ to, label, Icon, end }) => (
-          <NavLink key={to} to={to} end={end} className="flex flex-col items-center gap-1 pt-2">
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className="flex flex-col items-center gap-1 rounded-btn pt-2 outline-none transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          >
             {({ isActive }) => (
               <>
-                <Icon
-                  size={20}
-                  strokeWidth={2}
-                  className={cn(isActive ? 'text-pri' : 'text-t3')}
-                />
+                <span
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center rounded-full transition duration-base ease-out',
+                    isActive ? 'bg-priS' : 'bg-transparent',
+                  )}
+                >
+                  <Icon
+                    size={20}
+                    strokeWidth={2}
+                    className={cn(isActive ? 'text-pri' : 'text-t3')}
+                  />
+                </span>
                 <span className={cn('text-[10px] font-medium', isActive ? 'text-pri' : 'text-t3')}>
                   {label}
                 </span>

@@ -49,7 +49,7 @@ function ReadyCard({ entry, ai, catLabel, catAccent }: CardProps) {
           navigate(`/detail/${entry.id}`)
         }
       }}
-      className="relative h-[120px] cursor-pointer overflow-hidden rounded-card border border-brd bg-card"
+      className="relative h-[120px] cursor-pointer overflow-hidden rounded-card border border-brd bg-card shadow-sm transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
     >
       <span className={cn('absolute left-0 top-0 bottom-0 w-1', bar)} />
       <div className="flex h-full flex-col py-[13px] pl-[19px] pr-3">
@@ -65,8 +65,8 @@ function ReadyCard({ entry, ai, catLabel, catAccent }: CardProps) {
             {timeLabel(entry.createdAt)} · {modalityLabel(entry.parts)}
           </span>
           <div className="ml-auto flex items-center gap-1">
-            <span className="inline-block size-[7px] rounded-full bg-[#7c3aed]" />
-            <span className="text-[10px] font-medium text-[#7c3aed]">AI 已分类</span>
+            <span className="inline-block size-[7px] rounded-full bg-catIdea" />
+            <span className="text-[10px] font-medium text-catIdea">AI 已分类</span>
           </div>
         </div>
       </div>
@@ -90,13 +90,13 @@ function ProcessingCard({ entry, catAccent }: CardProps) {
           navigate(`/detail/${entry.id}`)
         }
       }}
-      className="relative h-[96px] cursor-pointer overflow-hidden rounded-card border border-brd bg-card"
+      className="relative h-[96px] cursor-pointer overflow-hidden rounded-card border border-brd bg-card shadow-sm transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
     >
       <span className={cn('absolute left-0 top-0 bottom-0 w-1', bar)} />
       <div className="flex h-full flex-col py-[13px] pl-[19px] pr-3">
         <h3 className="line-clamp-1 text-[14px] font-medium leading-tight text-ink">{title}</h3>
-        <div className="mt-[15px] h-[6px] w-full overflow-hidden rounded-[3px] bg-[#fdf2e0]">
-          <div className="h-full w-3/5 rounded-[3px] bg-catPending" />
+        <div className="mt-[15px] h-[6px] w-full overflow-hidden rounded-[3px] bg-catPending/10">
+          <div className="h-full w-2/5 rounded-[3px] bg-catPending animate-indeterminate" />
         </div>
         <div className="mt-[10px] flex items-center justify-between">
           <span className="text-[11px] font-medium text-catPending">{leftText}</span>
@@ -117,7 +117,7 @@ function statusMeta(status: Entry['status']): {
       return {
         leftText: '已转写 · 分类失败',
         rightLabel: '处理失败',
-        rightClass: 'text-[#e56666]',
+        rightClass: 'text-catFail',
       }
     case 'offline-pending':
       return {
