@@ -20,6 +20,7 @@ export const webAppUpdate: AppUpdatePort = {
       apkUrl: latest.apkUrl,
       releaseUrl: latest.releaseUrl,
       releaseNotes: latest.releaseNotes,
+      prerelease: latest.prerelease,
     }
   },
   async downloadAndInstall(info: UpdateInfo): Promise<void> {

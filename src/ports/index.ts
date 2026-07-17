@@ -143,6 +143,8 @@ export interface UpdateInfo {
   // PWA fallback: GitHub release 页（window.open）。
   releaseUrl?: string
   releaseNotes?: string
+  // 最新 release 是否 prerelease（About sheet 可据此提示「预发布版，非正式」）。
+  prerelease?: boolean
 }
 
 export interface AppUpdatePort {
