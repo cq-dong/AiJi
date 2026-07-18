@@ -98,6 +98,10 @@ export interface EntryAi {
   // 用户已对"是否建待办"做出选择（创建或忽略）→ 持久旗标，detail 不再重复弹三按钮卡。
   // 仅 local state 会在屏卸载/重进时重置导致重现；此字段随 EntryAi 落 Dexie。
   todoDismissed?: boolean
+  // D21: VLM 对条目内图片/视频的完整理解文本（分类同一次多模态调用返回，省一次 VLM 请求）。
+  // images=照片理解、videos=视频理解，分开存以便摘要末尾分别标注。仅当 classify 走视觉
+  // （images.length>0）且 LLM 返回了该字段时填；无图/纯文本条目省略。
+  mediaDescription?: { images?: string; videos?: string }
   modelUsed: string
   createdAt: string
 }

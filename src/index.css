@@ -85,13 +85,22 @@
   }
 }
 
-/* Mobile preview frame: 390×844 centered on larger screens */
+/* Mobile frame: 真自适应铺满（D19 修复）
+   - 默认 width:100% + min-height:100dvh，手机（≤480dp）全屏铺满，无左右/上下留白
+   - 100vh 兜底（老 WebView 不支持 dvh 时回退）
+   - 桌面/宽屏（≥768px）才加 max-width 居中，避免桌面浏览器拉满难看
+   - 注意：不要写死 390px / 844px，否则宽于 390dp 的安卓机左右留白 */
 .aji-frame {
-  width: 390px;
-  max-width: 100%;
-  /* D11: 用 100% 代替固定 844px，避免异形屏上撑出 body 滚动放大空白条效应。 */
-  min-height: 100%;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0 auto;
   position: relative;
   overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .aji-frame {
+    max-width: 480px;
+  }
 }

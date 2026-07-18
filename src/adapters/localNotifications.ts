@@ -15,6 +15,50 @@ import { Capacitor } from '@capacitor/core'
 import type { LocalNotificationsPort } from '@/ports'
 import type { Reminder } from '@/domain/types'
 
+// D20 · 前台到点弹窗+声音：原生 LocalNotifications 在 app 前台时常抑制系统横幅
+// （Android 不弹横幅、不发声），用户看不到也听不到。此处注册「通知到达」handler，
+// 由上层（src/app/reminderFire.ts）注入：收到时触发 in-app 弹窗 + 提示音。
+// web 路径在 webNotify 内同步调 handler（web 无 LocalNotifications 事件，setTimeout
+// 即「到点」）。handler 在 setReminderFireHandler 调用前为 null（适配器零依赖 store）。
+export interface ReminderFirePayload {
+  reminderId?: string
+  entryId?: string
+  label: string
+  body: string
+}
+
+let fireHandler: ((p: ReminderFirePayload) => void) | null = null
+
+export function setReminderFireHandler(h: ((p: ReminderFirePayload) => void) | null): void {
+  fireHandler = h
+}
+
+// 原生注册 LocalNotifications 'localNotificationReceived' 监听器。
+// app 启动早期调一次（main.tsx → initReminderFire）。
+// 非原生平台 no-op（web 路径走 webNotify 内的 handler 触发）。
+export async function initNativeNotificationListener(): Promise<void> {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    await LocalNotifications.addListener(
+      'localNotificationReceived',
+      (notification) => {
+        const extra = (notification.extra ?? {}) as Record<string, unknown>
+        const reminderId = typeof extra.reminderId === 'string' ? extra.reminderId : undefined
+        const entryId = typeof extra.entryId === 'string' ? extra.entryId : undefined
+        const label = notification.title ?? 'AiJi 提醒'
+        const body = notification.body ?? ''
+        try {
+          fireHandler?.({ reminderId, entryId, label, body })
+        } catch (e) {
+          console.error('[localNotifications] fireHandler failed', e)
+        }
+      },
+    )
+  } catch (e) {
+    console.error('[localNotifications] addListener(localNotificationReceived) failed', e)
+  }
+}
+
 function hashId(id: string): number {
   let h = 0
   for (let i = 0; i < id.length; i++) {
@@ -26,9 +70,16 @@ function hashId(id: string): number {
 // ── Web fallback（PWA 浏览器）──────────────────────────────────────────
 // 前台 only：setTimeout 到点 fire Notification。app 关闭后不推（web 无后台通知）。
 // 降级：无 Notification API / 权限 denied → CustomEvent toast（AppShell 监听）。
+// D20: 同步调 fireHandler 触发 in-app 弹窗+声音（与原生 listener 对齐）。
 const webTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
 function webNotify(label: string, body: string, tag: string): void {
+  // D20: 先触发 in-app handler（弹窗+声音），不依赖 Notification API 是否可用。
+  try {
+    fireHandler?.({ reminderId: tag, label, body })
+  } catch (e) {
+    console.error('[localNotifications] web fireHandler failed', e)
+  }
   try {
     if ('Notification' in window && Notification.permission === 'granted') {
       new Notification(label, { body, tag })

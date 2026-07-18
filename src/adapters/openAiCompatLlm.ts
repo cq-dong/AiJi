@@ -35,6 +35,9 @@ interface ClassifyResult {
   // (LLM resolves relative time using entry.createdAt as anchor). label is a
   // short user-editable summary. Absent when no reminder intent is detected.
   reminderSuggestion?: { dueAt: string; label: string }
+  // D21: 当条目附图/视频帧时，VLM 在同一次调用里返回的媒体理解文本。images=照片理解、
+  // videos=视频理解。仅当 prompt 含 image_url 时 LLM 才会填；纯文本条目省略。
+  mediaDescription?: { images?: string; videos?: string }
 }
 
 // D7: 按 mediaType 分块标注媒体来源，LLM 能区分文本/图片/语音/视频内容，回答更鲁棒。
@@ -105,9 +108,15 @@ function toLocalIso(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}${offStr}`
 }
 
-function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[]): ChatMessage[] {
+function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[], hasImages: boolean): ChatMessage[] {
   const catList = categories.map((c) => `${c.slug}:${c.label}`).join(', ') || '（暂无）'
   const tagList = tags.map((t) => t.slug).join(', ') || '（暂无）'
+  const mediaRule = hasImages
+    ? `\n6. mediaDescription：本条目附有图片/视频帧（image_url），你需在分类/摘要之外，用 1-3 句中文描述图像内容。照片填 mediaDescription.images（描述画面主体/场景/可见物体）；视频帧填 mediaDescription.videos（描述视频内容/动作/场景）。若只附照片则 videos 省略；若只附视频帧则 images 省略；若图像内容无法辨识则整个 mediaDescription 省略。此字段是用户可见的「图片/视频理解」原文，会附在聚合摘要末尾，务必写完整的中文描述句，以「。」结尾。`
+    : ''
+  const mediaSchema = hasImages
+    ? ',"mediaDescription"?:{"images"?:string,"videos"?:string}'
+    : ''
   const system = `你是「AiJi」(AI 记) 的笔记分类助手。给定一条用户的「记」条目内容 + 条目创建时间 + 现有类别库 + 现有标签库，输出严格 JSON。
 
 铁律：
@@ -115,10 +124,10 @@ function buildPrompt(content: string, createdAt: string, categories: Category[],
 2. 标签同理，复用或新建，2-5 个，去重。
 3. 情绪只是可选侧面——若内容明显带情绪，填 facets.mood（一个词）；绝不把情绪当主轴或必填。
 4. titleSuggestion 一句话 ≤16 字；summary 一句话概述。
-5. 时间型提醒意图：若正文含明确的提醒/待办时间意图（如「明天下午3点提醒我给设计稿反馈」「周五记得啃 STT」「下周一早上9点交周报」），解析出绝对时间并填 reminderSuggestion：dueAt 为绝对 ISO 8601 时间戳（含时区偏移），以条目创建时间为基准解析相对表达（"明天"=createdAt 次日、"下周一"=下一个周一等）；label 为 ≤12 字短摘要，用户后续可改。仅建议不调度——不创建任何 Reminder。无明确时间提醒意图时此字段必须省略，绝不臆造时间。
+5. 时间型提醒意图：若正文含明确的提醒/待办时间意图（如「明天下午3点提醒我给设计稿反馈」「周五记得啃 STT」「下周一早上9点交周报」），解析出绝对时间并填 reminderSuggestion：dueAt 为绝对 ISO 8601 时间戳（含时区偏移），以条目创建时间为基准解析相对表达（"明天"=createdAt 次日、"下周一"=下一个周一等）；label 为 ≤12 字短摘要，用户后续可改。仅建议不调度——不创建任何 Reminder。无明确时间提醒意图时此字段必须省略，绝不臆造时间。${mediaRule}
 
 输出 JSON schema：
-{"categorySlug":string,"categoryLabel"?:string,"tags":string[],"facets":{"mood"?:string,"person"?:string[],"place"?:string,"project"?:string,"event"?:string},"titleSuggestion"?:string,"summary"?:string,"reminderSuggestion"?:{"dueAt":string,"label":string}}
+{"categorySlug":string,"categoryLabel"?:string,"tags":string[],"facets":{"mood"?:string,"person"?:string[],"place"?:string,"project"?:string,"event"?:string},"titleSuggestion"?:string,"summary"?:string,"reminderSuggestion"?:{"dueAt":string,"label":string}${mediaSchema}}
 
 只输出 JSON，不要 markdown 围栏、不要解释。`
   const example = `示例1（无提醒意图，reminderSuggestion 省略）：
@@ -173,6 +182,13 @@ function parseJson(raw: string): ClassifyResult {
   }
   const p = parsed as Record<string, unknown>
   const reminder = asStringRecord(p.reminderSuggestion)
+  const md = asStringRecord(p.mediaDescription)
+  const mdImages = md && typeof md.images === 'string' && md.images.trim() ? md.images : undefined
+  const mdVideos = md && typeof md.videos === 'string' && md.videos.trim() ? md.videos : undefined
+  const mediaDescription: ClassifyResult['mediaDescription'] =
+    mdImages || mdVideos
+      ? { images: mdImages, videos: mdVideos }
+      : undefined
   const result: ClassifyResult = {
     categorySlug: typeof p.categorySlug === 'string' ? p.categorySlug : '',
     categoryLabel: typeof p.categoryLabel === 'string' ? p.categoryLabel : undefined,
@@ -184,6 +200,8 @@ function parseJson(raw: string): ClassifyResult {
       reminder && typeof reminder.dueAt === 'string' && typeof reminder.label === 'string'
         ? { dueAt: reminder.dueAt, label: reminder.label }
         : undefined,
+    // D21: 仅在至少一个子字段非空时保留；全空则 undefined（不落库空对象）。
+    mediaDescription,
   }
   // D14/D17: 空 categorySlug 说明 LLM 无分类依据（典型：纯图条目 VLM 失败后空 prompt 降级
   // 触发 LLM 幻觉，曾返 categorySlug='voice' 等虚构标签）。拒绝而非落库幻觉分类——
@@ -394,19 +412,21 @@ export const openAiCompatLlm: LlmPort = {
     if (!content.trim() && !hasVideoParts) throw new Error('条目无文本/媒体可分类')
     const categories = await di.storage.listCategories()
     const tags = await di.storage.listTags()
-    const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags)
     // Vision：附图/视频帧（OpenAI image_url 多模态）。videoVisionEnabled 关 → 纯文本。
+    // D21: 先抽图再 buildPrompt，以便把 hasImages 传入 schema（加 mediaDescription 输出字段）。
     let images: string[] = []
     if (settings.videoVisionEnabled && hasVideoParts) {
       images = await collectEntryImages(entry, settings.videoFrameIntervalSec)
-      if (images.length > 0) {
-        const userMsg = messages[messages.length - 1]
-        if (typeof userMsg.content === 'string') {
-          const imgNote = '\n\n（本条目另附图片/视频帧，请结合图像内容进行分类与摘要。）'
-          const textPart: VisionTextPart = { type: 'text', text: userMsg.content + imgNote }
-          const imgParts: VisionImagePart[] = images.map((u) => ({ type: 'image_url', image_url: { url: u } }))
-          userMsg.content = [textPart, ...imgParts]
-        }
+    }
+    const hasImages = images.length > 0
+    const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, hasImages)
+    if (hasImages) {
+      const userMsg = messages[messages.length - 1]
+      if (typeof userMsg.content === 'string') {
+        const imgNote = '\n\n（本条目另附图片/视频帧，请结合图像内容进行分类与摘要，并在 mediaDescription 字段返回图片/视频理解原文。）'
+        const textPart: VisionTextPart = { type: 'text', text: userMsg.content + imgNote }
+        const imgParts: VisionImagePart[] = images.map((u) => ({ type: 'image_url', image_url: { url: u } }))
+        userMsg.content = [textPart, ...imgParts]
       }
     }
     // VLM 路由：含图且独立 VLM 已配（vlmUrl+vlmModel+vlm:key）→ 视觉 fetch 走 VLM 端点（如 qwen3.5-flash
@@ -437,7 +457,8 @@ export const openAiCompatLlm: LlmPort = {
         throw new Error(`VLM 不可用且无文本内容可分类（HTTP ${res.status}: ${errText.slice(0, 120)}）`)
       }
       console.warn('[llm] vision failed, falling back to text-only', res.status, errText.slice(0, 200))
-      const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags)
+      // D21: 降级后无图，buildPrompt hasImages=false → 不请求 mediaDescription（LLM 也看不到图）。
+      const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, false)
       res = await fetch(fUrl, {
         method: 'POST',
         headers: { Authorization: `Bearer ${fKey}`, 'Content-Type': 'application/json' },
@@ -491,6 +512,8 @@ export const openAiCompatLlm: LlmPort = {
       summary: parsed.summary,
       // B4: 仅 LLM 建议，不调度——用户在 TodoConfirm(B6) 确认后才建 Reminder
       reminderSuggestion: parsed.reminderSuggestion,
+      // D21: VLM 媒体理解原文（仅含图条目且 LLM 返回了该字段）。降级纯文本重发后无此字段。
+      mediaDescription: parsed.mediaDescription,
       modelUsed: fModel,
       createdAt: now,
     }
@@ -505,12 +528,14 @@ export const openAiCompatLlm: LlmPort = {
     if (entryIds.length === 0) throw new Error('无条目可聚合')
 
     // Pull entries + their AI summaries to feed the prompt.
+    // D21: 同时取 ai?.mediaDescription，aggregate 完成后把完整 VLM 媒体理解原文
+    // 以「📷 图片理解：」「🎬 视频理解：」段附到 summary 末尾（绕过 LLM，保证完整原文）。
     const entries = await Promise.all(
       entryIds.map(async (id) => {
         const entry = await di.storage.getEntry(id)
         if (!entry) return null
         const ai = await di.storage.getEntryAi(id)
-        return { id, text: entryText(entry), aiSummary: ai?.summary }
+        return { id, text: entryText(entry), aiSummary: ai?.summary, mediaDescription: ai?.mediaDescription }
       }),
     )
     const valid = entries.flatMap((e) => (e === null ? [] : [e]))
@@ -540,10 +565,26 @@ export const openAiCompatLlm: LlmPort = {
     const parsed = parseAggregateJson(raw)
     const now = new Date().toISOString()
 
+    // D21: 把各条目的 VLM 媒体理解原文（完整）附到 summary 末尾，标注「📷 图片理解：」「🎬 视频理解：」。
+    // 绕过 LLM 融合——用户要求"完整 vlm 理解内容"，LLM 融合可能截断/改写。多条目同类型用「|」分隔。
+    const imagesParts: string[] = []
+    const videosParts: string[] = []
+    for (const e of valid) {
+      const md = e.mediaDescription
+      if (!md) continue
+      if (md.images && md.images.trim()) imagesParts.push(md.images.trim())
+      if (md.videos && md.videos.trim()) videosParts.push(md.videos.trim())
+    }
+    const mediaBlock: string[] = []
+    if (imagesParts.length > 0) mediaBlock.push(`📷 图片理解：${imagesParts.join(' | ')}`)
+    if (videosParts.length > 0) mediaBlock.push(`🎬 视频理解：${videosParts.join(' | ')}`)
+    const baseSummary = parsed.sentences && parsed.sentences.length > 0 ? parsed.sentences.join('') : (parsed.summary ?? '')
+    const summary = mediaBlock.length > 0 ? `${baseSummary}\n\n${mediaBlock.join('\n\n')}` : baseSummary
+
     const ag: Aggregate = {
       id: id ?? crypto.randomUUID(),
       scope: { type: scope, range },
-      summary: parsed.sentences && parsed.sentences.length > 0 ? parsed.sentences.join('') : (parsed.summary ?? ''),
+      summary,
       highlights: parsed.highlights,
       // D3: 存校验子集（valid），非原始入参——否则 scan 与 getEntry 之间被删的 id 残留成幽灵。
       entryIds: valid.map((v) => v.id),

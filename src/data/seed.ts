@@ -93,7 +93,7 @@ export const seedEntryAi: EntryAi[] = [
   { id: 'ai2', entryId: 'e2', version: 1, category: 'project', tags: ['aiji', 'design'], facets: { project: 'AiJi' }, titleSuggestion: 'CapturePort 接口化', summary: '抽 CapturePort 为接口，PWA/Capacitor 各实现', modelUsed: 'deepseek-chat', createdAt: '2026-07-15T07:42:00+08:00' },
   { id: 'ai3', entryId: 'e3', version: 1, category: 'idea', tags: ['reflection'], facets: { mood: '平静' }, titleSuggestion: '记忆外包', summary: '记不住是因为没把记忆外包给工具', modelUsed: 'deepseek-chat', createdAt: '2026-07-14T22:31:00+08:00' },
   { id: 'ai4', entryId: 'e4', version: 1, category: 'reading', tags: ['reflection'], facets: {}, titleSuggestion: 'Second brain', summary: '只捕获不整理，整理交给后端', modelUsed: 'deepseek-chat', createdAt: '2026-07-14T19:07:00+08:00' },
-  { id: 'ai5', entryId: 'e5', version: 1, category: 'life', tags: [], facets: { mood: '开心', place: '咖啡店' }, titleSuggestion: '桂花拿铁', summary: '楼下咖啡店新品桂花拿铁', modelUsed: 'deepseek-chat', createdAt: '2026-07-14T19:08:00+08:00' },
+  { id: 'ai5', entryId: 'e5', version: 1, category: 'life', tags: [], facets: { mood: '开心', place: '咖啡店' }, titleSuggestion: '桂花拿铁', summary: '楼下咖啡店新品桂花拿铁', mediaDescription: { videos: '视频画面：咖啡店吧台前，一杯拿铁放在木质桌面上，顶部撒有金色桂花碎，热气升腾；背景是暖光灯与咖啡机。' }, modelUsed: 'deepseek-chat', createdAt: '2026-07-14T19:08:00+08:00' },
   { id: 'ai8', entryId: 'e8', version: 1, category: 'errand', tags: [], facets: { event: '给设计稿反馈' }, titleSuggestion: '周三反馈设计稿', summary: '周三给设计稿反馈，别拖', modelUsed: 'deepseek-chat', createdAt: '2026-07-13T21:16:00+08:00' },
   { id: 'ai10', entryId: 'e10', version: 1, category: 'idea', tags: ['aiji'], facets: {}, titleSuggestion: '混合模态测试', summary: '文本+语音混合记一条', modelUsed: 'deepseek-chat', createdAt: '2026-07-12T20:11:00+08:00' },
   { id: 'ai11', entryId: 'e11', version: 1, category: 'reading', tags: ['reflection'], facets: {}, titleSuggestion: '卡片笔记写作法', summary: '原子化+链接+不分类，与涌现一致', modelUsed: 'deepseek-chat', createdAt: '2026-07-12T13:01:00+08:00' },
@@ -115,8 +115,8 @@ export const seedReminders: Reminder[] = [
 
 export const seedAggregates: Aggregate[] = [
   {
-    id: 'ag-w28', scope: { type: 'week', range: '2026-W28' }, summary: '本周以 AiJi 项目推进为主轴：抽象端口、涌现分类、STT 方案逐步成形；穿插两次生活片段（跑步、咖啡）与一篇阅读笔记（second brain / 卡片笔记）。情绪整体偏专注，周末略疲惫。',
-    entryIds: ['e2', 'e3', 'e4', 'e6', 'e10', 'e11', 'e12'], modelUsed: 'deepseek-chat', createdAt: '2026-07-15T09:00:00+08:00', stale: false, detailLevel: 3,
+    id: 'ag-w28', scope: { type: 'week', range: '2026-W28' }, summary: '本周以 AiJi 项目推进为主轴：抽象端口、涌现分类、STT 方案逐步成形；穿插两次生活片段（跑步、咖啡）与一篇阅读笔记（second brain / 卡片笔记）。情绪整体偏专注，周末略疲惫。\n\n🎬 视频理解：视频画面：咖啡店吧台前，一杯拿铁放在木质桌面上，顶部撒有金色桂花碎，热气升腾；背景是暖光灯与咖啡机。',
+    entryIds: ['e2', 'e3', 'e4', 'e5', 'e6', 'e10', 'e11', 'e12'], modelUsed: 'deepseek-chat', createdAt: '2026-07-15T09:00:00+08:00', stale: false, detailLevel: 3,
   },
   {
     id: 'ag-d715', scope: { type: 'day', range: '2026-07-15' }, summary: '今天记了两条：地铁里的想法（记一条顺便变提醒）和 CapturePort 接口化的项目进展。情绪专注。',

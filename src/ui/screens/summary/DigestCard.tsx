@@ -75,7 +75,7 @@ export function DigestCard({
             style={{ maxHeight: expanded ? 640 : 60 }}
           >
             {hasSummary ? (
-              <p className="mt-2 text-[13px] leading-relaxed text-t2">
+              <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-t2">
                 {aggregate.summary}
               </p>
             ) : (

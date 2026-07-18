@@ -1,6 +1,6 @@
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Search, Sparkles } from 'lucide-react'
-import { Fab, NavBottom, ReminderPopup, Statusbar } from '@/ui/components'
+import { Fab, FiringReminderPopup, NavBottom, ReminderPopup, Statusbar } from '@/ui/components'
 
 // Wave 3: 顶栏搜索入口（搜索从底栏移出，放大镜置顶，点击进 /search）。
 // AI Chat（纯读检索）：问 AI 入口置顶，点击进 /chat。
@@ -50,6 +50,8 @@ export function MainLayout() {
       <Fab />
       <NavBottom />
       <ReminderPopup />
+      {/* D20: 到点触发的前台弹窗（全生命周期，主路由+裸路由都挂） */}
+      <FiringReminderPopup />
     </div>
   )
 }
@@ -69,6 +71,8 @@ export function BareLayout() {
       >
         <Outlet />
       </main>
+      {/* D20: 到点弹窗在裸路由也生效（用户可能在采集/详情页时提醒到点） */}
+      <FiringReminderPopup />
     </div>
   )
 }

@@ -41,6 +41,10 @@ interface UiState {
   // 保存后 LLM 检出 reminderSuggestion → 全局 ReminderPopup 即时确认。仅 finishSave(isFresh=true) 的
   // processEntry 置；detail reprocess 走 isFresh=false 不弹。confirmReminder/忽略 → dismissPendingReminder。
   pendingReminder: { entryId: string; dueAt: string; label: string } | null
+  // D20: 到点触发的前台弹窗。原生 LocalNotifications listener / web webNotify handler
+  // → setReminderFireHandler → showFiringReminder → FiringReminderPopup overlay。
+  // 与 pendingReminder（保存后确认创建）区分；本字段是「已到点」强提示。
+  firingReminder: { reminderId: string; entryId?: string; label: string; dueAt?: string } | null
   hydrate: () => Promise<void>
   // D9: 导入示例数据后重读 Dexie。重置 hydrated 跑 hydrate 全量载入（onboarding/settings 导入后调）。
   rehydrate: () => Promise<void>
@@ -65,6 +69,9 @@ interface UiState {
   recoverEntry: (id: string) => Promise<void>
   clearJustSaved: () => void
   dismissPendingReminder: () => void
+  // D20: 到点触发弹窗
+  showFiringReminder: (p: { reminderId: string; entryId?: string; label: string; dueAt?: string }) => void
+  dismissFiringReminder: () => void
   setOnline: (v: boolean) => void
   setSettings: (patch: Partial<Settings>) => void
   setLlmConfig: (url: string, model: string, key: string) => void
@@ -236,6 +243,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   recalculating: {},
   justSaved: false,
   pendingReminder: null,
+  firingReminder: null,
   conversation: null,
   chatLoading: 'idle',
   chatVoice: { recording: false, interim: '', finalized: '', micDenied: false },
@@ -442,6 +450,10 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
   clearJustSaved: () => set({ justSaved: false }),
   dismissPendingReminder: () => set({ pendingReminder: null }),
+  // D20: 到点弹窗 show/dismiss。showFiringReminder 由 reminderFire.ts 的 fire handler
+  // 调用（payload 来自原生 listener 或 web webNotify）。dismiss 由弹窗组件按钮/遮罩点击。
+  showFiringReminder: (p) => set({ firingReminder: p }),
+  dismissFiringReminder: () => set({ firingReminder: null }),
   setOnline: (v) => set({ online: v }),
   setSettings: (patch) => {
     const next = { ...get().settings, ...patch }
