@@ -75,10 +75,13 @@ export default function Summary() {
       if (recalculatingRef.current[key] === true) continue
       const needsRecompute = !cur || cur.stale || (cur.detailLevel ?? 3) !== detailLevel
       if (!needsRecompute) continue
-      // D6: no Dexie aggregate but cache fresh → skip LLM recompute (秒开 from cache).
-      // shouldRefresh for day-scope compares cached.entryCount vs current entry count,
-      // so a genuinely new entry still triggers recompute (count mismatch).
-      if (!cur) {
+      // D6/D18: no Dexie aggregate OR stale but cache fresh → skip LLM recompute (秒开 from cache).
+      // D18 关键修复：原先只在 `!cur` 时查缓存，stale 时直接 push missing → recomputeAggregate
+      // → LLM 失败 → catch restore stale=true → 下次进页面又 stale 又不查缓存 → 死循环「生成中」。
+      // 扩展到 `!cur || cur.stale` 后，stale 时也查缓存：shouldRefresh 对 day scope 比较 entryCount，
+      // 新条目 entryCount 变 → shouldRefresh=true → fresh=false → 仍重算（设计意图保留）；LLM 失败后
+      // entryCount 未变 → shouldRefresh=false → fresh=true → continue 跳过 LLM，显示旧摘要。
+      if (!cur || cur.stale) {
         const count = entryIdsByRange.get(range)?.length ?? 0
         const cached = summaryCache.get(scope, range)
         const fresh =

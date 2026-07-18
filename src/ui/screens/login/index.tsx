@@ -74,6 +74,12 @@ export default function Login() {
       <p className="mt-auto pt-8 text-center text-[11px] text-t3">
         数据始终本地优先；账号只是身份与权益凭证
       </p>
+
+      {/* D12: 免责声明（双保险——AccountGate 强制先登录，首启首屏为 /login） */}
+      <p className="mt-3 text-center text-[11px] leading-relaxed text-t3">
+        AiJi · AI 记 — 开源址 github.com/cq-dong/AiJi · 仅供学习交流 · AI
+        生成内容（分类/摘要/问答）可能不准确，重要决策请自行核实 · 使用本应用视为接受此声明
+      </p>
     </div>
   )
 }

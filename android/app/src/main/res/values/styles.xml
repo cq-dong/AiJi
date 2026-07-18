@@ -17,6 +17,12 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <!-- D12: AndroidX SplashScreen API 属性（Android 12+ 生效）。
+             系统 splash 只支持居中 icon + 背景色，不支持底部文字整图。
+             用品牌色 #4f46e5 作背景，ic_launcher_foreground 作居中 icon。
+             android:background=@drawable/splash 保留作 pre-API-12 fallback。 -->
+        <item name="android:windowSplashScreenBackground">@color/splash_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="android:background">@drawable/splash</item>
     </style>
 </resources>

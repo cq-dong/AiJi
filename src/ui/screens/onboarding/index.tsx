@@ -87,6 +87,12 @@ export default function Onboarding() {
         </ul>
       </div>
 
+      {/* D12: 免责声明（首屏可见） */}
+      <p className="mt-4 text-[11px] leading-relaxed text-t3">
+        AiJi · AI 记 — 开源址 github.com/cq-dong/AiJi · 仅供学习交流 · AI
+        生成内容（分类/摘要/问答）可能不准确，重要决策请自行核实 · 使用本应用视为接受此声明
+      </p>
+
       {/* BYOK */}
       <div className="mt-6">
         <label className="text-[11px] font-medium text-t3">API Key</label>

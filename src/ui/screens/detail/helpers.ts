@@ -69,6 +69,8 @@ export function partTypeLabel(part: EntryPart): string {
     case 'audio':
       return '语音'
     case 'video':
-      return '视频'
+      // CLAUDE.md: 照片是 durationSec=0 的 video part（mediaType='image'）。
+      // 区分照片与真视频，否则单拍照片在详情页被错标「视频」（D14）。
+      return part.mediaType === 'image' || part.durationSec === 0 ? '图片' : '视频'
   }
 }

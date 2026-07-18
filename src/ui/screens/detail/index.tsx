@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core'
 import { Button, Card, EmptyState, ReminderCreator, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
+import { enrichLocation } from '@/adapters/geocoding'
 import { exportEntryZip, shareEntry, canShareEntry } from '@/adapters/zipExport'
 import { canShareFiles, type SaveResult } from '@/adapters/fileShare'
 import type { EntryAi, EntryPart, EntryStatus, Reminder } from '@/domain/types'
@@ -668,6 +669,22 @@ export default function Detail() {
   useEffect(() => {
     setReprocessing(false)
   }, [found?.updatedAt])
+
+  // D13: 兜底回填地点地址。processEntry 已对新建条目回填，但导入的旧数据或
+  // processEntry 失败（catch 块不调 enrichLocation）的条目可能仍无 address。
+  // detail 挂载时对无 address 的 location 做 lazy enrich + updateEntry。address 回填后
+  // 依赖变化重跑，但此时 loc.address 已存在直接 return，不死循环。
+  useEffect(() => {
+    const entryId = found?.id
+    const loc = found?.location
+    if (!entryId || !loc || loc.address) return
+    let cancelled = false
+    void enrichLocation(loc).then((enriched) => {
+      if (cancelled || !enriched.address) return
+      void useUiStore.getState().updateEntry(entryId, { location: enriched })
+    })
+    return () => { cancelled = true }
+  }, [found?.id, found?.location?.address])
 
   const handleReprocess = () => {
     if (!id) return

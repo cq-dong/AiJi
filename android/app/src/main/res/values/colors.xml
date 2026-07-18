@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- D12: SplashScreen 品牌背景色（bg-pri #4f46e5）。 -->
+    <color name="splash_bg">#4F46E5</color>
+    <!-- styles.xml AppTheme 引用（补齐缺失定义）。 -->
+    <color name="colorPrimary">#4F46E5</color>
+    <color name="colorPrimaryDark">#3730A3</color>
+    <color name="colorAccent">#4F46E5</color>
+</resources>

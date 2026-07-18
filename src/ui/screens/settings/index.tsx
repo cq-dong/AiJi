@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Download, X } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
 import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
 import { exportZip } from '@/adapters/zipExport'
-import { canShareFiles, type SaveResult } from '@/adapters/fileShare'
+import { canShareFiles, saveBlob, type SaveResult } from '@/adapters/fileShare'
 import { importSampleData } from '@/adapters/dexieStorage'
 import { Toggle } from './Toggle'
 import { AccountSection } from './AccountSection'
@@ -146,8 +148,12 @@ const STT_URL_PLACEHOLDERS: Record<SttMode, string> = {
   stream: 'wss://…/api-ws/v1/inference',
   whisper: 'https://…/v1',
 }
+// 用户未填时的默认填充（仅 stream=DashScope WS 公共端点；whisper 无固定 DashScope REST 端点，留空）。
+const STT_URL_DEFAULTS: Partial<Record<SttMode, string>> = {
+  stream: 'wss://dashscope.aliyuncs.com/api-ws/v1/inference',
+}
 const STT_URL_HELP: Record<SttMode, string> = {
-  stream: '留空=用公共 DashScope 默认端点',
+  stream: 'DashScope WS 公共端点（已默认填充，可改）',
   whisper: 'OpenAI 兼容 REST base，如 Aliyun PI 的 /compatible-mode/v1',
 }
 const STT_MODEL_PLACEHOLDERS: Record<SttMode, string> = {
@@ -201,16 +207,11 @@ function buildExportMarkdown(): string {
   return lines.join('\n')
 }
 
-function downloadMarkdown(md: string): void {
-  const blob = new Blob([md], { type: 'text/markdown' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'aiji-export.md'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+// D15: 走 saveBlob（平台分流：Web Share / Filesystem / a.click fallback），与 zipExport
+// 同路径——Android WebView 里 <a download>.click() 静默失败，必须走 saveBlob。
+async function downloadMarkdown(md: string): Promise<SaveResult> {
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+  return saveBlob(blob, 'aiji-export.md')
 }
 
 // Web Share API：可用时弹原生分享面板（由系统选择目标 App，不做 per-app 定向）；
@@ -573,7 +574,7 @@ function SttSheet({ onClose }: { onClose: () => void }) {
   const setSettings = useUiStore((s) => s.setSettings)
   const setSttConfig = useUiStore((s) => s.setSttConfig)
   const mode = settings.sttMode
-  const [url, setUrl] = useState(settings.sttUrl ?? '')
+  const [url, setUrl] = useState(settings.sttUrl ?? STT_URL_DEFAULTS[mode] ?? '')
   const [model, setModel] = useState(settings.sttModel ?? '')
   const [key, setKey] = useState('')
   const hasKey = settings.sttKeyRef === 'stt:key'
@@ -912,9 +913,11 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
         {info && info.releaseNotes && (
           <div className="mt-3 max-h-[160px] overflow-y-auto rounded-card border border-brd bg-card p-3">
             <p className="mb-1 text-[11px] text-t3">更新日志</p>
-            <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-t2">
-              {info.releaseNotes}
-            </p>
+            <div className="prose prose-sm max-w-none text-[12px] leading-relaxed text-t2">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {info.releaseNotes}
+              </ReactMarkdown>
+            </div>
           </div>
         )}
 
@@ -1020,6 +1023,10 @@ export default function Settings() {
   const [zipExporting, setZipExporting] = useState(false)
   const [zipToast, setZipToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
+  // D15: Markdown 导出反馈状态（镜像 zip：导出中 + toast）。
+  const [mdExporting, setMdExporting] = useState(false)
+  const [mdToast, setMdToast] = useState<{ msg: string; ok: boolean } | null>(null)
+
   const zipMediaCount = entries.reduce((sum, e) => sum + countMedia(e.parts), 0)
 
   async function handleZipExport() {
@@ -1036,6 +1043,22 @@ export default function Settings() {
       setZipToast({ msg: `导出失败：${e instanceof Error ? e.message : String(e)}`, ok: false })
     } finally {
       setZipExporting(false)
+    }
+  }
+
+  // D15: Markdown 导出——走 saveBlob 平台分流，复用 zip 同款 toast 反馈。
+  async function handleMarkdownExport() {
+    setMdExporting(true)
+    try {
+      const result = await downloadMarkdown(buildExportMarkdown())
+      if (!result.ok && result.method === 'none' && result.error === '已取消') {
+        return
+      }
+      setMdToast({ msg: formatSaveFeedback(result), ok: result.ok })
+    } catch (e) {
+      setMdToast({ msg: `导出失败：${e instanceof Error ? e.message : String(e)}`, ok: false })
+    } finally {
+      setMdExporting(false)
     }
   }
 
@@ -1141,13 +1164,13 @@ export default function Settings() {
         )}
         <div className="mt-3 flex gap-2">
           <Button
-            variant="primary"
+            variant="secondary"
             size="sm"
             className="h-[38px] flex-1 rounded-btn"
-            disabled={!hasEntries}
-            onClick={() => downloadMarkdown(buildExportMarkdown())}
+            disabled={!hasEntries || mdExporting}
+            onClick={() => void handleMarkdownExport()}
           >
-            导出 Markdown
+            {mdExporting ? '导出中…' : '导出 Markdown'}
           </Button>
           <Button
             variant="secondary"
@@ -1216,6 +1239,13 @@ export default function Settings() {
           message={zipToast.msg}
           ok={zipToast.ok}
           onDismiss={() => setZipToast(null)}
+        />
+      )}
+      {mdToast && (
+        <Toast
+          message={mdToast.msg}
+          ok={mdToast.ok}
+          onDismiss={() => setMdToast(null)}
         />
       )}
     </div>

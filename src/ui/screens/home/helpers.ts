@@ -80,7 +80,11 @@ export function modalityLabel(parts: EntryPart[]): string {
   const p = parts[0]
   if (!p) return '文本'
   if (p.type === 'audio') return '语音'
-  if (p.type === 'video') return '视频'
+  if (p.type === 'video') {
+    // CLAUDE.md: 照片是 durationSec=0 的 video part（mediaType='image'）。
+    // 区分照片与真视频，否则单拍照片在时间线被错标「视频」（D14）。
+    return p.mediaType === 'image' || p.durationSec === 0 ? '图片' : '视频'
+  }
   return '文本'
 }
 

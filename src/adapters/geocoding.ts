@@ -54,8 +54,10 @@ export async function reverseGeocode(
       return data.display_name.trim()
     }
     return null
-  } catch {
-    // AbortError / network / parse — all degrade to null (caller shows lat/lng)
+  } catch (e) {
+    // AbortError / network / parse — all degrade to null (caller shows lat/lng).
+    // D13: log for diagnosability (CORS/timeout visible in console; otherwise silent).
+    console.warn('[geocoding] reverseGeocode failed', e)
     return null
   } finally {
     clearTimeout(timer)

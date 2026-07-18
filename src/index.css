@@ -59,6 +59,11 @@
   #root {
     height: 100%;
   }
+  /* D11: 阻止链式滚动——main 滚到边界时不拖动 body，避免上方/下方露出 body 背景形成空白条。 */
+  html,
+  body {
+    overscroll-behavior: none;
+  }
   body {
     margin: 0;
     /* 桌面预览时 frame 外区域与 page 同色（深浅随 .dark） */
@@ -73,13 +78,19 @@
   button {
     font-family: inherit;
   }
+  /* D11: main 滚动容器 contain 自身滚动边界，不向父级冒泡。 */
+  main,
+  .aji-frame-main {
+    overscroll-behavior: contain;
+  }
 }
 
 /* Mobile preview frame: 390×844 centered on larger screens */
 .aji-frame {
   width: 390px;
   max-width: 100%;
-  min-height: 844px;
+  /* D11: 用 100% 代替固定 844px，避免异形屏上撑出 body 滚动放大空白条效应。 */
+  min-height: 100%;
   margin: 0 auto;
   position: relative;
   overflow: hidden;

@@ -3,6 +3,8 @@ import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, 
 import { scopeRange } from '@/domain/dateRange'
 import { localRecall } from '@/ui/screens/chat/helpers'
 import { seedSettings } from '@/data/seed'
+import { enrichLocation } from '@/adapters/geocoding'
+import * as summaryCache from '@/adapters/summaryCache'
 import { di } from './di'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：D9 后首屏空状态（不再
@@ -476,6 +478,25 @@ export const useUiStore = create<UiState>((set, get) => ({
   },
   processEntry: async (entryId, isFresh) => {
     try {
+      // D13: 后置回填地点地址。capture 屏的 enrichLocation effect 只更新 Zustand
+      // capture.location，保存后 navigate('/') → capture 卸载 → effect cleanup
+      // cancelled=true，Nominatim 返回被丢弃，entry 以纯 lat/lng 落库。此处对已落库
+      // entry 的无 address location 做回填（await 串行，避免与 STT/classify 的 saveEntry
+      // 并发覆盖）。不阻塞 finishSave（processEntry 是 fire-and-forget）；失败只 warn
+      // 不影响后续 STT/classify（enrichLocation 内部已 catch 返原 loc，此处双保险）。
+      const fresh0 = await di.storage.getEntry(entryId)
+      if (fresh0?.location && !fresh0.location.address) {
+        try {
+          const enriched = await enrichLocation(fresh0.location)
+          if (enriched.address) {
+            const updated0: Entry = { ...fresh0, location: enriched, updatedAt: new Date().toISOString() }
+            await di.storage.saveEntry(updated0)
+            set((s) => ({ entries: s.entries.map((e) => (e.id === entryId ? updated0 : e)) }))
+          }
+        } catch (e) {
+          console.warn('[store] enrichLocation backfill failed', e)
+        }
+      }
       // STT 终稿（保存后）：paraformer 重写音频/视频 transcript，比 WebSpeech live 预览准。
       // 无 stt:key → 跳过整步（用 WebSpeech 预览文本分类即可）；单 part 失败 → 回退预览文本，不阻断分类。
       const sttKey = await di.secrets.get('stt:key')
@@ -559,6 +580,21 @@ export const useUiStore = create<UiState>((set, get) => ({
     // 新鲜即跳过：scope 切换/挂载不再每次打付费 LLM；processEntry 先置 stale 再触发，真过期仍重算。
     // Wave 3: detailLevel 变了也算过期——避免级别改了却显示旧级别摘要。
     if (existing && !existing.stale && (existing.detailLevel ?? 3) === lvl) return
+    // D18: stale 时查 localStorage 缓存兜底——LLM 失败后 catch 块 restore stale=prevStale=true，
+    // 但缓存里其实有上次成功的旧摘要。shouldRefresh 对 day scope 比较 entryCount：新条目仍重算
+    // （设计意图保留），LLM 失败后 entryCount 未变 → 缓存 fresh → return 跳过重算，避免死循环。
+    // 双保险：防 onRegen 后 sweep 绕过、或其它路径直调 recomputeAggregate 时不必要地重打付费 LLM。
+    if (existing?.stale) {
+      const count = inRange.length
+      const cached = summaryCache.get(scope, dateKey)
+      if (
+        cached !== null &&
+        !summaryCache.shouldRefresh(scope, dateKey, count) &&
+        (existing.detailLevel ?? 3) === lvl
+      ) {
+        return
+      }
+    }
     const recalcingKey = `${scope}:${dateKey}`
     // D9: in-flight 守卫——processEntry 与 summary onRegen 并发调同 scope+range 时，第二个直接 return，
     // 不发第二次付费 LLM 调用（结果会互相踩）。summary sweep 的 RECOMPUTE_CONCURRENCY=2 只限单 source 内并发，

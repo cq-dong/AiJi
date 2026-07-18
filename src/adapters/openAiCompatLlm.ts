@@ -173,7 +173,7 @@ function parseJson(raw: string): ClassifyResult {
   }
   const p = parsed as Record<string, unknown>
   const reminder = asStringRecord(p.reminderSuggestion)
-  return {
+  const result: ClassifyResult = {
     categorySlug: typeof p.categorySlug === 'string' ? p.categorySlug : '',
     categoryLabel: typeof p.categoryLabel === 'string' ? p.categoryLabel : undefined,
     tags: asStringArray(p.tags),
@@ -185,6 +185,13 @@ function parseJson(raw: string): ClassifyResult {
         ? { dueAt: reminder.dueAt, label: reminder.label }
         : undefined,
   }
+  // D14/D17: 空 categorySlug 说明 LLM 无分类依据（典型：纯图条目 VLM 失败后空 prompt 降级
+  // 触发 LLM 幻觉，曾返 categorySlug='voice' 等虚构标签）。拒绝而非落库幻觉分类——
+  // 让 classify 抛错 → 管线标 entry failed，比错误分类更安全。
+  if (!result.categorySlug.trim()) {
+    throw new Error('LLM 返回空 categorySlug（无分类依据，可能因空 prompt 幻觉）')
+  }
+  return result
 }
 
 interface AggregateResult {
@@ -421,7 +428,15 @@ export const openAiCompatLlm: LlmPort = {
       body: JSON.stringify(bodyOf(messages, fModel, fUrl)),
     })
     if (!res.ok && images.length > 0) {
-      // 静默降级：model 不支持 image_url（常见 400）→ 去图纯文本重发，不崩不提示。
+      // 降级：model 不支持 image_url（常见 400）→ 去图纯文本重发。
+      // 但纯图无文本（content.trim()===''）时不能降级——降级后空 prompt 会让 LLM 幻觉
+      // 分类（D14/D17：照片被标 'voice'/'视频' 等虚构标签）。直接 throw，让上层 classify
+      // 标 entry failed，比幻觉分类更安全。
+      const errText = await res.text().catch(() => '')
+      if (!content.trim()) {
+        throw new Error(`VLM 不可用且无文本内容可分类（HTTP ${res.status}: ${errText.slice(0, 120)}）`)
+      }
+      console.warn('[llm] vision failed, falling back to text-only', res.status, errText.slice(0, 200))
       const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags)
       res = await fetch(fUrl, {
         method: 'POST',

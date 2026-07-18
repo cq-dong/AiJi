@@ -39,11 +39,11 @@ export function MainLayout() {
     >
       <Statusbar />
       <TopBar />
-      {/* D1: 内容区底部留 NavBottom(79) + safe-bottom 的空间，
-          避免记录多时底部功能栏被系统导航栏遮挡。--safe-bottom 由 MainActivity 注入，PWA fallback 0。 */}
+      {/* D11: 内容区底部留 NavBottom(79) + safe-bottom 的空间，与 NavBottom 等高消除灰带。
+          --safe-bottom 由 MainActivity 注入，PWA fallback 0。 */}
       <main
-        className="flex-1 overflow-y-auto"
-        style={{ paddingBottom: 'calc(100px + var(--safe-bottom, 0px))' }}
+        className="aji-frame-main flex-1 overflow-y-auto"
+        style={{ paddingBottom: 'calc(79px + var(--safe-bottom, 0px))' }}
       >
         <Outlet />
       </main>
