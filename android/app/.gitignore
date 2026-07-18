@@ -1,2 +1,5 @@
 /build/*
 !/build/.npmkeep
+
+# release signing keystore (from secret, never commit)
+release.keystore

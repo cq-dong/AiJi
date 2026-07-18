@@ -131,14 +131,17 @@ export interface SecretStorePort {
 // 应用自更新端口。PWA / Android 双实现：
 // - checkForUpdate：fetch GitHub Releases API（公开仓带 CORS，WebView 直连）+ semver 比较。
 //   latest = release tag_name 去 v 前缀；apkUrl = .apk 资产直链；releaseNotes = body。
-// - downloadAndInstall：Android 走原生插件（OkHttp 下载→FileProvider→系统安装器，
+// - downloadAndInstall：Android 走原生插件（HttpURLConnection 下载→FileProvider→系统安装器，
 //   绕过 assets.githubusercontent.com 的 CORS）；PWA 回退 window.open(releaseUrl)。
+//   onProgress 回调仅 Android 实现：原生插件 notifyListeners("downloadProgress") →
+//   适配器转发；PWA 无下载概念（跳浏览器），onProgress 签名存在但被忽略以保持接口一致。
+//   percent = -1 表示服务端未返回 Content-Length，UI 仅显示已下载字节数无百分比。
 // current = 构建时烘焙的 __APP_VERSION__（package.json version 单一真源）。
 export interface UpdateInfo {
   current: string
   latest: string
   hasUpdate: boolean
-  // Android: release 资产里 .apk 的 browser_download_url（原生插件用 OkHttp 拉）。
+  // Android: release 资产里 .apk 的 browser_download_url（原生插件用 HttpURLConnection 拉）。
   apkUrl?: string
   // PWA fallback: GitHub release 页（window.open）。
   releaseUrl?: string
@@ -147,9 +150,16 @@ export interface UpdateInfo {
   prerelease?: boolean
 }
 
+// 下载进度载荷。received=已下载字节；total=总字节（-1=未知）；percent=0-100（-1=未知）。
+export interface DownloadProgress {
+  received: number
+  total: number
+  percent: number
+}
+
 export interface AppUpdatePort {
   checkForUpdate(): Promise<UpdateInfo>
-  downloadAndInstall(info: UpdateInfo): Promise<void>
+  downloadAndInstall(info: UpdateInfo, onProgress?: (p: DownloadProgress) => void): Promise<void>
 }
 
 // D4 · 本地提醒通知端口。替代旧 setTimeout-only 前台调度（app 后台/被杀即失效）。

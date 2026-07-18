@@ -16,10 +16,39 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        // 固定 debug keystore 到仓库内，避免 CI 每次 run 用 GitHub runner 镜像自带的
+        // ~/.android/debug.keystore（实例不同 / 镜像刷新会变）导致版本间签名证书
+        // 不一致 → Android 拒绝覆盖安装（INSTALL_FAILED_UPDATE_INCOMPATIBLE / 包名冲突）。
+        // debug 签名非安全边界，仅为开发期一致签名；PR build 用此。
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+        // D23/B: release 签名 keystore 不入库（安全），存 GitHub secret（base64）。
+        // CI decode 到 android/app/release.keystore，env 注入路径/密码。
+        // 4 个 env：AIO_KEYSTORE_PATH（app/release.keystore 或空）、AIO_KEYSTORE_PASSWORD、
+        // AIO_KEY_ALIAS、AIO_KEY_PASSWORD。本地无 env 时 signingConfig 为空 → assembleRelease
+        // 产 unsigned APK（不会崩，仅未签名）。
+        release {
+            if (System.getenv('AIO_KEYSTORE_PATH')) {
+                storeFile file(System.getenv('AIO_KEYSTORE_PATH'))
+                storePassword System.getenv('AIO_KEYSTORE_PASSWORD') ?: ''
+                keyAlias System.getenv('AIO_KEY_ALIAS') ?: ''
+                keyPassword System.getenv('AIO_KEY_PASSWORD') ?: ''
+            }
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
 }

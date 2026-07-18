@@ -1,4 +1,4 @@
-import type { AppUpdatePort, UpdateInfo } from '@/ports'
+import type { AppUpdatePort, DownloadProgress, UpdateInfo } from '@/ports'
 import { fetchLatestRelease, compareSemver } from './appUpdateShared'
 
 // PWA 实现：checkForUpdate 走 fetch（平台无关内核）；downloadAndInstall 跳浏览器
@@ -23,10 +23,14 @@ export const webAppUpdate: AppUpdatePort = {
       prerelease: latest.prerelease,
     }
   },
-  async downloadAndInstall(info: UpdateInfo): Promise<void> {
+  // onProgress 在 web 上无意义（window.open 跳走，无下载概念）；保留签名仅为接口一致。
+  async downloadAndInstall(
+    _info: UpdateInfo,
+    _onProgress?: (p: DownloadProgress) => void,
+  ): Promise<void> {
     // web 上无法直接装 APK——跳 release 页让用户手动下（典型场景：用户在 PC 上看，
     // 扫码到手机装）。PWA 自身的更新由 SW autoUpdate 负责，不经此端口。
-    const url = info.releaseUrl ?? `https://github.com/cq-dong/AiJi/releases/latest`
+    const url = _info.releaseUrl ?? `https://github.com/cq-dong/AiJi/releases/latest`
     window.open(url, '_blank', 'noopener')
   },
 }

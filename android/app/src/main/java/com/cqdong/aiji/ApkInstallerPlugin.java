@@ -58,16 +58,47 @@ public class ApkInstallerPlugin extends Plugin {
                     return;
                 }
 
+                long total = conn.getContentLengthLong(); // -1 if server doesn't report
+                // 下载开始即发一次进度 0，让 UI 立即进 loading 态（避免点击后数秒无反馈）。
+                final JSObject start = new JSObject();
+                start.put("received", 0L);
+                start.put("total", total);
+                start.put("percent", total > 0 ? 0 : -1);
+                bridge.execute(() -> notifyListeners("downloadProgress", start));
+
                 // 唯一文件名防并发下载互覆盖致 APK 损坏。
                 File outFile = new File(getContext().getCacheDir(),
                         "aiji-update-" + System.currentTimeMillis() + ".apk");
+                final long totalSize = total;
+                long lastNotifiedBytes = 0;
                 try (InputStream in = conn.getInputStream();
                      FileOutputStream out = new FileOutputStream(outFile)) {
                     byte[] buf = new byte[8192];
                     int n;
+                    long received = 0;
+                    // 每 64KB 或每 1% 哪个先到就上报一次；弱网下 64KB 阈值保证早期就有反馈。
                     while ((n = in.read(buf)) != -1) {
                         out.write(buf, 0, n);
+                        received += n;
+                        boolean hit64k = received - lastNotifiedBytes >= 64 * 1024;
+                        boolean hit1p = totalSize > 0
+                                && received * 100 / totalSize > lastNotifiedBytes * 100 / totalSize;
+                        if (hit64k || hit1p) {
+                            final JSObject p = new JSObject();
+                            p.put("received", received);
+                            p.put("total", totalSize);
+                            p.put("percent", totalSize > 0
+                                    ? (int) (received * 100 / totalSize) : -1);
+                            bridge.execute(() -> notifyListeners("downloadProgress", p));
+                            lastNotifiedBytes = received;
+                        }
                     }
+                    // 下载完成发一次 100%（total 未知时仍发 received + percent=-1，UI 可收尾）。
+                    final JSObject done = new JSObject();
+                    done.put("received", received);
+                    done.put("total", totalSize);
+                    done.put("percent", totalSize > 0 ? 100 : -1);
+                    bridge.execute(() -> notifyListeners("downloadProgress", done));
                 }
 
                 // FileProvider 取 content:// —— cache-path 已在 file_paths.xml 暴露。

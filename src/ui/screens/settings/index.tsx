@@ -11,7 +11,7 @@ import { canShareFiles, saveBlob, type SaveResult } from '@/adapters/fileShare'
 import { importSampleData } from '@/adapters/dexieStorage'
 import { Toggle } from './Toggle'
 import { AccountSection } from './AccountSection'
-import type { UpdateInfo } from '@/ports'
+import type { UpdateInfo, DownloadProgress } from '@/ports'
 import type { EntryPart, Settings as SettingsType } from '@/domain/types'
 
 type Theme = 'light' | 'dark' | 'system'
@@ -834,6 +834,12 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
   const [state, setState] = useState<CheckState>({ status: 'idle' })
   const [installing, setInstalling] = useState(false)
   const [installErr, setInstallErr] = useState<string | null>(null)
+  // 下载进度（仅 Android 原生）：received/total bytes，percent 0-100（-1=总大小未知）。
+  // null = 未在下载 / 已重置；非 null 即正在下载或刚完成（UI 据此显示进度条）。
+  const [progress, setProgress] = useState<DownloadProgress | null>(null)
+  // 下载完成（promise resolve）后系统安装器会拉起，UI 显示「下载完成，等待安装…」短暂态。
+  // downloaded flag 在 resolve 时置 true，下次点击安装按钮或关闭 sheet 时重置。
+  const [downloaded, setDownloaded] = useState(false)
 
   async function handleCheck() {
     setState({ status: 'checking' })
@@ -850,14 +856,22 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
     if (state.status !== 'ok') return
     setInstalling(true)
     setInstallErr(null)
+    setProgress(null)
+    setDownloaded(false)
     try {
-      await di.appUpdate.downloadAndInstall(state.info)
+      await di.appUpdate.downloadAndInstall(state.info, (p) => setProgress(p))
+      setDownloaded(true)
     } catch (e) {
       setInstallErr(e instanceof Error ? e.message : String(e))
     } finally {
       setInstalling(false)
     }
   }
+
+  const formatMB = (bytes: number): string => (bytes / 1048576).toFixed(1)
+  const hasProgress = !!progress
+  const showProgressBar = hasProgress && progress!.percent >= 0
+  const percentClamped = hasProgress ? Math.max(0, Math.min(100, progress!.percent)) : 0
 
   const info = state.status === 'ok' ? state.info : null
   const latestLabel = info ? (info.latest === '—' ? '尚未发布' : `v${info.latest}`) : '—'
@@ -927,16 +941,47 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
               variant="primary"
               size="sm"
               className="h-[38px] w-full rounded-btn"
-              disabled={installing}
+              disabled={installing || downloaded}
               onClick={() => void handleInstall()}
             >
               <Download size={14} strokeWidth={2} />
-              {installing
-                ? '下载安装中…'
-                : isNative
-                  ? '下载并安装更新'
-                  : '前往 GitHub 下载'}
+              {downloaded
+                ? '下载完成，等待安装…'
+                : installing
+                  ? '下载中…'
+                  : isNative
+                    ? '下载并安装更新'
+                    : '前往 GitHub 下载'}
             </Button>
+
+            {/* 下载进度条：仅 Android 原生 + 正在下载时显示。
+                percent=-1（总大小未知）只显示已下载字节无百分比条；否则显示 X.X/Y.Y MB + 百分比条。 */}
+            {isNative && installing && hasProgress && (
+              <div className="mt-2 rounded-btn border border-brd bg-card p-3">
+                {showProgressBar ? (
+                  <>
+                    <div className="mb-1.5 flex items-center justify-between text-[11px] text-t2">
+                      <span>
+                        已下载 {formatMB(progress!.received)} / {formatMB(progress!.total)} MB
+                      </span>
+                      <span className="font-medium text-pri">{progress!.percent}%</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-priS">
+                      <div
+                        className="h-full rounded-full bg-pri transition-[width] duration-base ease-out"
+                        style={{ width: `${percentClamped}%` }}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2 text-[11px] text-t2">
+                    <span className="inline-block size-2 animate-pulse rounded-full bg-pri" />
+                    <span>下载中… 已下载 {formatMB(progress!.received)} MB</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {installErr && (
               <p className="mt-2 text-[11px] text-catFail">✗ {installErr}</p>
             )}
