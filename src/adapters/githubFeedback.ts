@@ -54,7 +54,9 @@ async function gh(path: string, init: RequestInit): Promise<Response> {
   })
 }
 
-// 幂等确保孤儿分支存在（空树根提交，仅存图片，不污染 main 历史）。模块级缓存免每次提交都探。
+// 幂等确保孤儿分支存在（仅 .gitkeep + 图片，不污染 main 历史）。模块级缓存免每次提交都探。
+// GitHub `POST /git/trees` 拒绝 `tree: []`（422 Invalid tree info），故须先建 .gitkeep blob
+// 作占位条目，再建树 → 无父根提交 → 建 ref。
 let branchReady = false
 async function ensureAssetsBranch(): Promise<void> {
   if (branchReady) return
@@ -67,14 +69,23 @@ async function ensureAssetsBranch(): Promise<void> {
     const t = await probe.text().catch(() => '')
     throw new Error(`检查反馈分支失败 (${probe.status}) ${t.slice(0, 200)}`)
   }
-  // 建孤儿分支：空树 → 无父根提交 → 建 ref。三步一气呵成。
+  // 建孤儿分支：.gitkeep 空 blob → 单条目树 → 无父根提交 → 建 ref。
+  const blobRes = await gh(`/repos/${REPO}/git/blobs`, {
+    method: 'POST',
+    body: JSON.stringify({ content: '', encoding: 'utf-8' }),
+  })
+  if (!blobRes.ok) {
+    const t = await blobRes.text().catch(() => '')
+    throw new Error(`建占位 blob 失败 (${blobRes.status}) ${t.slice(0, 200)}`)
+  }
+  const blobSha = (await blobRes.json() as { sha: string }).sha
   const treeRes = await gh(`/repos/${REPO}/git/trees`, {
     method: 'POST',
-    body: JSON.stringify({ tree: [] }),
+    body: JSON.stringify({ tree: [{ path: '.gitkeep', mode: '100644', type: 'blob', sha: blobSha }] }),
   })
   if (!treeRes.ok) {
     const t = await treeRes.text().catch(() => '')
-    throw new Error(`建空树失败 (${treeRes.status}) ${t.slice(0, 200)}`)
+    throw new Error(`建树失败 (${treeRes.status}) ${t.slice(0, 200)}`)
   }
   const treeSha = (await treeRes.json() as { sha: string }).sha
   const commitRes = await gh(`/repos/${REPO}/git/commits`, {
