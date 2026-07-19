@@ -88,7 +88,10 @@ jobs:
       - name: Build APK
         working-directory: android
         env:
-          AIO_KEYSTORE_PATH: ${{ secrets.ANDROID_KEYSTORE_BASE64 && 'app/release.keystore' || '' }}
+          # gradle 的 file() 相对模块目录(android/app)解析，传相对路径 'app/release.keystore'
+          # 会变成 android/app/app/release.keystore（双重 app）。用 github.workspace 绝对路径
+          # 避免模块目录歧义。
+          AIO_KEYSTORE_PATH: ${{ secrets.ANDROID_KEYSTORE_BASE64 && format('{0}/android/app/release.keystore', github.workspace) || '' }}
           AIO_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           AIO_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           AIO_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
