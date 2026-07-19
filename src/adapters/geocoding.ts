@@ -11,6 +11,11 @@ import type { GeoPoint } from '@/domain/types'
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse'
 const GAODE_REVERSE = 'https://restapi.amap.com/v3/geocode/regeo'
 
+// 内置高德 Key（CI 构建时从 GitHub secret VITE_GAODE_KEY 烘入，免用户手动配置即可
+// 解析地址）。用户在「设置 → 地点编码 Key」自配的 Key 优先（opts.key 传入则覆盖）。
+// 本地 dev 未注入 → 空串，回落 Nominatim。
+const BUILTIN_GAODE_KEY = (import.meta.env.VITE_GAODE_KEY as string | undefined) ?? ''
+
 async function reverseGeocodeGaode(
   lat: number,
   lng: number,
@@ -100,8 +105,10 @@ export async function reverseGeocode(
   lng: number,
   opts?: { signal?: AbortSignal; timeoutMs?: number; key?: string },
 ): Promise<string | null> {
-  if (opts?.key) {
-    const addr = await reverseGeocodeGaode(lat, lng, opts.key, opts)
+  // 用户自配 Key 优先；否则用内置 Key（CI 烘入）；都没有 → 跳过高德走 Nominatim。
+  const gaodeKey = opts?.key || BUILTIN_GAODE_KEY
+  if (gaodeKey) {
+    const addr = await reverseGeocodeGaode(lat, lng, gaodeKey, opts)
     if (addr) return addr
     // 高德失败（配额/Key 非法/网络）→ 再试 Nominatim 兜底，别让用户看到坐标。
   }

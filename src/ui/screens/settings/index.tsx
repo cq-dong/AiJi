@@ -695,7 +695,7 @@ function GeocodingSheet({ onClose }: { onClose: () => void }) {
             <X size={18} strokeWidth={2} />
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-t3">BYOK · 高德 web 服务 Key · 国内地址解析稳定 · 未配回落 OSM（常超时）</p>
+        <p className="mt-1 text-[11px] text-t3">App 已内置默认高德 Key，开箱即用。自配 Key 优先使用 · 未配回落 OSM（常超时）</p>
 
         <div className="mt-3 space-y-3">
           <div>
@@ -1228,11 +1228,12 @@ export default function Settings() {
         </div>
         <Toggle checked={recordLocation} onChange={(v) => setSettings({ recordLocation: v })} />
       </div>
-      {/* D24: 地点编码 Key——高德 BYOK。未配时地址退化为坐标（OSM 境内常超时）。 */}
+      {/* D24: 地点编码 Key——高德 BYOK。App 内置默认 Key（CI 烘入），开箱即用；
+          用户自配 Key 优先。未自配时显示「内置默认」。 */}
       <div className="mt-2">
         <ChevronRow
           label="地点编码 Key"
-          value={settings.geocodingKeyRef ? '高德 · 已配置' : '未配置'}
+          value={settings.geocodingKeyRef ? '高德 · 已配置' : '内置默认'}
           onClick={() => setEditingGeo(true)}
         />
       </div>
