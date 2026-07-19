@@ -1,45 +1,73 @@
 import type { GeoPoint } from '@/domain/types'
 
-// D5: Reverse geocoding adapter — converts lat/lng to human-readable address.
-// Uses Nominatim (OpenStreetMap) — free, no API key required. Usage policy:
-//   - Max 1 request/second (capture-time only, not bulk — fine for this use case)
-//   - Must send a valid User-Agent or Referer. Browsers forbid setting User-Agent
-//     via fetch; the WebView sends its own UA which satisfies the policy. We also
-//     set Accept-Language=zh-CN to get Chinese addresses.
-// For production scale, swap to a keyed provider (Gaode/Google) — the interface
-// (reverseGeocode / enrichLocation) stays the same; only the URL + auth changes.
+// D5/D24: Reverse geocoding adapter — converts lat/lng to human-readable address.
+// 双通道：
+//   1) 高德（Gaode）web 服务 REST —— 国内稳定可靠，需 BYOK Key（settings.geocodingKeyRef）。
+//      浏览器/WebView 直连，CORS 友好。配了 Key 时首选。
+//   2) Nominatim（OpenStreetMap）—— 免费、无需 Key，但国内网络常超时/不可达（OSM 服务器在境外，
+//      移动网络丢包严重）。未配高德 Key 时回落，并放宽超时 + 一次重试提高成功率。
+// 接口（reverseGeocode / enrichLocation）不变，只增 opts.key 透传高德 Key。
 
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse'
+const GAODE_REVERSE = 'https://restapi.amap.com/v3/geocode/regeo'
 
-/**
- * Reverse-geocode lat/lng to a display address string. Returns null on any
- * failure (network/timeout/parse) — callers fall back to raw coordinates.
- *
- * @param timeoutMs default 3500ms — short enough not to block capture save,
- *                  long enough for a typical Nominatim response (~500-2000ms).
- */
-export async function reverseGeocode(
+async function reverseGeocodeGaode(
+  lat: number,
+  lng: number,
+  key: string,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<string | null> {
+  const timeoutMs = opts?.timeoutMs ?? 6000
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  if (opts?.signal) {
+    if (opts.signal.aborted) ctrl.abort()
+    else opts.signal.addEventListener('abort', () => ctrl.abort(), { once: true })
+  }
+  try {
+    // 高德 regeo 的 location 参数顺序是 `经度,纬度`（lng,lat），与 OSM 相反。
+    const params = new URLSearchParams({
+      key,
+      location: `${lng},${lat}`,
+      output: 'json',
+      extensions: 'base',
+    })
+    const res = await fetch(`${GAODE_REVERSE}?${params}`, { signal: ctrl.signal })
+    if (!res.ok) return null
+    const data = await res.json()
+    // 高德 status: "1" 成功 / "0" 失败（配额/Key 非法等）。formatted_address 是完整单行地址。
+    if (data?.status === '1' && typeof data?.regeocode?.formatted_address === 'string') {
+      const addr = data.regeocode.formatted_address.trim()
+      return addr || null
+    }
+    console.warn('[geocoding] gaode non-success', data?.info, data?.infocode)
+    return null
+  } catch (e) {
+    console.warn('[geocoding] gaode reverseGeocode failed', e)
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function reverseGeocodeNominatim(
   lat: number,
   lng: number,
   opts?: { signal?: AbortSignal; timeoutMs?: number },
 ): Promise<string | null> {
-  const timeoutMs = opts?.timeoutMs ?? 3500
+  const timeoutMs = opts?.timeoutMs ?? 8000
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
-  // Chain external abort signal if provided.
   if (opts?.signal) {
-    if (opts.signal.aborted) {
-      ctrl.abort()
-    } else {
-      opts.signal.addEventListener('abort', () => ctrl.abort(), { once: true })
-    }
+    if (opts.signal.aborted) ctrl.abort()
+    else opts.signal.addEventListener('abort', () => ctrl.abort(), { once: true })
   }
   try {
     const params = new URLSearchParams({
       format: 'json',
       lat: String(lat),
       lon: String(lng),
-      zoom: '18', // street-level detail
+      zoom: '18',
       'accept-language': 'zh-CN',
     })
     const res = await fetch(`${NOMINATIM_REVERSE}?${params}`, {
@@ -48,20 +76,42 @@ export async function reverseGeocode(
     })
     if (!res.ok) return null
     const data = await res.json()
-    // Nominatim returns `display_name` (full address string) + `address` object.
-    // display_name is the most complete single-line representation.
     if (typeof data?.display_name === 'string' && data.display_name.trim()) {
       return data.display_name.trim()
     }
     return null
   } catch (e) {
-    // AbortError / network / parse — all degrade to null (caller shows lat/lng).
-    // D13: log for diagnosability (CORS/timeout visible in console; otherwise silent).
-    console.warn('[geocoding] reverseGeocode failed', e)
+    console.warn('[geocoding] nominatim reverseGeocode failed', e)
     return null
   } finally {
     clearTimeout(timer)
   }
+}
+
+/**
+ * Reverse-geocode lat/lng to a display address string. Returns null on any
+ * failure (network/timeout/parse) — callers fall back to raw coordinates.
+ *
+ * @param opts.key 高德 web 服务 Key。提供 → 走高德（国内稳定）；否则回落 Nominatim
+ *                 （超时放宽到 8s + 一次重试，境内仍可能失败）。
+ */
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+  opts?: { signal?: AbortSignal; timeoutMs?: number; key?: string },
+): Promise<string | null> {
+  if (opts?.key) {
+    const addr = await reverseGeocodeGaode(lat, lng, opts.key, opts)
+    if (addr) return addr
+    // 高德失败（配额/Key 非法/网络）→ 再试 Nominatim 兜底，别让用户看到坐标。
+  }
+  const addr = await reverseGeocodeNominatim(lat, lng, opts)
+  if (addr) return addr
+  // D24: Nominatim 一次重试——境内移动网络首次请求常因 DNS/TLS 握手慢而超时，二次往往能过。
+  if (!opts?.signal?.aborted) {
+    return reverseGeocodeNominatim(lat, lng, opts)
+  }
+  return null
 }
 
 /**
@@ -74,7 +124,7 @@ export async function reverseGeocode(
  */
 export async function enrichLocation(
   loc: GeoPoint,
-  opts?: { signal?: AbortSignal; timeoutMs?: number },
+  opts?: { signal?: AbortSignal; timeoutMs?: number; key?: string },
 ): Promise<GeoPoint> {
   if (loc.address) return loc
   const addr = await reverseGeocode(loc.lat, loc.lng, opts)

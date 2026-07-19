@@ -679,10 +679,12 @@ export default function Detail() {
     const loc = found?.location
     if (!entryId || !loc || loc.address) return
     let cancelled = false
-    void enrichLocation(loc).then((enriched) => {
+    void (async () => {
+      const geoKey = (await di.secrets.get('geocoding:key')) ?? undefined
+      const enriched = await enrichLocation(loc, { key: geoKey })
       if (cancelled || !enriched.address) return
       void useUiStore.getState().updateEntry(entryId, { location: enriched })
-    })
+    })()
     return () => { cancelled = true }
   }, [found?.id, found?.location?.address])
 
@@ -801,6 +803,7 @@ export default function Detail() {
       <AiPanel
         state={state}
         ai={ai}
+        processError={entry.processError}
         onReprocess={handleReprocess}
         onEdit={() => setEditingAi(true)}
         onManualEdit={() => setEditingParts(true)}

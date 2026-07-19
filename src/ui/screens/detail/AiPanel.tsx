@@ -100,11 +100,19 @@ function ProcessingBody() {
   )
 }
 
-function FailedBody({ onReprocess, onManualEdit }: { onReprocess: () => void; onManualEdit: () => void }) {
+function FailedBody({ error, onReprocess, onManualEdit }: { error?: string; onReprocess: () => void; onManualEdit: () => void }) {
+  // D25: 显示具体失败原因，让用户能判断是该配 BYOK key、补转写文本，还是单纯网络抖动重试。
+  const hint = error
+    ? error.includes('未配置') || error.includes('BYOK')
+      ? 'AI 模型未配置 Key，去「设置 → AI 模型」填写后重试'
+      : error.includes('空') || error.includes('empty')
+        ? '条目无可用文本，点「手动编辑」补转写文本后重试'
+        : `原因：${error}`
+    : '网络或模型异常，原始条目已保存'
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[14px] font-bold text-catFail">处理失败</p>
-      <p className="text-[11px] text-t2">网络或模型异常，原始条目已保存</p>
+      <p className="text-[11px] text-t2">{hint}</p>
       <div className="flex items-center gap-2">
         <Button type="button" variant="primary" className="bg-catFail" onClick={onReprocess}>
           重试
@@ -120,6 +128,7 @@ function FailedBody({ onReprocess, onManualEdit }: { onReprocess: () => void; on
 export function AiPanel({
   state,
   ai,
+  processError,
   onReprocess,
   onEdit,
   onManualEdit,
@@ -127,6 +136,7 @@ export function AiPanel({
 }: {
   state: AiState
   ai?: EntryAi
+  processError?: string
   onReprocess: () => void
   onEdit: () => void
   onManualEdit: () => void
@@ -152,7 +162,7 @@ export function AiPanel({
       )}
       {state === 'ready' && !ai && <p className="text-[12px] text-t3">暂无 AI 处理结果</p>}
       {state === 'processing' && <ProcessingBody />}
-      {state === 'failed' && <FailedBody onReprocess={onReprocess} onManualEdit={onManualEdit} />}
+      {state === 'failed' && <FailedBody error={processError} onReprocess={onReprocess} onManualEdit={onManualEdit} />}
     </Card>
   )
 }

@@ -93,12 +93,14 @@ export default function Capture() {
     if (!location) return
     if (location.address) return
     let cancelled = false
-    void enrichLocation(location).then((enriched) => {
+    void (async () => {
+      const geoKey = (await di.secrets.get('geocoding:key')) ?? undefined
+      const enriched = await enrichLocation(location, { key: geoKey })
       if (cancelled || !enriched.address) return
       useUiStore.setState((s) => ({
         capture: { ...s.capture, location: enriched },
       }))
-    })
+    })()
     return () => { cancelled = true }
   }, [location])
 

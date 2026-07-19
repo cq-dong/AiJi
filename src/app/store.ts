@@ -77,6 +77,7 @@ interface UiState {
   setLlmConfig: (url: string, model: string, key: string) => void
   setVlmConfig: (url: string, model: string, key: string) => void
   setSttConfig: (model: string, key: string) => void
+  setGeocodingConfig: (key: string) => void
   processEntry: (entryId: string, isFresh?: boolean) => Promise<void>
   recomputeAggregate: (scope: AggregateScopeType, range?: string, detailLevel?: number) => Promise<void>
   // Phase 9 Batch 2b · 提醒。processEntry 不自动建 Reminder（Q2：用户在 B6 TodoConfirm 确认）。
@@ -488,6 +489,15 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (key) void di.secrets.set('stt:key', key).catch((e) => console.error('[store] setSttKey failed', e))
     else void di.secrets.delete('stt:key').catch((e) => console.error('[store] deleteSttKey failed', e))
   },
+  setGeocodingConfig: (key) => {
+    // D24: 高德反向地理编码 BYOK Key。清空 → 删 secret + 清 ref（回落 Nominatim）。
+    const cur = get().settings
+    const next = { ...cur, geocodingKeyRef: key ? 'geocoding:key' : undefined }
+    set({ settings: next })
+    void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+    if (key) void di.secrets.set('geocoding:key', key).catch((e) => console.error('[store] setGeocodingKey failed', e))
+    else void di.secrets.delete('geocoding:key').catch((e) => console.error('[store] deleteGeocodingKey failed', e))
+  },
   processEntry: async (entryId, isFresh) => {
     try {
       // D13: 后置回填地点地址。capture 屏的 enrichLocation effect 只更新 Zustand
@@ -499,7 +509,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       const fresh0 = await di.storage.getEntry(entryId)
       if (fresh0?.location && !fresh0.location.address) {
         try {
-          const enriched = await enrichLocation(fresh0.location)
+          const geoKey = (await di.secrets.get('geocoding:key')) ?? undefined
+          const enriched = await enrichLocation(fresh0.location, { key: geoKey })
           if (enriched.address) {
             const updated0: Entry = { ...fresh0, location: enriched, updatedAt: new Date().toISOString() }
             await di.storage.saveEntry(updated0)
@@ -511,6 +522,9 @@ export const useUiStore = create<UiState>((set, get) => ({
       }
       // STT 终稿（保存后）：paraformer 重写音频/视频 transcript，比 WebSpeech live 预览准。
       // 无 stt:key → 跳过整步（用 WebSpeech 预览文本分类即可）；单 part 失败 → 回退预览文本，不阻断分类。
+      // D25: 重试（isFresh=false）时不得覆盖已有 transcript——用户可能已手动编辑过转写文本，
+      // 重跑 STT 会把手工修订抹掉（"手动编辑之后没有保存"的根因）。仅对新条目（isFresh）做
+      // 预览→终稿升级，重试时只补 transcribe 缺失的 part（transcript 为空才跑）。
       const sttKey = await di.secrets.get('stt:key')
       if (sttKey) {
         const fresh = await di.storage.getEntry(entryId)
@@ -519,6 +533,7 @@ export const useUiStore = create<UiState>((set, get) => ({
           const parts = await Promise.all(
             fresh.parts.map(async (p) => {
               if (p.type !== 'audio' && p.type !== 'video') return p
+              if (!isFresh && p.transcript) return p
               try {
                 const text = await di.stt.transcribe(p.ref)
                 if (!text) return p
@@ -542,7 +557,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       const [categories, tags] = await Promise.all([di.storage.listCategories(), di.storage.listTags()])
       const entry = await di.storage.getEntry(entryId)
       if (entry) {
-        const updated: Entry = { ...entry, status: 'ready', aiId: ai.id, updatedAt: new Date().toISOString() }
+        const updated: Entry = { ...entry, status: 'ready', aiId: ai.id, processError: undefined, updatedAt: new Date().toISOString() }
         await di.storage.saveEntry(updated)
         set((s) => ({
           entries: s.entries.map((e) => (e.id === entryId ? updated : e)),
@@ -573,7 +588,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       console.error('[store] processEntry failed', e)
       const entry = await di.storage.getEntry(entryId)
       if (entry) {
-        const updated: Entry = { ...entry, status: 'failed', updatedAt: new Date().toISOString() }
+        const errMsg = e instanceof Error ? e.message : String(e)
+        const updated: Entry = { ...entry, status: 'failed', processError: errMsg, updatedAt: new Date().toISOString() }
         await di.storage.saveEntry(updated)
         set((s) => ({ entries: s.entries.map((e) => (e.id === entryId ? updated : e)) }))
       }

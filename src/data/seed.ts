@@ -149,4 +149,5 @@ export const seedSettings = {
   vlmUrl: undefined,
   vlmModel: undefined,
   vlmKeyRef: undefined,
+  geocodingKeyRef: undefined,
 }

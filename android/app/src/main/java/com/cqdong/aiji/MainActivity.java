@@ -22,12 +22,19 @@ public class MainActivity extends BridgeActivity {
         // 必须在原生层把 systemBars insets 转成 CSS 变量 --safe-top / --safe-bottom 注入 documentElement，
         // 前端用 var(--safe-*) 替代 env()。
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        // D26: WindowInsetsCompat 返回的是设备像素（device px），而 CSS `px` 是密度无关像素
+        // （1 CSS px = density 个 device px）。直接把 device px 当 CSS px 注入会让高密度屏
+        // （density=3）的 100dp 状态栏变成 100 CSS px = 300 device px 的留白，上下各被撑出
+        // 3 倍空白。必须除以 displayMetrics.density 换算成 CSS px 再注入。
+        final float density = getResources().getDisplayMetrics().density;
         View root = findViewById(android.R.id.content);
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
             int top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
             int bottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
-            String js = "document.documentElement.style.setProperty('--safe-top','" + top + "px');"
-                      + "document.documentElement.style.setProperty('--safe-bottom','" + bottom + "px');";
+            int topCss = Math.round(top / density);
+            int bottomCss = Math.round(bottom / density);
+            String js = "document.documentElement.style.setProperty('--safe-top','" + topCss + "px');"
+                      + "document.documentElement.style.setProperty('--safe-bottom','" + bottomCss + "px');";
             if (this.bridge != null && this.bridge.getWebView() != null) {
                 this.bridge.getWebView().evaluateJavascript(js, null);
             }

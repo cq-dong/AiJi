@@ -75,6 +75,10 @@ export interface Entry {
   location?: GeoPoint // 记录地点（settings.recordLocation 开时，采集时取一次）
   status: EntryStatus
   aiId?: string // 指向当前 EntryAi
+  // D25: 最近一次 AI 处理失败的具体原因（processEntry catch 块写入，成功时清空）。
+  // 让 FailedBody 显示可操作信息（如「LLM BYOK 未配置」「内容为空」），而非泛泛「网络异常」，
+  // 用户能据此判断是去配 key、补转写文本，还是单纯重试。
+  processError?: string
   // Wave 4: 30-day trash (soft delete). Set to ISO timestamp when trashed; absent = active.
   // listEntries filters these out; trash view surfaces them; hydrate purges >30d hard.
   // Kept separate from EntryStatus (AI-processing state) so recover = clear field, no
@@ -194,6 +198,9 @@ export interface Settings {
   vlmUrl?: string
   vlmModel?: string
   vlmKeyRef?: string
+  // D24: 反向地理编码 BYOK Key（高德 web 服务）。未配 → 回落 Nominatim（OSM，国内网络常超时/不可达，
+  // 此时地址显示退化为坐标）。配了高德 Key → 国内地址解析稳定可靠。Key 存 SecretStorePort('geocoding:key')。
+  geocodingKeyRef?: string
 }
 
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────

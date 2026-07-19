@@ -678,6 +678,62 @@ function SttSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+// D24: 地理编码 sheet——高德 web 服务 BYOK Key。未配 → 回落 Nominatim（境内常超时，
+// 地址退化为坐标）。结构镜像 SttSheet 的单 Key 字段。
+function GeocodingSheet({ onClose }: { onClose: () => void }) {
+  const settings = useUiStore((s) => s.settings)
+  const setGeocodingConfig = useUiStore((s) => s.setGeocodingConfig)
+  const [key, setKey] = useState('')
+  const hasKey = settings.geocodingKeyRef === 'geocoding:key'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-bold text-ink">地点编码</p>
+          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-t3">BYOK · 高德 web 服务 Key · 国内地址解析稳定 · 未配回落 OSM（常超时）</p>
+
+        <div className="mt-3 space-y-3">
+          <div>
+            <label className="text-[11px] text-t2">
+              高德 Key{hasKey ? '（已设置，留空不变）' : ''}
+            </label>
+            <input
+              className={inputCls}
+              type="password"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              placeholder={hasKey ? '••••••（留空保持不变）' : '在高德开放平台申请的 Web 服务 Key'}
+            />
+            <p className="mt-1 text-[11px] text-t3">控制台 → 应用管理 → 创建「Web 服务」类型 Key。免费额度个人版每日 5000 次，足够。</p>
+          </div>
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            className="h-[38px] flex-1 rounded-btn"
+            onClick={() => {
+              setGeocodingConfig(key.trim())
+              onClose()
+            }}
+          >
+            保存
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // VLM sheet：含图条目分类的多模态端点（BYOK）。结构镜像 ByokSheet：
 // url 必须是完整 chat completions URL（适配器不补 /chat/completions）。
 function VlmSheet({ onClose }: { onClose: () => void }) {
@@ -1065,6 +1121,7 @@ export default function Settings() {
   const [editingStt, setEditingStt] = useState(false)
   const [editingVlm, setEditingVlm] = useState(false)
   const [editingAbout, setEditingAbout] = useState(false)
+  const [editingGeo, setEditingGeo] = useState(false)
   // D9: 导入示例数据状态。导入后 rehydrate 刷新 store；错误显红字提示。
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState<string | null>(null)
@@ -1170,6 +1227,14 @@ export default function Settings() {
           </p>
         </div>
         <Toggle checked={recordLocation} onChange={(v) => setSettings({ recordLocation: v })} />
+      </div>
+      {/* D24: 地点编码 Key——高德 BYOK。未配时地址退化为坐标（OSM 境内常超时）。 */}
+      <div className="mt-2">
+        <ChevronRow
+          label="地点编码 Key"
+          value={settings.geocodingKeyRef ? '高德 · 已配置' : '未配置'}
+          onClick={() => setEditingGeo(true)}
+        />
       </div>
 
       {/* AI 模型 */}
@@ -1281,6 +1346,7 @@ export default function Settings() {
       {editingStt && <SttSheet onClose={() => setEditingStt(false)} />}
       {editingVlm && <VlmSheet onClose={() => setEditingVlm(false)} />}
       {editingAbout && <AboutSheet onClose={() => setEditingAbout(false)} />}
+      {editingGeo && <GeocodingSheet onClose={() => setEditingGeo(false)} />}
       {zipConfirm && (
         <ExportConfirmSheet
           scopeLabel="全部条目"
