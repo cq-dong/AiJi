@@ -19,6 +19,7 @@ const Login = lazy(() => import('@/ui/screens/login'))
 const Drafts = lazy(() => import('@/ui/screens/drafts'))
 const Trash = lazy(() => import('@/ui/screens/trash'))
 const Chat = lazy(() => import('@/ui/screens/chat'))
+const Feedback = lazy(() => import('@/ui/screens/feedback'))
 
 function Loading() {
   return (
@@ -76,6 +77,7 @@ export function AppRouter() {
           <Route path="drafts" element={<Drafts />} />
           <Route path="trash" element={<Trash />} />
           <Route path="chat" element={<Chat />} />
+          <Route path="feedback" element={<Feedback />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

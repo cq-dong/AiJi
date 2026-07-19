@@ -8,8 +8,9 @@ import { notifications } from '@/adapters/notifications'
 import { webAppUpdate } from '@/adapters/webAppUpdate'
 import { capacitorAppUpdate } from '@/adapters/capacitorAppUpdate'
 import { localNotifications } from '@/adapters/localNotifications'
+import { githubFeedback } from '@/adapters/githubFeedback'
 import { Capacitor } from '@capacitor/core'
-import type { AppUpdatePort, CapturePort, LocalNotificationsPort, LlmPort, SecretStorePort, StoragePort, SttPort } from '@/ports'
+import type { AppUpdatePort, CapturePort, FeedbackPort, LocalNotificationsPort, LlmPort, SecretStorePort, StoragePort, SttPort } from '@/ports'
 
 // DI 根：注入端口适配器。entries 走 DexieStorage；capture 走 webCapture；
 // llm 走 openAiCompatLlm（OpenAI 兼容 chat BYOK，任意 OpenAI 兼容 endpoint，key 在 SecretStorePort）；
@@ -32,6 +33,9 @@ export interface Di {
   // D4: 本地提醒通知——原生走 @capacitor/local-notifications（系统级铃声+弹窗，
   // 后台/被杀仍触发），web 走浏览器 Notification（前台 best-effort）。适配器内部分流。
   localNotifications: LocalNotificationsPort
+  // 使用反馈——内置 GitHub PAT（.env.local inline），提交建 Issue。见
+  // docs/superpowers/specs/2026-07-19-feedback-feature-design.md。
+  feedback: FeedbackPort
 }
 
 // sttMode 在 settings 里，transcribe(ref) 签名固定，故每次按 settings 现选 adapter。
@@ -52,4 +56,5 @@ export const di: Di = {
   notifications,
   appUpdate: Capacitor.isNativePlatform() ? capacitorAppUpdate : webAppUpdate,
   localNotifications,
+  feedback: githubFeedback,
 }

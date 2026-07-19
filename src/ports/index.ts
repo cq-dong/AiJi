@@ -1,7 +1,7 @@
 // Port interfaces (PRD §7.3). PWA-agnostic; adapters implement these.
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, FeedbackItem, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
 
 export interface StoragePort {
   listEntries(): Promise<Entry[]>
@@ -173,4 +173,11 @@ export interface LocalNotificationsPort {
   cancel(id: string): Promise<void>
   // 即时通知（overdue 补推 / 前台即时确认）。tag 去重 id。
   notify(label: string, body: string, tag: string): void
+}
+
+// 使用反馈端口（settings → /feedback）。一次提交多条建议；适配器负责传图 +
+// 建 GitHub Issue，返回 issue html_url 供 UI 展示。token/repo 内置在适配器
+// （见 docs/superpowers/specs/2026-07-19-feedback-feature-design.md §2）。
+export interface FeedbackPort {
+  submit(items: FeedbackItem[]): Promise<{ issueUrl: string }>
 }

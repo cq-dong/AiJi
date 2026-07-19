@@ -242,3 +242,11 @@ export interface ChatAnswer {
   answer: string
   citedEntryIds: string[]
 }
+
+// 使用反馈（settings → /feedback）。一次提交多条建议，每条 = 可选图片 + 文字。
+// images 是 UI 已压缩的 Blob（≤1600px / JPEG 0.8）；适配器负责传图 + 建 Issue。
+// 见 docs/superpowers/specs/2026-07-19-feedback-feature-design.md。
+export interface FeedbackItem {
+  text: string
+  images: Blob[]
+}

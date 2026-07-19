@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Check, ChevronDown, ChevronRight, Download, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -388,6 +389,12 @@ function ChevronRow({
       </span>
     </button>
   )
+}
+
+// 使用反馈入口：跳 /feedback（裸路由，多建议 + 可选图片，提交建 GitHub Issue）。
+function FeedbackRow() {
+  const navigate = useNavigate()
+  return <ChevronRow label="使用反馈" onClick={() => navigate('/feedback')} />
 }
 
 function ModelRow({
@@ -1259,6 +1266,11 @@ export default function Settings() {
           )}
         </div>
       </Card>
+
+      {/* 使用反馈 */}
+      <div className="mt-3">
+        <FeedbackRow />
+      </div>
 
       {/* 关于 */}
       <div className="mt-3">
