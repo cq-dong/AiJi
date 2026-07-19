@@ -45,6 +45,13 @@ jobs:
         run: npm ci
 
       - name: Build web
+        # VITE_FEEDBACK_* 在构建时 inline 进包（githubFeedback.ts 读 import.meta.env）。
+        # .env.local 是 gitignored，CI 上不存在 → 须从 secret 注入 env，否则 APK 里
+        # token/repo 为空，反馈点击报「未配置」。BYOK key（VITE_LLM_KEY 等）故意不注入：
+        # 那是付费 key，烘进公开 APK 会泄露。
+        env:
+          VITE_FEEDBACK_GITHUB_TOKEN: ${{ secrets.FEEDBACK_GITHUB_TOKEN }}
+          VITE_FEEDBACK_GITHUB_REPO: ${{ secrets.FEEDBACK_GITHUB_REPO }}
         run: npm run build
 
       - name: Sync version into gradle
