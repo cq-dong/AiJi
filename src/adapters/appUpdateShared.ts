@@ -1,12 +1,18 @@
-// checkForUpdate 的平台无关内核：fetch GitHub Releases API + semver 比较。
+// checkForUpdate 的平台无关内核：取最新 GitHub Release + semver 比较。
 // 两适配器（web/capacitor）共享——只是 downloadAndInstall 走向不同。
 //
 // GitHub API：GET https://api.github.com/repos/{owner}/{repo}/releases
 // 用 /releases（列表，含 prerelease）而非 /releases/latest——后者排除 prerelease，
 // rc 阶段 About 会误显「尚未发布」。取数组首个即最新（按创建时间倒序）。
-// 公开仓免鉴权 + 带 Access-Control-Allow-Origin: *，WebView 里能直连 fetch。
-// 注意：版本检查走 api.github.com（CORS 开）；APK 资产下载在 github.com→objects.githubusercontent.com
-// 重定向，CORS 不开——所以下载必须走原生插件，不能在 WebView 里 fetch。
+// 公开仓免鉴权 + 带 Access-Control-Allow-Origin: *，web 上 fetch 直连可用。
+//
+// 平台分流（D31 GitHub API 403 修复）：
+// - web：fetch（浏览器自动带 User-Agent，GitHub 接受）
+// - native（Android Capacitor WebView）：WebView 的 fetch 不带 GitHub 可接受的
+//   User-Agent → GitHub 返 403。改走 CapacitorHttp（原生 OkHttp，自带 UA + 绕 CORS）。
+//   User-Agent 是浏览器 fetch 的 forbidden header，设了也被静默剥，所以 web 侧不能
+//   靠加头修；必须原生层走 CapacitorHttp。
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
 
 export const GITHUB_OWNER = 'cq-dong'
 export const GITHUB_REPO = 'AiJi'
@@ -33,16 +39,32 @@ export interface LatestRelease {
 
 // 抓最新 release（含 prerelease）。无 release（空数组）时返 null——About sheet 显示「尚未发布」。
 export async function fetchLatestRelease(): Promise<LatestRelease | null> {
-  const res = await fetch(API_URL, {
-    headers: { Accept: 'application/vnd.github+json' },
-    // GitHub API 无鉴权有速率限制（60/h/IP），About sheet 手动触发检查，非轮询，够用。
-    cache: 'no-store',
-  })
-  if (res.status === 404) return null
-  if (!res.ok) {
-    throw new Error(`GitHub API ${res.status}`)
+  // GitHub API 无鉴权有速率限制（60/h/IP），About sheet 手动触发检查，非轮询，够用。
+  let list: GithubRelease[]
+  if (Capacitor.isNativePlatform()) {
+    // 原生 WebView fetch 缺可被 GitHub 接受的 User-Agent → 403。CapacitorHttp 走原生
+    // OkHttp，自带 UA 且绕 CORS。data 在 json content-type 下已自动 parse。
+    const res = await CapacitorHttp.get({
+      url: API_URL,
+      headers: { Accept: 'application/vnd.github+json' },
+    })
+    if (res.status === 404) return null
+    if (res.status < 200 || res.status >= 300) {
+      throw new Error(`GitHub API ${res.status}`)
+    }
+    const body = res.data
+    list = (typeof body === 'string' ? JSON.parse(body) : body) as GithubRelease[]
+  } else {
+    const res = await fetch(API_URL, {
+      headers: { Accept: 'application/vnd.github+json' },
+      cache: 'no-store',
+    })
+    if (res.status === 404) return null
+    if (!res.ok) {
+      throw new Error(`GitHub API ${res.status}`)
+    }
+    list = (await res.json()) as GithubRelease[]
   }
-  const list = (await res.json()) as GithubRelease[]
   const data = list[0]
   if (!data) return null
   const tag = data.tag_name ?? ''
