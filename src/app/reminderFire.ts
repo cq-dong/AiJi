@@ -10,6 +10,8 @@
 
 import { initNativeNotificationListener, setReminderFireHandler } from '@/adapters/localNotifications'
 import { playReminderBeep, unlockAudio } from '@/adapters/reminderSound'
+import { HeadsUpNotifier } from '@/adapters/headsUpNotifierPlugin'
+import { Capacitor } from '@capacitor/core'
 import { useUiStore } from './store'
 
 export function initReminderFire(): void {
@@ -34,4 +36,9 @@ export function initReminderFire(): void {
 
   // 3. 原生平台注册 listener（web no-op）。
   void initNativeNotificationListener()
+
+  // D41: 原生平台预建 PRIORITY_HIGH channel（heads-up 横幅）。删后重建刷新 importance。
+  if (Capacitor.isNativePlatform()) {
+    void HeadsUpNotifier.ensureChannel().catch((e) => console.warn('[reminderFire] ensureChannel failed', e))
+  }
 }

@@ -12,6 +12,7 @@
 
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { Capacitor } from '@capacitor/core'
+import { HeadsUpNotifier } from '@/adapters/headsUpNotifierPlugin'
 import type { LocalNotificationsPort } from '@/ports'
 import type { Reminder } from '@/domain/types'
 
@@ -129,45 +130,11 @@ const webImpl: LocalNotificationsPort = {
 }
 
 // ── Native（Capacitor Android/iOS）─────────────────────────────────────
-// LocalNotifications.schedule 预约系统级通知：到点原生 NotificationManager 发通知
-// （铃声 + 弹窗 + 锁屏横幅），app 在后台/被杀/锁屏均触发。allowWhileIdle 穿 Doze。
-// cancel 取消未触发的预约。notify 即时发（overdue 补推 / 前台即时确认）。
-let nativeChannelReady = false
-async function ensureChannel(): Promise<void> {
-  if (nativeChannelReady) return
-  if (Capacitor.getPlatform() !== 'android') {
-    nativeChannelReady = true
-    return
-  }
-  try {
-    // D40: 先删后建——Android channel 创建后 importance 不可变，若旧版 APK 以低
-    // importance 创建过 'reminders' channel，新版 createChannel 会被忽略，导致
-    // heads-up 横幅不弹（只有声音/状态栏图标）。删除重建强制刷新到 IMPORTANCE_HIGH。
-    try {
-      await LocalNotifications.deleteChannel({ id: 'reminders' })
-    } catch {
-      // 首次无 channel，忽略
-    }
-    // Android 8+ 需 notification channel 才能发声。IMPORTANCE_HIGH (5) → 系统默认铃声
-    // + heads-up 横幅（通知栏顶部弹出）。visibility PUBLIC 控锁屏可见性。
-    // D4: 不设 sound —— res/raw 无资源会致 channel 创建异常/无声；IMPORTANCE_HIGH 已保证默认铃声。
-    await LocalNotifications.createChannel({
-      id: 'reminders',
-      name: '提醒',
-      description: 'AiJi 待办提醒通知',
-      importance: 5, // IMPORTANCE_HIGH → heads-up 横幅
-      visibility: 1, // PUBLIC
-      vibration: true,
-    })
-  } catch (e) {
-    console.error('[localNotifications] createChannel failed', e)
-  }
-  nativeChannelReady = true
-}
-
+// D41: 排程/通知走自定义 HeadsUpNotifier 插件（PRIORITY_HIGH → heads-up 横幅），
+// 不再用 @capacitor/local-notifications 的 schedule（其 buildNotification 写死
+// PRIORITY_DEFAULT，OEM ROM 不弹横幅）。LocalNotifications 仅保留用于权限校验 +
+// 前台 localNotificationReceived 监听（兼容旧版残留 SW 通知）。
 // D4 修复：schedule/notify 前确保 POST_NOTIFICATIONS 已授权（Android 13+ 运行时权限）。
-// checkPermissions 先查当前状态；仅 'prompt'（从未问过）才 requestPermissions 弹原生框。
-// 'granted' 直接通过；'denied' 跳过（避免静默 schedule 后被系统拦截）。
 async function ensurePermission(): Promise<boolean> {
   try {
     const check = await LocalNotifications.checkPermissions()
@@ -193,67 +160,32 @@ const nativeImpl: LocalNotificationsPort = {
     }
   },
   async schedule(reminder: Reminder): Promise<void> {
-    // D35: 不再因 ensurePermission 返 false 静默跳过 schedule——checkPermissions 在部分
-    // Android 上返 'prompt'（即使用户已授），导致 schedule 被吃掉、到点不响。改为：
-    // 先 ensureChannel，再尽力 schedule；权限确实 denied 时系统会拒，但至少不会被
-    // 我们的 check 误杀。ensurePermission 只用于 requestPermission 主动请求场景。
-    await ensureChannel()
-    const ok = await ensurePermission()
-    if (!ok) {
-      console.warn('[localNotifications] permission not granted, schedule may be suppressed by system')
-    }
+    // D41: 走自定义 HeadsUpNotifier 排程（AlarmManager + PRIORITY_HIGH 通知），
+    // 不再用 @capacitor/local-notifications（其 buildNotification 写死 PRIORITY_DEFAULT →
+    // OEM ROM 不弹 heads-up 横幅）。
+    await ensurePermission()
     const id = hashId(reminder.id)
-    const due = new Date(reminder.dueAt)
-    // reschedule：同 id 先 cancel 旧预约（否则 schedule 重复 id 行为未定义）
+    const at = new Date(reminder.dueAt).getTime()
     try {
-      await LocalNotifications.cancel({ notifications: [{ id }] })
-    } catch {
-      // ignore（首次无旧预约）
-    }
-    try {
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            id,
-            title: 'AiJi 提醒',
-            body: reminder.label,
-            schedule: { at: due, allowWhileIdle: true },
-            channelId: 'reminders',
-            extra: { reminderId: reminder.id, entryId: reminder.entryId },
-          },
-        ],
-      })
+      await HeadsUpNotifier.schedule({ title: 'AiJi 提醒', body: reminder.label, id, at })
     } catch (e) {
-      console.error('[localNotifications] schedule failed', e)
+      console.error('[localNotifications] HeadsUpNotifier.schedule failed', e)
     }
   },
   async cancel(id: string): Promise<void> {
     try {
-      await LocalNotifications.cancel({ notifications: [{ id: hashId(id) }] })
+      await HeadsUpNotifier.cancel({ id: hashId(id) })
     } catch (e) {
       console.error('[localNotifications] cancel failed', e)
     }
   },
   notify(label: string, body: string, tag: string): void {
-    // 即时通知（overdue 补推 / 前台即时）。用 tag 末段作 id hash 源，保证去重。
+    // 前台即时 / overdue 补推：PRIORITY_HIGH → heads-up 横幅。
     void (async () => {
-      // D4 修复：权限未授权则不 notify（避免静默失败）。
       const ok = await ensurePermission()
       if (!ok) return
-      await ensureChannel()
       try {
-        await LocalNotifications.schedule({
-          notifications: [
-            {
-              id: hashId(tag),
-              title: label,
-              body,
-              schedule: { at: new Date(), allowWhileIdle: true },
-              channelId: 'reminders',
-              extra: { tag },
-            },
-          ],
-        })
+        await HeadsUpNotifier.notifyNow({ title: label, body, id: hashId(tag) })
       } catch (e) {
         console.error('[localNotifications] notify failed', e)
       }

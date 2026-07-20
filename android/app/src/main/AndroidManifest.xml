@@ -33,6 +33,10 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+        <!-- D41: HeadsUpNotifier 到点接收器——AlarmManager 触发后发 PRIORITY_HIGH 通知（heads-up 横幅）。 -->
+        <receiver
+            android:name=".HeadsUpReceiver"
+            android:exported="false" />
     </application>
 
     <!-- Permissions -->

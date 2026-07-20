@@ -16,6 +16,7 @@ public class MainActivity extends BridgeActivity {
         SplashScreen.installSplashScreen(this);
         // 自定义插件必须在 super.onCreate 之前 register，否则 bridge 初始化时拿不到。
         registerPlugin(ApkInstallerPlugin.class);
+        registerPlugin(HeadsUpNotifierPlugin.class);
         super.onCreate(savedInstanceState);
         // D1/D2: Edge-to-edge —— 内容延伸到系统栏后面，手动注入 insets 给 WebView。
         // env(safe-area-inset-*) 是 iOS WebKit 特性，Android WebView 不自动提供（inset 恒为 0），
