@@ -10,6 +10,7 @@ import { di } from '@/app/di'
 import { exportZip } from '@/adapters/zipExport'
 import { canShareFiles, saveBlob, type SaveResult } from '@/adapters/fileShare'
 import { importSampleData } from '@/adapters/dexieStorage'
+import { BUILTIN_VLM_URL, BUILTIN_VLM_MODEL, BUILTIN_STT_URL_STREAM, BUILTIN_STT_URL_WHISPER, BUILTIN_STT_MODEL_STREAM, BUILTIN_STT_MODEL_WHISPER } from '@/adapters/builtinDefaults'
 import { Toggle } from './Toggle'
 import { AccountSection } from './AccountSection'
 import type { UpdateInfo, DownloadProgress } from '@/ports'
@@ -149,17 +150,18 @@ const STT_URL_PLACEHOLDERS: Record<SttMode, string> = {
   stream: 'wss://…/api-ws/v1/inference',
   whisper: 'https://…/v1',
 }
-// 用户未填时的默认填充（仅 stream=DashScope WS 公共端点；whisper 无固定 DashScope REST 端点，留空）。
+// 用户未填时的默认填充。D30: 优先用 env 烘入的 BUILTIN_STT_*（CI 注入），否则回落硬编码公共端点。
 const STT_URL_DEFAULTS: Partial<Record<SttMode, string>> = {
-  stream: 'wss://dashscope.aliyuncs.com/api-ws/v1/inference',
+  stream: BUILTIN_STT_URL_STREAM || 'wss://dashscope.aliyuncs.com/api-ws/v1/inference',
+  whisper: BUILTIN_STT_URL_WHISPER || '',
 }
 const STT_URL_HELP: Record<SttMode, string> = {
   stream: 'DashScope WS 公共端点（已默认填充，可改）',
   whisper: 'OpenAI 兼容 REST base，如 Aliyun PI 的 /compatible-mode/v1',
 }
 const STT_MODEL_PLACEHOLDERS: Record<SttMode, string> = {
-  stream: 'paraformer-realtime-v2',
-  whisper: 'whisper-1',
+  stream: BUILTIN_STT_MODEL_STREAM || 'paraformer-realtime-v2',
+  whisper: BUILTIN_STT_MODEL_WHISPER || 'whisper-1',
 }
 const STT_MODEL_DEFAULTS: Record<SttMode, string> = STT_MODEL_PLACEHOLDERS
 
@@ -739,8 +741,8 @@ function GeocodingSheet({ onClose }: { onClose: () => void }) {
 function VlmSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
   const setVlmConfig = useUiStore((s) => s.setVlmConfig)
-  const [url, setUrl] = useState(settings.vlmUrl ?? '')
-  const initialModel = settings.vlmModel ?? ''
+  const [url, setUrl] = useState(settings.vlmUrl ?? BUILTIN_VLM_URL ?? '')
+  const initialModel = settings.vlmModel ?? BUILTIN_VLM_MODEL ?? ''
   const initialSelect = VLM_MODEL_PRESETS.some((p) => p === initialModel)
     ? initialModel
     : initialModel

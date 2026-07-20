@@ -1,5 +1,6 @@
 import type { SttPort } from '@/ports'
 import { di } from '@/app/di'
+import { BUILTIN_STT_URL_STREAM, BUILTIN_STT_MODEL_STREAM } from '@/adapters/builtinDefaults'
 
 // SttPort PWA 适配：阿里云 DashScope paraformer-realtime-v2 实时流式 WS（BYOK）。
 // key 从 SecretStorePort('stt:key') 取，model 从 Settings.sttModel 取——永不入源码。
@@ -8,6 +9,8 @@ import { di } from '@/app/di'
 // OPFS blob 解码成 PCM 16k 单声道 16-bit 推过去即可，不需要文件转写 REST API（那条
 // 需要公网 URL 且被 CORS 预检挡）。key 缺失 → throw，管线 catch 后条目标 failed
 // （AI-only 降级，采集存储不伤）。WebSpeech live interim 不动，本适配只负责保存后转写。
+// D30: sttUrl/sttModel 回落 BUILTIN_STT_URL_STREAM/MODEL（env 烘入），再回落硬编码公共端点。
+// 用户自配值优先。
 
 const SECRET_KEY = 'stt:key'
 const DEFAULT_WS_BASE = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference'
@@ -144,8 +147,8 @@ function streamAsr(pcm: Int16Array, apiKey: string, model: string, wsBase: strin
 export const paraformerStreamStt: SttPort = {
   async transcribe(ref) {
     const settings = await di.storage.getSettings()
-    const model = settings.sttModel || 'paraformer-realtime-v2'
-    const wsBase = settings.sttUrl || DEFAULT_WS_BASE
+    const model = settings.sttModel || BUILTIN_STT_MODEL_STREAM || 'paraformer-realtime-v2'
+    const wsBase = settings.sttUrl || BUILTIN_STT_URL_STREAM || DEFAULT_WS_BASE
     const apiKey = await di.secrets.get(SECRET_KEY)
     if (!apiKey) throw new Error('STT BYOK 未配置（stt:key 缺失）')
     const blob = await di.storage.getMedia(ref)

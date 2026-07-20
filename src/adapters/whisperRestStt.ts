@@ -1,5 +1,6 @@
 import type { SttPort } from '@/ports'
 import { di } from '@/app/di'
+import { BUILTIN_STT_URL_WHISPER, BUILTIN_STT_MODEL_WHISPER } from '@/adapters/builtinDefaults'
 
 // SttPort PWA 适配：OpenAI 兼容 REST /audio/transcriptions（BYOK，非流式）。
 // 适用任意 OpenAI Whisper 兼容 endpoint：OpenAI / Groq / Aliyun PI 的
@@ -8,14 +9,15 @@ import { di } from '@/app/di'
 // key=SecretStorePort('stt:key')。非流式：传 ref → 拉 blob → multipart POST → 纯文本。
 // capture 实时预览仍走 WebSpeech；本适配只负责保存后离线转写。key/url 缺失 → throw，
 // 管线 catch 后条目标 failed（AI-only 降级，采集存储不伤）。
+// D30: sttUrl/sttModel 回落 BUILTIN_STT_URL_WHISPER/MODEL（env 烘入）。用户自配值优先。
 
 const SECRET_KEY = 'stt:key'
 
 export const whisperRestStt: SttPort = {
   async transcribe(ref) {
     const settings = await di.storage.getSettings()
-    const base = (settings.sttUrl || '').replace(/\/$/, '')
-    const model = settings.sttModel || 'whisper-1'
+    const base = (settings.sttUrl || BUILTIN_STT_URL_WHISPER || '').replace(/\/$/, '')
+    const model = settings.sttModel || BUILTIN_STT_MODEL_WHISPER || 'whisper-1'
     const apiKey = await di.secrets.get(SECRET_KEY)
     if (!apiKey || !base) throw new Error('Whisper STT 未配置（sttUrl/stt:key 缺失）')
     const blob = await di.storage.getMedia(ref)

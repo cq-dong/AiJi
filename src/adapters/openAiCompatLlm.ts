@@ -2,6 +2,7 @@ import type { LlmPort } from '@/ports'
 import type { Aggregate, AggregateScopeType, Category, ChatCite, ChatQuery, Entry, EntryAi, Facets, MediaType, Tag } from '@/domain/types'
 import { di } from '@/app/di'
 import { compressImage, extractFrame, pickFrameTimes } from '@/adapters/visionMedia'
+import { BUILTIN_VLM_URL, BUILTIN_VLM_MODEL } from '@/adapters/builtinDefaults'
 
 // LlmPort PWA 适配：OpenAI 兼容 chat completions（BYOK）。任意 OpenAI 兼容 endpoint 均可——
 // DeepSeek / Kimi / 通义 / Moonshot / OpenAI / Azure / OpenRouter / vLLM / Ollama / Aliyun PI
@@ -220,8 +221,10 @@ interface AggregateResult {
 
 // Build the aggregate prompt: given N entries (text + their AI summaries), ask
 // the LLM to produce a period-level digest. few-shot one example.
+// D28: 同时传入每条的图片/视频数量与 VLM 媒体理解原文，让文本模型在 sentences 末尾综合成
+// 「图片内容：…；视频内容：…」备注（而非 raw append，也非单纯计数）。
 function buildAggregatePrompt(
-  entries: { id: string; text: string; aiSummary?: string }[],
+  entries: { id: string; text: string; aiSummary?: string; imageCount: number; videoCount: number; mediaDescription?: { images?: string; videos?: string } }[],
   scope: AggregateScopeType,
   detailLevel: number,
 ) {
@@ -237,6 +240,12 @@ function buildAggregatePrompt(
   ] as const
   const lvl = LEVELS[Math.min(4, Math.max(0, (detailLevel ?? 3) - 1))]
   const n = lvl.count
+  // D28: 统计本时段是否含图片/视频，决定是否启用媒体备注铁律。
+  const hasImages = entries.some((e) => e.imageCount > 0)
+  const hasVideos = entries.some((e) => e.videoCount > 0)
+  const mediaRule = (hasImages || hasVideos)
+    ? `\n6. 媒体备注：本时段条目含图片/视频（见每条的「图片 N 张」「视频 M 段」及「图片理解」「视频理解」原文）。sentences 最后一个元素必须是媒体备注句，格式严格为「图片内容：<把各条目图片理解综合成连贯中文描述>；视频内容：<把各条目视频理解综合成连贯中文描述>」——综合而非罗列，可适当提炼但保留关键画面信息。${hasImages ? '本时段有图片 → 必须含「图片内容：」段。' : '本时段无图片 → 不要写「图片内容：」段。'}${hasVideos ? '本时段有视频 → 必须含「视频内容：」段。' : '本时段无视频 → 不要写「视频内容：」段。'}该媒体备注句计入上述 ${n} 句总数（即其余提炼句为 ${n - 1} 句）。`
+    : ''
   const system = `你是「AiJi」(AI 记) 的聚合摘要助手。给定一个${scopeLabel}内用户的若干条「记」条目（每条含原文与 AI 单条摘要），输出该${scopeLabel}的聚合摘要。
 
 铁律：
@@ -244,7 +253,7 @@ function buildAggregatePrompt(
 2. sentences 数组**必须恰好包含 ${n} 个元素**（${lvl.tone}）。每个元素是一句完整中文，以「。」结尾，不得合并、不得拆分、不得多一句或少一句。
 3. highlights 为 ${lvl.highlights} 该时段关键亮点（每条 ≤16 字），反映最重要的内容/想法/进展。
 4. 不要罗列每条条目，要提炼跨条目共性与脉络。
-5. 情绪只是可选侧面，不当主轴。
+5. 情绪只是可选侧面，不当主轴。${mediaRule}
 
 只输出 JSON，不要 markdown 围栏、不要解释。`
   const example = `示例（sentences 恰好 3 句的范式——你的句数须依上面的 ${n} 而定，不照搬示例句数）：
@@ -254,7 +263,14 @@ function buildAggregatePrompt(
 输出：{"sentences":["本周以 AiJi 项目推进为主轴：抽象端口、涌现分类逐步成形。","穿插阅读笔记（second brain：只捕获不整理）与地铁灵感（记录变提醒）。","整体偏专注，偏工程向。"],"highlights":["CapturePort 接口化","记录变提醒","Second brain 阅读"]}`
 
   const items = entries
-    .map((e, i) => `条目${i + 1}：原文="${e.text}"${e.aiSummary ? ` 摘要="${e.aiSummary}"` : ''}`)
+    .map((e, i) => {
+      const media = (e.imageCount > 0 || e.videoCount > 0)
+        ? ` 图片=${e.imageCount}张 视频=${e.videoCount}段`
+        : ''
+      const mdImg = e.mediaDescription?.images?.trim() ? ` 图片理解="${e.mediaDescription!.images!.trim()}"` : ''
+      const mdVid = e.mediaDescription?.videos?.trim() ? ` 视频理解="${e.mediaDescription!.videos!.trim()}"` : ''
+      return `条目${i + 1}：原文="${e.text}"${e.aiSummary ? ` 摘要="${e.aiSummary}"` : ''}${media}${mdImg}${mdVid}`
+    })
     .join('\n')
 
   const user = `时段：${scopeLabel}
@@ -398,6 +414,15 @@ function parseAnswerJson(raw: string): { answer: string; citedEntryIds: string[]
   return { answer, citedEntryIds }
 }
 
+// D29: 清洗 answer 正文里的内联引用「（见 <id>）」。LLM 常臆造短别名（如 e3）或错配 id，
+// UI 拿非法 id 找不到条目 → 误显「已删除」（实未删）。validIds 外的引用段整段去掉（含前导
+// 空白/标点），合法 id 保留交 UI 渲染。匹配全角括号（见…）与半角括号 (见…) 两种。
+function sanitizeInlineCites(answer: string, validIds: Set<string>): string {
+  // 同时匹配前导空白，剔掉非法引用后不留多余空格。合法引用原样保留。
+  const re = /([ \t　]*[（(]\s*见\s+([a-zA-Z0-9_-]+)\s*[）)])/g
+  return answer.replace(re, (full, _m, id: string) => (validIds.has(id) ? full : ''))
+}
+
 export const openAiCompatLlm: LlmPort = {
   async classify(entryId) {
     const settings = await di.storage.getSettings()
@@ -431,13 +456,17 @@ export const openAiCompatLlm: LlmPort = {
     }
     // VLM 路由：含图且独立 VLM 已配（vlmUrl+vlmModel+vlm:key）→ 视觉 fetch 走 VLM 端点（如 qwen3.5-flash
     // on Aliyun PI）；否则回落主 LLM。文本条目始终走主 LLM。降级（§5.2）去图纯文本重发走同一端点。
+    // D30: vlmUrl/vlmModel 回落 BUILTIN_VLM_URL/MODEL（env 烘入），用户未手动配 URL/model 但配了
+    // vlm:key 时也能用内置默认端点。用户自配值优先。
+    const vlmUrl = settings.vlmUrl || BUILTIN_VLM_URL
+    const vlmModel = settings.vlmModel || BUILTIN_VLM_MODEL
     let vlmKey: string | undefined
-    if (images.length > 0 && settings.vlmUrl && settings.vlmModel) {
+    if (images.length > 0 && vlmUrl && vlmModel) {
       vlmKey = await di.secrets.get('vlm:key')
     }
-    const useVlm = images.length > 0 && !!settings.vlmUrl && !!settings.vlmModel && !!vlmKey
-    const fUrl = useVlm ? settings.vlmUrl! : url
-    const fModel = useVlm ? settings.vlmModel! : model
+    const useVlm = images.length > 0 && !!vlmUrl && !!vlmModel && !!vlmKey
+    const fUrl = useVlm ? vlmUrl! : url
+    const fModel = useVlm ? vlmModel! : model
     const fKey = useVlm ? vlmKey! : apiKey
     // thinking 关闭：v4-flash/pro 默认走 reasoning_content（content 空），关掉后 JSON 直出 content，适配器才读得到。
     // DeepSeek 私有参数——非 DeepSeek endpoint 不发（isDeepSeek 守门），免得严格 OpenAI 兼容服务返 400。
@@ -528,14 +557,21 @@ export const openAiCompatLlm: LlmPort = {
     if (entryIds.length === 0) throw new Error('无条目可聚合')
 
     // Pull entries + their AI summaries to feed the prompt.
-    // D21: 同时取 ai?.mediaDescription，aggregate 完成后把完整 VLM 媒体理解原文
-    // 以「📷 图片理解：」「🎬 视频理解：」段附到 summary 末尾（绕过 LLM，保证完整原文）。
+    // D28: 同时取 ai?.mediaDescription + 统计 entry.parts 的图片/视频数量，传给 prompt 让
+    // 文本模型在摘要末尾综合成「图片内容：…；视频内容：…」备注（而非 raw append）。
     const entries = await Promise.all(
       entryIds.map(async (id) => {
         const entry = await di.storage.getEntry(id)
         if (!entry) return null
         const ai = await di.storage.getEntryAi(id)
-        return { id, text: entryText(entry), aiSummary: ai?.summary, mediaDescription: ai?.mediaDescription }
+        let imageCount = 0
+        let videoCount = 0
+        for (const p of entry.parts) {
+          const mt = inferMediaType(p)
+          if (mt === 'image') imageCount++
+          else if (mt === 'video') videoCount++
+        }
+        return { id, text: entryText(entry), aiSummary: ai?.summary, imageCount, videoCount, mediaDescription: ai?.mediaDescription }
       }),
     )
     const valid = entries.flatMap((e) => (e === null ? [] : [e]))
@@ -565,8 +601,9 @@ export const openAiCompatLlm: LlmPort = {
     const parsed = parseAggregateJson(raw)
     const now = new Date().toISOString()
 
-    // D21: 把各条目的 VLM 媒体理解原文（完整）附到 summary 末尾，标注「📷 图片理解：」「🎬 视频理解：」。
-    // 绕过 LLM 融合——用户要求"完整 vlm 理解内容"，LLM 融合可能截断/改写。多条目同类型用「|」分隔。
+    // D28: 文本模型已按 prompt 铁律在 sentences 末尾生成「图片内容：…；视频内容：…」备注。
+    // 安全网：若 LLM 漏写（含图片但正文无「图片内容：」/含视频但无「视频内容：」），用 VLM 原文补上同格式备注。
+    const baseSummary = parsed.sentences && parsed.sentences.length > 0 ? parsed.sentences.join('') : (parsed.summary ?? '')
     const imagesParts: string[] = []
     const videosParts: string[] = []
     for (const e of valid) {
@@ -575,11 +612,16 @@ export const openAiCompatLlm: LlmPort = {
       if (md.images && md.images.trim()) imagesParts.push(md.images.trim())
       if (md.videos && md.videos.trim()) videosParts.push(md.videos.trim())
     }
+    const hasImages = valid.some((e) => e.imageCount > 0)
+    const hasVideos = valid.some((e) => e.videoCount > 0)
     const mediaBlock: string[] = []
-    if (imagesParts.length > 0) mediaBlock.push(`📷 图片理解：${imagesParts.join(' | ')}`)
-    if (videosParts.length > 0) mediaBlock.push(`🎬 视频理解：${videosParts.join(' | ')}`)
-    const baseSummary = parsed.sentences && parsed.sentences.length > 0 ? parsed.sentences.join('') : (parsed.summary ?? '')
-    const summary = mediaBlock.length > 0 ? `${baseSummary}\n\n${mediaBlock.join('\n\n')}` : baseSummary
+    if (hasImages && !baseSummary.includes('图片内容：')) {
+      mediaBlock.push(`图片内容：${imagesParts.length > 0 ? imagesParts.join(' | ') : '暂未识别'}`)
+    }
+    if (hasVideos && !baseSummary.includes('视频内容：')) {
+      mediaBlock.push(`视频内容：${videosParts.length > 0 ? videosParts.join(' | ') : '暂未识别'}`)
+    }
+    const summary = mediaBlock.length > 0 ? `${baseSummary}\n\n${mediaBlock.join('；')}` : baseSummary
 
     const ag: Aggregate = {
       id: id ?? crypto.randomUUID(),
@@ -654,7 +696,11 @@ export const openAiCompatLlm: LlmPort = {
     const parsed = parseAnswerJson(raw)
     const validIds = new Set(cites.map((c) => c.id))
     const citedEntryIds = parsed.citedEntryIds.filter((id) => validIds.has(id))
-    return { answer: parsed.answer, citedEntryIds }
+    // D29: 清洗正文内联「（见 <id>）」引用——LLM 常臆造短别名（如 e3）或错配 id，UI 之前
+    // 拿这些 id 找不到条目就显「已删除」（实未删）。剔掉非 validIds 的引用段（含前导空白），
+    // 合法 id 保留原样交 UI 渲染成可点链接。
+    const answer = sanitizeInlineCites(parsed.answer, validIds)
+    return { answer, citedEntryIds }
   },
   async ping(opts?: { url?: string; model?: string; key?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
     const settings = await di.storage.getSettings()

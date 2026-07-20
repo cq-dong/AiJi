@@ -6,6 +6,9 @@
 // - month: generatedAt crossed an ISO-week boundary → refresh (weekly auto-update)
 // Manual refresh (重新生成 button) calls clear() to bypass the cache.
 //
+// D27: 缓存键含 detailLevel——每档（极简/简洁/标准/详细/详尽）各自保留生成结果。
+// 切换 3→4→3 时，level-3 结果仍在缓存（不被 level-4 覆盖），秒开且不重打付费 LLM。
+//
 // Intentionally localStorage (not Dexie) — keeps this self-contained and avoids
 // touching src/adapters/dexieStorage.ts (separate owner's exclusive file boundary).
 // localStorage is synchronous → enables 秒开 render before Dexie hydrate / async
@@ -25,13 +28,13 @@ export interface CachedSummary {
 
 const PREFIX = 'aiji:summary'
 
-function key(type: AggregateScopeType, dateKey: string): string {
-  return `${PREFIX}:${type}:${dateKey}`
+function key(type: AggregateScopeType, dateKey: string, detailLevel: number): string {
+  return `${PREFIX}:${type}:${dateKey}:L${detailLevel}`
 }
 
-export function get(type: AggregateScopeType, dateKey: string): CachedSummary | null {
+export function get(type: AggregateScopeType, dateKey: string, detailLevel: number): CachedSummary | null {
   try {
-    const raw = localStorage.getItem(key(type, dateKey))
+    const raw = localStorage.getItem(key(type, dateKey, detailLevel))
     if (!raw) return null
     return JSON.parse(raw) as CachedSummary
   } catch {
@@ -39,17 +42,17 @@ export function get(type: AggregateScopeType, dateKey: string): CachedSummary | 
   }
 }
 
-export function set(type: AggregateScopeType, dateKey: string, data: CachedSummary): void {
+export function set(type: AggregateScopeType, dateKey: string, detailLevel: number, data: CachedSummary): void {
   try {
-    localStorage.setItem(key(type, dateKey), JSON.stringify(data))
+    localStorage.setItem(key(type, dateKey, detailLevel), JSON.stringify(data))
   } catch (e) {
     console.error('[summaryCache] set failed', e)
   }
 }
 
-export function clear(type: AggregateScopeType, dateKey: string): void {
+export function clear(type: AggregateScopeType, dateKey: string, detailLevel: number): void {
   try {
-    localStorage.removeItem(key(type, dateKey))
+    localStorage.removeItem(key(type, dateKey, detailLevel))
   } catch (e) {
     console.error('[summaryCache] clear failed', e)
   }
@@ -66,8 +69,9 @@ export function shouldRefresh(
   type: AggregateScopeType,
   dateKey: string,
   currentEntryCount: number,
+  detailLevel: number,
 ): boolean {
-  const cached = get(type, dateKey)
+  const cached = get(type, dateKey, detailLevel)
   if (!cached) return true
   const generatedAt = new Date(cached.generatedAt)
   const now = new Date()

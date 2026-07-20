@@ -68,9 +68,11 @@ function CitationChips({ ids }: { ids: string[] }) {
 }
 
 // 解析一段文本中的 **加粗** 和（见 id）引用。
+// D29: 非法 id（条目已删/LLM 臆造）的引用段整段跳过，不显「已删除」（实未删，是 LLM 幻觉）。
 function renderRichText(
   text: string,
   getLabel: (id: string) => string,
+  isValidId: (id: string) => boolean,
   navigate: ReturnType<typeof useNavigate>,
 ): React.ReactNode {
   const boldParts = text.split(/(\*\*[^*]+?\*\*)/g)
@@ -85,16 +87,18 @@ function renderRichText(
     while ((match = citeRegex.exec(part)) !== null) {
       const [fullMatch, id] = match
       citeNodes.push(part.slice(lastIndex, match.index))
-      citeNodes.push(
-        <button
-          key={`cite-${i}-${match.index}`}
-          type="button"
-          onClick={() => navigate(`/detail/${id}`)}
-          className="text-pri underline hover:text-pri/80 cursor-pointer"
-        >
-          （见 {getLabel(id)}）
-        </button>,
-      )
+      if (isValidId(id)) {
+        citeNodes.push(
+          <button
+            key={`cite-${i}-${match.index}`}
+            type="button"
+            onClick={() => navigate(`/detail/${id}`)}
+            className="text-pri underline hover:text-pri/80 cursor-pointer"
+          >
+            （见 {getLabel(id)}）
+          </button>,
+        )
+      }
       lastIndex = match.index + fullMatch.length
     }
     citeNodes.push(part.slice(lastIndex))
@@ -109,6 +113,7 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
   const aiByEntry = useUiStore((s) => s.aiByEntry)
 
   const getLabel = (id: string) => citeLabel(id, entries, aiByEntry).label
+  const isValidId = (id: string) => !citeLabel(id, entries, aiByEntry).gone
 
   const renderMarkdown = (text: string) => {
     const lines = text.split('\n')
@@ -128,7 +133,7 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
           <ul key={i} className="list-disc pl-4 my-1 space-y-0.5">
             {items.map((item, idx) => (
               <li key={idx} className="leading-relaxed">
-                {renderRichText(item, getLabel, navigate)}
+                {renderRichText(item, getLabel, isValidId, navigate)}
               </li>
             ))}
           </ul>,
@@ -138,7 +143,7 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
       } else {
         elements.push(
           <p key={i} className="my-0.5">
-            {renderRichText(line, getLabel, navigate)}
+            {renderRichText(line, getLabel, isValidId, navigate)}
           </p>,
         )
       }

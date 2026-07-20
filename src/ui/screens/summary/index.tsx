@@ -81,13 +81,14 @@ export default function Summary() {
       // 扩展到 `!cur || cur.stale` 后，stale 时也查缓存：shouldRefresh 对 day scope 比较 entryCount，
       // 新条目 entryCount 变 → shouldRefresh=true → fresh=false → 仍重算（设计意图保留）；LLM 失败后
       // entryCount 未变 → shouldRefresh=false → fresh=true → continue 跳过 LLM，显示旧摘要。
-      if (!cur || cur.stale) {
+      // D27: 缓存按 detailLevel 分桶——cur 是别的 lvl（切换 3→4→3 回到 3）时也查本 lvl 缓存，
+      // 命中即秒开跳过付费 LLM。条件从 `(!cur || cur.stale)` 放宽到 needsRecompute 即查。
+      if (needsRecompute) {
         const count = entryIdsByRange.get(range)?.length ?? 0
-        const cached = summaryCache.get(scope, range)
+        const cached = summaryCache.get(scope, range, detailLevel)
         const fresh =
           cached !== null &&
-          !summaryCache.shouldRefresh(scope, range, count) &&
-          (cached.detailLevel ?? 3) === detailLevel
+          !summaryCache.shouldRefresh(scope, range, count, detailLevel)
         if (fresh) continue
       }
       missing.push(range)
@@ -107,19 +108,21 @@ export default function Summary() {
   // a fresh aggregate lands in store, mirror it to the cache so the next page entry
   // reads from cache (秒开) without re-hitting the LLM. Also backfills the cache
   // from pre-existing fresh Dexie aggregates on scope switch / entries change.
+  // D27: 缓存按 detailLevel 分桶——用 ag 自身的 detailLevel 作 key，每档各自保留。
   useEffect(() => {
     for (const ag of aggregates) {
       if (ag.scope.type !== scope) continue
       if (ag.stale) continue
       if (ag.summary.trim().length === 0) continue
       const count = entryIdsByRange.get(ag.scope.range)?.length ?? 0
-      summaryCache.set(scope, ag.scope.range, {
+      const lvl = ag.detailLevel ?? 3
+      summaryCache.set(scope, ag.scope.range, lvl, {
         content: ag.summary,
         generatedAt: ag.createdAt,
         entryCount: count,
         highlights: ag.highlights,
         modelUsed: ag.modelUsed,
-        detailLevel: ag.detailLevel,
+        detailLevel: lvl,
       })
     }
   }, [aggregates, scope, entryIdsByRange])
@@ -134,8 +137,9 @@ export default function Summary() {
   // the store's prerogative (out of this file's scope). Clearing the cache ensures
   // the next entry re-evaluates freshness from scratch and the watch effect backfills
   // from the latest Dexie aggregate.
+  // D27: clear 按 detailLevel 分桶——只清当前 lvl，其它 lvl 的缓存保留。
   const onRegen = (range: string) => {
-    summaryCache.clear(scope, range)
+    summaryCache.clear(scope, range, detailLevel)
     void recomputeAggregate(scope, range, detailLevel)
   }
 
@@ -201,16 +205,17 @@ export default function Summary() {
           // consult the localStorage cache. If the cache is fresh (shouldRefresh false
           // + detailLevel matches), synthesize an Aggregate from it and show content
           // immediately — no spinner, no wasted LLM call.
-          const cached = summaryCache.get(scope, p.range)
+          // D27: 缓存按 detailLevel 分桶，get/shouldRefresh 传当前 detailLevel。
+          const cached = summaryCache.get(scope, p.range, detailLevel)
           const cacheFresh =
             cached !== null &&
-            !summaryCache.shouldRefresh(scope, p.range, entryIds.length) &&
-            (cached.detailLevel ?? 3) === detailLevel
+            !summaryCache.shouldRefresh(scope, p.range, entryIds.length, detailLevel)
 
-          // Display priority: fresh Dexie aggregate > fresh cache > stale Dexie aggregate > null.
+          // Display priority: fresh Dexie aggregate (同 lvl) > fresh cache > stale/wrong-lvl Dexie aggregate > null.
+          // D27: Dexie 聚合是别的 lvl 时不算 fresh——回落到本 lvl 缓存秒开，避免显错 lvl 内容。
           let display: Aggregate | null
           let recalculating = isRecalculating
-          if (current && !current.stale) {
+          if (current && !current.stale && (current.detailLevel ?? 3) === detailLevel) {
             display = current
           } else if (cacheFresh && cached) {
             // 秒开: show cached content, suppress spinner (recompute may still run

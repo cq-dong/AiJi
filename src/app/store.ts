@@ -608,18 +608,15 @@ export const useUiStore = create<UiState>((set, get) => ({
     // 新鲜即跳过：scope 切换/挂载不再每次打付费 LLM；processEntry 先置 stale 再触发，真过期仍重算。
     // Wave 3: detailLevel 变了也算过期——避免级别改了却显示旧级别摘要。
     if (existing && !existing.stale && (existing.detailLevel ?? 3) === lvl) return
-    // D18: stale 时查 localStorage 缓存兜底——LLM 失败后 catch 块 restore stale=prevStale=true，
-    // 但缓存里其实有上次成功的旧摘要。shouldRefresh 对 day scope 比较 entryCount：新条目仍重算
-    // （设计意图保留），LLM 失败后 entryCount 未变 → 缓存 fresh → return 跳过重算，避免死循环。
-    // 双保险：防 onRegen 后 sweep 绕过、或其它路径直调 recomputeAggregate 时不必要地重打付费 LLM。
-    if (existing?.stale) {
+    // D27: Dexie 聚合是别的 detailLevel（切换 3→4→3 回到 3）或 stale 时，查本 lvl 的 localStorage
+    // 缓存——缓存按 detailLevel 分桶保留之前生成过的结果，命中即跳过付费 LLM，UI 用缓存秒开。
+    // D18: stale 时缓存兜底亦在此——LLM 失败后 catch restore stale=true，但缓存里有上次成功摘要；
+    // shouldRefresh 对 day scope 比较 entryCount：新条目仍重算，LLM 失败后 entryCount 未变 → 缓存
+    // fresh → return 跳过，避免死循环「生成中」。
+    {
       const count = inRange.length
-      const cached = summaryCache.get(scope, dateKey)
-      if (
-        cached !== null &&
-        !summaryCache.shouldRefresh(scope, dateKey, count) &&
-        (existing.detailLevel ?? 3) === lvl
-      ) {
+      const cached = summaryCache.get(scope, dateKey, lvl)
+      if (cached !== null && !summaryCache.shouldRefresh(scope, dateKey, count, lvl)) {
         return
       }
     }

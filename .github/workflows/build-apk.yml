@@ -51,10 +51,18 @@ jobs:
         # 那是付费 key，烘进公开 APK 会泄露。
         # VITE_GAODE_KEY = 内置高德 reverseGeocode Key（geocoding.ts 读），免费配额、
         # 用户开箱即用解析地址；用户自配 Key 仍优先。属 app 内置能力非付费 key，故烘入。
+        # VITE_VLM_*/VITE_STT_* = 内置默认端点 URL/model（builtinDefaults.ts 读），仅端点非密钥；
+        # 用户未手动配 URL 时适配器回落这些默认值，开箱即用。用户自配值仍优先。secret 缺失 → 空串回落硬编码。
         env:
           VITE_FEEDBACK_GITHUB_TOKEN: ${{ secrets.FEEDBACK_GITHUB_TOKEN }}
           VITE_FEEDBACK_GITHUB_REPO: ${{ secrets.FEEDBACK_GITHUB_REPO }}
           VITE_GAODE_KEY: ${{ secrets.VITE_GAODE_KEY }}
+          VITE_VLM_URL: ${{ secrets.VITE_VLM_URL }}
+          VITE_VLM_MODEL: ${{ secrets.VITE_VLM_MODEL }}
+          VITE_STT_URL_STREAM: ${{ secrets.VITE_STT_URL_STREAM }}
+          VITE_STT_URL_WHISPER: ${{ secrets.VITE_STT_URL_WHISPER }}
+          VITE_STT_MODEL_STREAM: ${{ secrets.VITE_STT_MODEL_STREAM }}
+          VITE_STT_MODEL_WHISPER: ${{ secrets.VITE_STT_MODEL_WHISPER }}
         run: npm run build
 
       - name: Sync version into gradle
