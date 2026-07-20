@@ -850,11 +850,12 @@ export const useUiStore = create<UiState>((set, get) => ({
       const { aiByEntry, tags } = get()
       const cites = localRecall(query, entries, aiByEntry, tags)
 
-      // 4. answer 轮：空 cites 不调 LLM（防幻觉层 3）；非空则基于 cites 作答 + 后校验剔非法 id（适配器已做）。
+      // 4. answer 轮：localRecall 兜底保证 cites 非空（全 0 命中时回落近期 top-K）。
+      // 不再因 cites 空硬裸答——交给 LLM 综合判断相关性并自然作答（D35：效果优先）。
       set({ chatLoading: 'answer' })
       const answer: ChatAnswer =
         cites.length === 0
-          ? { answer: '库内未找到依据。可以换个问法，或告诉我大致的时间、关键词。', citedEntryIds: [] }
+          ? { answer: '库里还没记过相关内容。可以换个问法，或告诉我大致的时间、关键词。', citedEntryIds: [] }
           : await di.llm.answerChat({ question: trimmed, cites, conversation: chatHistory(conversation, CHAT_HISTORY_WINDOW) })
 
       // 缓存（entries 签名不变即复用）。

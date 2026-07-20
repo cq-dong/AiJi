@@ -32,7 +32,8 @@ export function unlockAudio(): void {
   unlocked = true
 }
 
-// 到点播放：三声 880Hz 正弦短铃，0.18s 一声、间隔 0.12s。
+// 到点播放：五声 880Hz 正弦铃，0.3s 一声、间隔 0.18s，总长约 2.4s。
+// 旧版三声 0.18s 总长 0.8s 太短，用户反馈「声音持续时间太短」。D35 延长。
 // 失败静默（系统通知 channel 铃声仍兜底）。
 export function playReminderBeep(): void {
   const ctx = getCtx()
@@ -42,18 +43,18 @@ export function playReminderBeep(): void {
   }
   try {
     const now = ctx.currentTime
-    const starts = [0, 0.3, 0.6]
+    const starts = [0, 0.48, 0.96, 1.44, 1.92]
     for (const start of starts) {
       const osc = ctx.createOscillator()
       const gain = ctx.createGain()
       osc.type = 'sine'
       osc.frequency.value = 880
       gain.gain.setValueAtTime(0, now + start)
-      gain.gain.linearRampToValueAtTime(0.3, now + start + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.001, now + start + 0.18)
+      gain.gain.linearRampToValueAtTime(0.35, now + start + 0.03)
+      gain.gain.exponentialRampToValueAtTime(0.001, now + start + 0.3)
       osc.connect(gain).connect(ctx.destination)
       osc.start(now + start)
-      osc.stop(now + start + 0.2)
+      osc.stop(now + start + 0.32)
     }
   } catch (e) {
     console.warn('[reminderSound] play failed', e)

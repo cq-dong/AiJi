@@ -6,8 +6,10 @@
 import { scopeRange } from '@/domain/dateRange'
 import type { ChatCite, ChatQuery, Entry, EntryAi, Tag } from '@/domain/types'
 
-export const RECALL_TOP_K = 8
-const EXCERPT_MAX = 120
+// 召回参数：宁可多召回喂给 LLM（token 便宜，效果优先）。top-15 × ≤240 字 excerpt ≈ 8K input，
+// 对现代长上下文模型无压力。旧值 8×120 太省，常漏掉相关条目致 LLM 拒答。
+export const RECALL_TOP_K = 15
+const EXCERPT_MAX = 240
 
 // 拼接条目所有可检索原文（text part 原文 + audio/video transcript）。供 excerpt + raw-text 匹配。
 function entryText(entry: Entry): string {
@@ -21,6 +23,7 @@ function toCite(entry: Entry, ai: EntryAi | undefined): ChatCite {
   const full = entryText(entry)
   const textExcerpt =
     full.length > EXCERPT_MAX ? full.slice(0, EXCERPT_MAX) + '…' : full
+  const place = ai?.facets?.place?.trim() || entry.location?.address?.trim() || undefined
   return {
     id: entry.id,
     createdAt: entry.createdAt,
@@ -28,6 +31,7 @@ function toCite(entry: Entry, ai: EntryAi | undefined): ChatCite {
     tags: ai?.tags ?? [],
     summary: ai?.summary,
     textExcerpt,
+    place,
   }
 }
 
@@ -49,13 +53,25 @@ function scoreEntry(opts: {
     .map((p) => (p.type === 'text' ? p.content : p.transcript ?? ''))
     .join(' ')
     .toLowerCase()
+  // 地点/facets 检索面：location.address（reverse geocoded 文字地址）+ facets.place/person/project/event。
+  // 不加这些面，问「上海」时 location 存着但召回搜不到 → cites 空 → LLM 答「库内未找到依据」。
+  const facetLower = ai?.facets
+    ? [ai.facets.place, ai.facets.project, ai.facets.event, ai.facets.mood, ...(ai.facets.person ?? [])]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+    : ''
+  const locLower = entry.location?.address?.toLowerCase() ?? ''
 
   let kwScore = 0
   for (const k of keywords) {
     const inSummary = summaryLower.includes(k)
     const inTag = tagLower.includes(k)
     const inRaw = rawLower.includes(k)
-    kwScore += inSummary ? 4 : inTag ? 3 : inRaw ? 2 : 0
+    const inFacet = facetLower.includes(k)
+    const inLoc = locLower.includes(k)
+    // 命中面最佳权重：summary(4) > tag(3) > facet/loc(3) > raw(2)。
+    kwScore += inSummary ? 4 : inTag ? 3 : inFacet ? 3 : inLoc ? 3 : inRaw ? 2 : 0
   }
 
   let score = kwScore
@@ -108,16 +124,31 @@ export function localRecall(
       if (catFilter.has(aiCat)) structHit = true
     }
 
-    // keyword 臂：任一 keyword 命中任一面（summary/tag/raw）即候选。
+    // keyword 臂：任一 keyword 命中任一面（summary/tag/raw/facet/location）即候选。
     const summaryLower = ai?.summary?.toLowerCase() ?? ''
     const tagLower = (ai?.tags ?? []).flatMap((s) => [s, tagLabel.get(s) ?? '']).join(' ').toLowerCase()
     const rawLower = entry.parts
       .map((p) => (p.type === 'text' ? p.content : p.transcript ?? ''))
       .join(' ')
       .toLowerCase()
+    const facetLower = ai?.facets
+      ? [ai.facets.place, ai.facets.project, ai.facets.event, ai.facets.mood, ...(ai.facets.person ?? [])]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+      : ''
+    const locLower = entry.location?.address?.toLowerCase() ?? ''
     let kwHits = 0
     for (const k of keywords) {
-      if (summaryLower.includes(k) || tagLower.includes(k) || rawLower.includes(k)) kwHits++
+      if (
+        summaryLower.includes(k) ||
+        tagLower.includes(k) ||
+        rawLower.includes(k) ||
+        facetLower.includes(k) ||
+        locLower.includes(k)
+      ) {
+        kwHits++
+      }
     }
 
     const hit = structHit || kwHits > 0
@@ -126,6 +157,16 @@ export function localRecall(
     const score = scoreEntry({ ai, keywords, tagLabel, entry, categoryMatched: catFilter ? catFilter.has(aiCat) : false })
 
     candidates.push({ entry, ai, score })
+  }
+
+  // 兜底：intent 解析出 keywords 但全部 0 命中（如「上海」但地点存 location.address
+  // 而该条恰好没被 keyword 臂命中，或词太偏）→ 不空召回，回落近期 top-K 喂给 LLM，
+  // 让它自己判断相关性并诚实作答。空召回会让 store 直接裸答「未找到」，太死板。
+  if (candidates.length === 0) {
+    const recent = [...entries]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, RECALL_TOP_K)
+    return recent.map((e) => toCite(e, aiByEntry[e.id]))
   }
 
   candidates.sort(

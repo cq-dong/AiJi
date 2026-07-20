@@ -222,6 +222,7 @@ export interface ChatCite {
   tags: string[]
   summary?: string
   textExcerpt: string
+  place?: string // entry.location.address 或 facets.place，让 answer LLM 能答地点相关问题
 }
 
 export type ChatMessageRole = 'user' | 'assistant'

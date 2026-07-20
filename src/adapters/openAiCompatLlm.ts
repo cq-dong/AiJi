@@ -320,26 +320,35 @@ function buildIntentPrompt(question: string, nowIso: string) {
 
 铁律：
 1. scope：若问句含时间意图（今天/昨天/本周/上周/上个月/最近X天/具体日期），解析为绝对时间范围。type 为 day|week|month，range 用 ISO 格式：day=YYYY-MM-DD、week=YYYY-Www（ISO 周号，周一为首日）、month=YYYY-MM。以「当前时间」为锚：今天=当日、昨天=前一日、本周=当前周、上周=前一周、上个月=前一月。无时间意图时 scope=null。
-2. keywords：只保留**具体实体/主题词**（如 跑步/CapturePort/设计稿/桂花拿铁）。必须去掉泛词与功能词（的/了/我/关于/什么/想法/内容/东西/记录/条目/笔记/事/想法/内容 等）——泛词会误匹配大量条目的 AI 摘要，污染召回。宁可只留 1 个具体词，也不要塞泛词。1-6 个，小写。
+2. keywords：提取**所有具体实体/主题词**用于本地检索匹配。包括：
+   - 地名/地点（上海、北京、望京、咖啡店、楼下）—— 这类常存在条目的 location.address 或 facets.place，是关键检索信号，务必保留。
+   - 人名、项目名、物品名、活动名（跑步、桂花拿铁、CapturePort、设计稿）。
+   - 主题词（购物、开会、健身）。
+   必须去掉纯功能词（的/了/我/关于/什么/怎么/那个/这条/记了/东西 等）。但实体名词即使短也要保留。宁可多留实体词也不要漏掉地名/人名。1-8 个，小写。
 3. categorySlugs：若问句明显指向某类别（如「想法」「项目」），给 slug；不确定就省略此字段。绝不臆造。
 4. 只输出 JSON，不要 markdown 围栏、不要解释。
 
 输出 schema：
 {"scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[]}`
-  const example = `示例1（时间+具体词，去掉泛词「想法」）：
+  const example = `示例1（时间+具体词，去泛词「想法」）：
 问句："我上个月关于跑步的想法"
 当前时间：2026-07-17T10:30:00+08:00
 输出：{"scope":{"type":"month","range":"2026-06"},"keywords":["跑步"]}
 
-示例2（无时间意图）：
+示例2（地点实体必须保留）：
+问句："上海记了什么"
+当前时间：2026-07-17T10:30:00+08:00
+输出：{"scope":null,"keywords":["上海"]}
+
+示例3（物品+地点实体）：
 问句："桂花拿铁那条"
 当前时间：2026-07-17T10:30:00+08:00
 输出：{"scope":null,"keywords":["桂花拿铁"]}
 
-示例3（本周）：
+示例4（本周，宽泛问句留少量主题词）：
 问句："这周做了什么"
 当前时间：2026-07-17T10:30:00+08:00（2026-W29）
-输出：{"scope":{"type":"week","range":"2026-W29"},"keywords":["做了什么"]}`
+输出：{"scope":{"type":"week","range":"2026-W29"},"keywords":[]}`
   const user = `问句：${question}
 当前时间：${nowIso}
 输出 JSON。`
@@ -349,20 +358,28 @@ function buildIntentPrompt(question: string, nowIso: string) {
   ]
 }
 
-// answer 轮：基于传入 cites（已压缩的本地召回条目）+ 先前对话作答。铁律：只能依据 cites
-// 作答；citedEntryIds 必须是 cites 中真实存在的 id；cites 中无依据时回答「库内未找到依据」
-// 并 citedEntryIds=[]。绝不臆造引用或条目内容。
+// answer 轮：基于传入 cites（本地召回条目）+ 先前对话作答。
+// 设计取向（D35）：效果优先，不省 token。召回条目可能只是弱相关（兜底近期 top-K），
+// 让 LLM 综合判断相关性并诚实作答，而非硬模板「未找到」。只有确实无任何相关条目时才说明。
 function buildAnswerPrompt(question: string, cites: ChatCite[], conversation: { role: 'user' | 'assistant'; content: string }[]) {
   const citesBlock = cites.length === 0
     ? '（无召回条目）'
-    : cites.map((c) => `- id=${c.id} | ${c.createdAt} | 类别=${c.categorySlug}${c.summary ? ' | 摘要=' + c.summary : ''} | 标签=${c.tags.join(',') || '无'}\n  原文摘录：${c.textExcerpt}`).join('\n')
-  const system = `你是「AiJi」(AI 记) 的检索问答助手。用户问库内内容，你只能依据下方召回条目作答。
+    : cites.map((c) => {
+        const parts = [`id=${c.id}`, c.createdAt.slice(0, 10), `类别=${c.categorySlug || '未分类'}`]
+        if (c.summary) parts.push(`摘要=${c.summary}`)
+        if (c.place) parts.push(`地点=${c.place}`)
+        if (c.tags.length) parts.push(`标签=${c.tags.join(',')}`)
+        return `- ${parts.join(' | ')}\n  原文摘录：${c.textExcerpt}`
+      }).join('\n')
+  const system = `你是「AiJi」(AI 记) 的智能问答助手，帮用户从他的「记」条目里找信息、做总结、聊内容。这是个对话窗口，回答要自然、有用、像在跟用户聊，不要死板。
 
-铁律：
-1. 只能用下方「召回条目」中的信息作答。不得引入条目外的知识或臆造。
-2. citedEntryIds：列出你作答时实际依据的条目 id，必须来自下方条目的 id 集。未用到任何条目则给空数组。
-3. 若条目中无依据回答用户问题，直接说「库内未找到依据」，citedEntryIds=[]，不要硬凑。
-4. 回答用中文，简洁，可分点。引用条目时可用「（见 <id>）」但 citedEntryIds 须与正文一致。
+你的依据是下方「召回条目」（用户库内的笔记，含原文摘录/摘要/地点/标签/类别）。调用规范：
+1. 优先用召回条目里的信息作答。可以综合多条条目归纳（如「这周你主要在忙 X 和 Y」「关于上海，你记了…」）。
+2. 召回条目可能含弱相关或兜底近期条目——判断相关性后决定是否采用。相关的就用作答依据，无关的忽略。
+3. 引用条目时用「（见 <id>）」标注，id 必须来自下方条目 id 集。citedEntryIds 列出你实际依据的条目 id。
+4. 若召回条目确实与问题无关（比如问上海但条目全是北京的内容），诚实说「没找到相关的，要不要换个问法或告诉我大概时间」，citedEntryIds=[]。不要硬凑也不要臆造。
+5. 不得编造条目里没有的具体内容（人名/数字/事件细节）。可以概括、可以推断语气，但事实性内容必须有条目支撑。
+6. 回答用中文，自然流畅，可分点可分段。该详细就详细，别为省字数牺牲有用性。
 
 召回条目：
 ${citesBlock}
@@ -685,8 +702,8 @@ export const openAiCompatLlm: LlmPort = {
       body: JSON.stringify({
         model,
         messages: buildAnswerPrompt(question, cites, conversation),
-        max_tokens: 768,
-        temperature: 0.2,
+        max_tokens: 1536,
+        temperature: 0.4,
         // 不禁 thinking：deepseek-v4-flash 是推理模型，禁了 thinking 会把规则 3「无依据」触发得太宽松，
         // 连明确相关的 cite 都拒答（实测「关于跑步的想法」+ e3 cite → 禁 thinking 返「库内未找到依据」，
         // 开 thinking 返「在跑步时想到…（见 e3）」）。intent 轮结构化解析可禁，answer 轮必须留推理。

@@ -186,10 +186,15 @@ const nativeImpl: LocalNotificationsPort = {
     }
   },
   async schedule(reminder: Reminder): Promise<void> {
-    // D4 修复：权限未授权则不 schedule（避免到点被系统静默拦截）。
-    const ok = await ensurePermission()
-    if (!ok) return
+    // D35: 不再因 ensurePermission 返 false 静默跳过 schedule——checkPermissions 在部分
+    // Android 上返 'prompt'（即使用户已授），导致 schedule 被吃掉、到点不响。改为：
+    // 先 ensureChannel，再尽力 schedule；权限确实 denied 时系统会拒，但至少不会被
+    // 我们的 check 误杀。ensurePermission 只用于 requestPermission 主动请求场景。
     await ensureChannel()
+    const ok = await ensurePermission()
+    if (!ok) {
+      console.warn('[localNotifications] permission not granted, schedule may be suppressed by system')
+    }
     const id = hashId(reminder.id)
     const due = new Date(reminder.dueAt)
     // reschedule：同 id 先 cancel 旧预约（否则 schedule 重复 id 行为未定义）
