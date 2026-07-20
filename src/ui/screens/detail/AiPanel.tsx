@@ -70,7 +70,11 @@ function ReadyBody({
       {ai.summary && (
         <div className="flex flex-col gap-1">
           <span className="text-[11px] text-t3">摘要</span>
-          <p className="text-[12px] leading-relaxed text-t2">{ai.summary}</p>
+          <p className="text-[12px] leading-relaxed text-t2 whitespace-pre-line">
+            {ai.summary}
+            {ai.mediaDescription?.images?.trim() && `\n图片内容：${ai.mediaDescription.images.trim()}`}
+            {ai.mediaDescription?.videos?.trim() && `\n视频内容：${ai.mediaDescription.videos.trim()}`}
+          </p>
         </div>
       )}
       <div className="flex items-center gap-4 pt-1">

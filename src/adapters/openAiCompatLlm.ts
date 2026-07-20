@@ -109,7 +109,7 @@ function toLocalIso(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}${offStr}`
 }
 
-function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[], hasImages: boolean): ChatMessage[] {
+function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[], hasImages: boolean, locationAddress?: string): ChatMessage[] {
   const catList = categories.map((c) => `${c.slug}:${c.label}`).join(', ') || '（暂无）'
   const tagList = tags.map((t) => t.slug).join(', ') || '（暂无）'
   const mediaRule = hasImages
@@ -118,6 +118,9 @@ function buildPrompt(content: string, createdAt: string, categories: Category[],
   const mediaSchema = hasImages
     ? ',"mediaDescription"?:{"images"?:string,"videos"?:string}'
     : ''
+  const placeRule = locationAddress
+    ? `\n${hasImages ? '7' : '6'}. 地点：条目附有记录地点「${locationAddress}」（来自定位反查，非用户手输）。填入 facets.place（用该地址，可精简到区/街道级，但保留可辨识性），用于「类别地图·地点」聚类。`
+    : ''
   const system = `你是「AiJi」(AI 记) 的笔记分类助手。给定一条用户的「记」条目内容 + 条目创建时间 + 现有类别库 + 现有标签库，输出严格 JSON。
 
 铁律：
@@ -125,7 +128,7 @@ function buildPrompt(content: string, createdAt: string, categories: Category[],
 2. 标签同理，复用或新建，2-5 个，去重。
 3. 情绪只是可选侧面——若内容明显带情绪，填 facets.mood（一个词）；绝不把情绪当主轴或必填。
 4. titleSuggestion 一句话 ≤16 字；summary 一句话概述。
-5. 时间型提醒意图：若正文含明确的提醒/待办时间意图（如「明天下午3点提醒我给设计稿反馈」「周五记得啃 STT」「下周一早上9点交周报」），解析出绝对时间并填 reminderSuggestion：dueAt 为绝对 ISO 8601 时间戳（含时区偏移），以条目创建时间为基准解析相对表达（"明天"=createdAt 次日、"下周一"=下一个周一等）；label 为 ≤12 字短摘要，用户后续可改。仅建议不调度——不创建任何 Reminder。无明确时间提醒意图时此字段必须省略，绝不臆造时间。${mediaRule}
+5. 时间型提醒意图：若正文含明确的提醒/待办时间意图（如「明天下午3点提醒我给设计稿反馈」「周五记得啃 STT」「下周一早上9点交周报」），解析出绝对时间并填 reminderSuggestion：dueAt 为绝对 ISO 8601 时间戳（含时区偏移），以条目创建时间为基准解析相对表达（"明天"=createdAt 次日、"下周一"=下一个周一等）；label 为 ≤12 字短摘要，用户后续可改。仅建议不调度——不创建任何 Reminder。无明确时间提醒意图时此字段必须省略，绝不臆造时间。${mediaRule}${placeRule}
 
 输出 JSON schema：
 {"categorySlug":string,"categoryLabel"?:string,"tags":string[],"facets":{"mood"?:string,"person"?:string[],"place"?:string,"project"?:string,"event"?:string},"titleSuggestion"?:string,"summary"?:string,"reminderSuggestion"?:{"dueAt":string,"label":string}${mediaSchema}}
@@ -437,6 +440,9 @@ export const openAiCompatLlm: LlmPort = {
     if (!content.trim() && !hasVideoParts) throw new Error('条目无文本/媒体可分类')
     const categories = await di.storage.listCategories()
     const tags = await di.storage.listTags()
+    // 地点：entry.location.address（reverse geocoded）喂给 LLM 填 facets.place，
+    // 让「类别地图·地点」能聚类。无 address（离线/未反查）时不喂，LLM 仍可从正文提取。
+    const locationAddress = entry.location?.address?.trim() || entry.location?.label?.trim() || undefined
     // Vision：附图/视频帧（OpenAI image_url 多模态）。videoVisionEnabled 关 → 纯文本。
     // D21: 先抽图再 buildPrompt，以便把 hasImages 传入 schema（加 mediaDescription 输出字段）。
     let images: string[] = []
@@ -444,7 +450,7 @@ export const openAiCompatLlm: LlmPort = {
       images = await collectEntryImages(entry, settings.videoFrameIntervalSec)
     }
     const hasImages = images.length > 0
-    const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, hasImages)
+    const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, hasImages, locationAddress)
     if (hasImages) {
       const userMsg = messages[messages.length - 1]
       if (typeof userMsg.content === 'string') {
@@ -487,7 +493,7 @@ export const openAiCompatLlm: LlmPort = {
       }
       console.warn('[llm] vision failed, falling back to text-only', res.status, errText.slice(0, 200))
       // D21: 降级后无图，buildPrompt hasImages=false → 不请求 mediaDescription（LLM 也看不到图）。
-      const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, false)
+      const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, false, locationAddress)
       res = await fetch(fUrl, {
         method: 'POST',
         headers: { Authorization: `Bearer ${fKey}`, 'Content-Type': 'application/json' },

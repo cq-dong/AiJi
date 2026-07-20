@@ -4,6 +4,7 @@ import { scopeRange } from '@/domain/dateRange'
 import { localRecall } from '@/ui/screens/chat/helpers'
 import { seedSettings } from '@/data/seed'
 import { enrichLocation } from '@/adapters/geocoding'
+import { playReminderBeep } from '@/adapters/reminderSound'
 import * as summaryCache from '@/adapters/summaryCache'
 import { di } from './di'
 
@@ -148,6 +149,12 @@ function fireReminder(r: Reminder, opts?: { fromOverdue?: boolean }): void {
   // 未来到点路径：schedule 已预约系统通知，不重复 notify（避免双通知）。
   if (opts?.fromOverdue) {
     di.localNotifications.notify('AiJi 提醒', r.label, r.id)
+  } else {
+    // 前台 setTimeout 到点：原生 schedule 预约的系统通知在 Android 前台常被抑制（无横幅、
+    // localNotificationReceived listener 部分场景不触发）→ 直接 in-app 弹窗 + beep 兜底，
+    // 不依赖 listener。后台时 setTimeout 不跑，靠原生 schedule 发系统通知 + listener。
+    useUiStore.getState().showFiringReminder({ reminderId: r.id, entryId: r.entryId, label: r.label, dueAt: r.dueAt })
+    playReminderBeep()
   }
   const fired: Reminder = { ...r, status: 'fired' }
   void di.storage.saveReminder(fired).catch((e) => console.error('[store] saveReminder(fired) failed', e))

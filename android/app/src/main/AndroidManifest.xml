@@ -53,4 +53,10 @@
          @capacitor/local-notifications 在原生层用 NotificationManager 发系统通知（铃声+弹窗），
          不再依赖前台 setTimeout（app 后台/被杀仍可触发）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- D32: 精确闹钟调度。@capacitor/local-notifications 用 AlarmManager.setExactAndAllowWhileIdle
+         预约到点通知，Android 12+ (API 31+) 需 SCHEDULE_EXACT_ALARM 或 USE_EXACT_ALARM 才精确触发；
+         否则系统降级为 inexact，Doze 下延迟或丢失（用户报"建立了提醒但没收到"根因之一）。
+         USE_EXACT_ALARM（API 33+）安装时自动授予，免运行时请求，sideload 场景适用。 -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 </manifest>
