@@ -140,15 +140,22 @@ async function ensureChannel(): Promise<void> {
     return
   }
   try {
-    // Android 8+ 需 notification channel 才能发声。默认 channel 可能无声/不存在，
-    // 自建 'reminders' channel 设 IMPORTANCE_HIGH（系统默认铃声 + 横幅）。
-    // D4 修复：去掉 sound: 'beep.wav'——res/raw 无此资源会导致 channel 创建异常/无声。
-    // IMPORTANCE_HIGH 保证系统用默认通知声，去掉 sound 不影响发声。
+    // D40: 先删后建——Android channel 创建后 importance 不可变，若旧版 APK 以低
+    // importance 创建过 'reminders' channel，新版 createChannel 会被忽略，导致
+    // heads-up 横幅不弹（只有声音/状态栏图标）。删除重建强制刷新到 IMPORTANCE_HIGH。
+    try {
+      await LocalNotifications.deleteChannel({ id: 'reminders' })
+    } catch {
+      // 首次无 channel，忽略
+    }
+    // Android 8+ 需 notification channel 才能发声。IMPORTANCE_HIGH (5) → 系统默认铃声
+    // + heads-up 横幅（通知栏顶部弹出）。visibility PUBLIC 控锁屏可见性。
+    // D4: 不设 sound —— res/raw 无资源会致 channel 创建异常/无声；IMPORTANCE_HIGH 已保证默认铃声。
     await LocalNotifications.createChannel({
       id: 'reminders',
       name: '提醒',
       description: 'AiJi 待办提醒通知',
-      importance: 5, // IMPORTANCE_HIGH
+      importance: 5, // IMPORTANCE_HIGH → heads-up 横幅
       visibility: 1, // PUBLIC
       vibration: true,
     })
