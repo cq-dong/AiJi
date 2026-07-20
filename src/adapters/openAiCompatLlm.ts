@@ -59,7 +59,7 @@ function inferMediaType(p: Entry['parts'][number]): MediaType {
   // VideoPart: durationSec<=0 是拍照（image），>0 是真视频（video）
   return p.durationSec <= 0 ? 'image' : 'video'
 }
-function entryText(entry: Entry): string {
+export function entryText(entry: Entry): string {
   const groups: Record<MediaType, string[]> = { text: [], image: [], audio: [], video: [] }
   for (const p of entry.parts) {
     const text = p.type === 'text' ? p.content : p.transcript ?? ''
@@ -100,7 +100,7 @@ async function collectEntryImages(entry: Entry, intervalSec: number): Promise<st
 
 // createdAt 落库是 UTC（Z）；LLM 解析「明天下午3点」需用户本地时区信号——转成本地带偏移
 // ISO（如 2026-07-16T09:30:00+08:00），与 prompt 示例格式一致，LLM 才输出对的偏移。
-function toLocalIso(iso: string): string {
+export function toLocalIso(iso: string): string {
   const d = new Date(iso)
   const pad = (n: number) => String(n).padStart(2, '0')
   const off = -d.getTimezoneOffset()
@@ -109,7 +109,7 @@ function toLocalIso(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}${offStr}`
 }
 
-function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[], hasImages: boolean, locationAddress?: string): ChatMessage[] {
+export function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[], hasImages: boolean, locationAddress?: string): ChatMessage[] {
   const catList = categories.map((c) => `${c.slug}:${c.label}`).join(', ') || '（暂无）'
   const tagList = tags.map((t) => t.slug).join(', ') || '（暂无）'
   const mediaRule = hasImages
@@ -173,7 +173,7 @@ function asStringRecord(v: unknown): Record<string, unknown> | undefined {
 
 // 轻校验：LLM 响应是外部边界，畸形 JSON 不应静默流入 EntryAi.facets（审计 minor / S3）。
 // 不做完整 schema 校验，只把字段类型守到契约内，畸形部分降级为 undefined 而非 as 强转。
-function parseJson(raw: string): ClassifyResult {
+export function parseJson(raw: string): ClassifyResult {
   let s = raw.trim()
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fence) s = fence[1].trim()
@@ -226,7 +226,7 @@ interface AggregateResult {
 // the LLM to produce a period-level digest. few-shot one example.
 // D28: 同时传入每条的图片/视频数量与 VLM 媒体理解原文，让文本模型在 sentences 末尾综合成
 // 「图片内容：…；视频内容：…」备注（而非 raw append，也非单纯计数）。
-function buildAggregatePrompt(
+export function buildAggregatePrompt(
   entries: { id: string; text: string; aiSummary?: string; imageCount: number; videoCount: number; mediaDescription?: { images?: string; videos?: string } }[],
   scope: AggregateScopeType,
   detailLevel: number,
@@ -288,7 +288,7 @@ ${items}
   ]
 }
 
-function parseAggregateJson(raw: string): AggregateResult {
+export function parseAggregateJson(raw: string): AggregateResult {
   let s = raw.trim()
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fence) s = fence[1].trim()
@@ -315,7 +315,7 @@ function parseAggregateJson(raw: string): AggregateResult {
 // aggregate 一致的 ISO 格式（day=YYYY-MM-DD / week=YYYY-Www / month=YYYY-MM），以 nowIso
 // 为锚解析相对时间。ISO 周号由 LLM 给（可能偏差 1 号，但 localRecall 是结构化∪keyword
 // 召回，时间过滤错只收窄、不全丢——keyword 兜底）。无时间意图 scope=null。
-function buildIntentPrompt(question: string, nowIso: string) {
+export function buildIntentPrompt(question: string, nowIso: string) {
   const system = `你是「AiJi」(AI 记) 的检索意图解析器。给定用户问句 + 当前本地时间，输出严格 JSON，供本地检索用。
 
 铁律：
@@ -361,7 +361,8 @@ function buildIntentPrompt(question: string, nowIso: string) {
 // answer 轮：基于传入 cites（本地召回条目）+ 先前对话作答。
 // 设计取向（D35）：效果优先，不省 token。召回条目可能只是弱相关（兜底近期 top-K），
 // 让 LLM 综合判断相关性并诚实作答，而非硬模板「未找到」。只有确实无任何相关条目时才说明。
-function buildAnswerPrompt(question: string, cites: ChatCite[], conversation: { role: 'user' | 'assistant'; content: string }[]) {
+// 铁律：citedEntryIds 必须是 cites 中真实存在的 id；绝不臆造引用或条目内容。
+export function buildAnswerPrompt(question: string, cites: ChatCite[], conversation: { role: 'user' | 'assistant'; content: string }[]) {
   const citesBlock = cites.length === 0
     ? '（无召回条目）'
     : cites.map((c) => {
@@ -394,7 +395,7 @@ ${citesBlock}
   return msgs
 }
 
-function parseIntentJson(raw: string): ChatQuery {
+export function parseIntentJson(raw: string): ChatQuery {
   let s = raw.trim()
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fence) s = fence[1].trim()
@@ -419,7 +420,7 @@ function parseIntentJson(raw: string): ChatQuery {
   return { scope, keywords, categorySlugs: categorySlugs?.length ? categorySlugs : undefined }
 }
 
-function parseAnswerJson(raw: string): { answer: string; citedEntryIds: string[] } {
+export function parseAnswerJson(raw: string): { answer: string; citedEntryIds: string[] } {
   let s = raw.trim()
   if (!s) throw new Error('LLM 响应为空（thinking 可能耗尽 max_tokens，试试增大或清空会话）')
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)

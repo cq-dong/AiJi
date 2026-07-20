@@ -2,6 +2,9 @@
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
 import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, FeedbackItem, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Account, AuthSession } from '@/domain/account'
+import type { Quota } from '@/domain/quota'
+import type { PlanTier } from '@/domain/plan'
 
 export interface StoragePort {
   listEntries(): Promise<Entry[]>
@@ -180,4 +183,46 @@ export interface LocalNotificationsPort {
 // （见 docs/superpowers/specs/2026-07-19-feedback-feature-design.md §2）。
 export interface FeedbackPort {
   submit(items: FeedbackItem[]): Promise<{ issueUrl: string }>
+}
+
+// ── Slice B 端口 ──────────────────────────────────────────────
+// 错误类：适配器抛、UI/store catch 按 name 分流。erasableSyntaxOnly 禁 class 参数属性，手写 constructor。
+export class SessionExpiredError extends Error {
+  constructor(message = 'session expired') {
+    super(message)
+    this.name = 'SessionExpiredError'
+  }
+}
+export class NotNetworkError extends Error {
+  constructor(message = 'builtin key requires network account') {
+    super(message)
+    this.name = 'NotNetworkError'
+  }
+}
+export class QuotaExhaustedError extends Error {
+  constructor(message = 'quota exhausted') {
+    super(message)
+    this.name = 'QuotaExhaustedError'
+  }
+}
+
+export interface AuthPort {
+  register(email: string, password: string): Promise<{ account: Account; session: AuthSession }>
+  login(email: string, password: string): Promise<{ account: Account; session: AuthSession }>
+  refresh(): Promise<AuthSession>
+  logout(): Promise<void>
+}
+
+export interface QuotaPort {
+  getQuota(): Promise<Quota>
+}
+
+export interface PlanPort {
+  getPlans(): Promise<PlanTier[]>
+  upgrade(planId: string): Promise<{
+    orderId: string
+    paidPlanId: string
+    paidExpiresAt: string
+    payUrl?: string
+  }>
 }

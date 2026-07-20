@@ -7,6 +7,7 @@ import { enrichLocation } from '@/adapters/geocoding'
 import { playReminderBeep } from '@/adapters/reminderSound'
 import * as summaryCache from '@/adapters/summaryCache'
 import { di } from './di'
+import { useAccountStore } from './accountStore'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：D9 后首屏空状态（不再
 // seed 兜底），hydrate() 异步从 Dexie 载入真实条目替换；finishSave 同时落库 + 入队分类。
@@ -79,6 +80,7 @@ interface UiState {
   setVlmConfig: (url: string, model: string, key: string) => void
   setSttConfig: (model: string, key: string) => void
   setGeocodingConfig: (key: string) => void
+  setKeySource: (source: 'byok' | 'builtin') => void
   processEntry: (entryId: string, isFresh?: boolean) => Promise<void>
   recomputeAggregate: (scope: AggregateScopeType, range?: string, detailLevel?: number) => Promise<void>
   // Phase 9 Batch 2b · 提醒。processEntry 不自动建 Reminder（Q2：用户在 B6 TodoConfirm 确认）。
@@ -501,6 +503,13 @@ export const useUiStore = create<UiState>((set, get) => ({
     if (key) void di.secrets.set('geocoding:key', key).catch((e) => console.error('[store] setGeocodingKey failed', e))
     else void di.secrets.delete('geocoding:key').catch((e) => console.error('[store] deleteGeocodingKey failed', e))
   },
+  setKeySource: (source) => {
+    const account = useAccountStore.getState().account
+    if (source === 'builtin' && (!account || account.type === 'guest')) return
+    const next = { ...get().settings, keySource: source }
+    set({ settings: next })
+    void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+  },
   processEntry: async (entryId, isFresh) => {
     try {
       // D13: 后置回填地点地址。capture 屏的 enrichLocation effect 只更新 Zustand
@@ -528,8 +537,12 @@ export const useUiStore = create<UiState>((set, get) => ({
       // D25: 重试（isFresh=false）时不得覆盖已有 transcript——用户可能已手动编辑过转写文本，
       // 重跑 STT 会把手工修订抹掉（"手动编辑之后没有保存"的根因）。仅对新条目（isFresh）做
       // 预览→终稿升级，重试时只补 transcribe 缺失的 part（transcript 为空才跑）。
-      const sttKey = await di.secrets.get('stt:key')
-      if (sttKey) {
+      const settings = await di.storage.getSettings()
+      const session = useAccountStore.getState().session
+      const shouldStt = (settings.keySource ?? 'byok') === 'byok'
+        ? !!(await di.secrets.get('stt:key'))
+        : !!session
+      if (shouldStt) {
         const fresh = await di.storage.getEntry(entryId)
         if (fresh) {
           let changed = false

@@ -201,6 +201,8 @@ export interface Settings {
   // D24: 反向地理编码 BYOK Key（高德 web 服务）。未配 → 回落 Nominatim（OSM，国内网络常超时/不可达，
   // 此时地址显示退化为坐标）。配了高德 Key → 国内地址解析稳定可靠。Key 存 SecretStorePort('geocoding:key')。
   geocodingKeyRef?: string
+  // Slice B：AI 调用来源。undefined 视同 'byok'；游客强制 'byok'（store 守卫）。
+  keySource?: 'byok' | 'builtin'
 }
 
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────

@@ -1,16 +1,45 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card } from '@/ui/components'
+import { Button, Card, Spinner } from '@/ui/components'
 import { useAccountStore } from '@/app/accountStore'
+import { useUiStore } from '@/app/store'
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function Login() {
   const navigate = useNavigate()
   const [nickname, setNickname] = useState('')
-  const [networkNotice, setNetworkNotice] = useState(false)
+  const [mode, setMode] = useState<'register' | 'login'>('register')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
   const onGuestStart = () => {
     useAccountStore.getState().registerGuest(nickname)
     navigate('/onboarding')
+  }
+
+  async function onNetworkSubmit() {
+    setError(null)
+    if (!EMAIL_RE.test(email)) { setError('邮箱格式无效'); return }
+    if (password.length < 8) { setError('密码至少 8 位'); return }
+    if (mode === 'register' && password !== confirmPassword) { setError('两次密码不一致'); return }
+    setLoading(true)
+    try {
+      if (mode === 'register') await useAccountStore.getState().register(email, password)
+      else await useAccountStore.getState().login(email, password)
+      const onboarded = useUiStore.getState().settings.onboarded
+      navigate(onboarded ? '/' : '/onboarding')
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (msg.startsWith('AUTH_409')) { setError('该邮箱已注册，请直接登录'); setMode('login') }
+      else if (msg.startsWith('AUTH_')) setError(msg.replace(/^AUTH_\d+:/, ''))
+      else setError(msg)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -50,24 +79,29 @@ export default function Login() {
         </Button>
       </Card>
 
-      {/* 网络注册（次要，视觉从属） */}
+      {/* 网络账号（次要，视觉从属） */}
       <Card className="mt-3 opacity-90">
-        <p className="text-[14px] font-bold text-ink">网络账号</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-t3">
-          注册网络账号可享内置 Key 额度与云备份（远期）
-        </p>
-        <Button
-          variant="secondary"
-          className="mt-3 w-full active:scale-[0.97]"
-          onClick={() => setNetworkNotice(true)}
-        >
-          网络账号注册 / 登录
-        </Button>
-        {networkNotice && (
-          <p className="mt-2 text-[12px] leading-relaxed text-t3">
-            网络账号功能暂未开通，敬请期待
-          </p>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => { setMode('register'); setError(null) }}
+            className={`flex-1 rounded-btn py-2 text-[13px] font-medium transition ${mode === 'register' ? 'bg-priS text-pri' : 'text-t3'}`}>注册</button>
+          <button type="button" onClick={() => { setMode('login'); setError(null) }}
+            className={`flex-1 rounded-btn py-2 text-[13px] font-medium transition ${mode === 'login' ? 'bg-priS text-pri' : 'text-t3'}`}>登录</button>
+        </div>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="邮箱"
+          aria-label="邮箱" aria-invalid={!!error}
+          className="mt-3 h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 focus:border-pri/50 focus:outline-none" />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="密码（至少 8 位）"
+          aria-label="密码" aria-invalid={!!error}
+          className="mt-2 h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 focus:border-pri/50 focus:outline-none" />
+        {mode === 'register' && (
+          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="确认密码"
+            aria-label="确认密码"
+            className="mt-2 h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 focus:border-pri/50 focus:outline-none" />
         )}
+        {error && <p className="mt-2 text-[12px] text-catFail" role="alert">{error}</p>}
+        <Button variant="primary" size="lg" className="mt-3 w-full" onClick={onNetworkSubmit} disabled={loading}>
+          {loading ? <Spinner size={16} /> : mode === 'register' ? '注册' : '登录'}
+        </Button>
       </Card>
 
       {/* 底部说明 */}

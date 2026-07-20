@@ -150,4 +150,5 @@ export const seedSettings = {
   vlmModel: undefined,
   vlmKeyRef: undefined,
   geocodingKeyRef: undefined,
+  keySource: 'byok' as const,
 }
