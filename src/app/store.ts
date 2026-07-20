@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
 import { scopeRange } from '@/domain/dateRange'
 import { localRecall } from '@/ui/screens/chat/helpers'
 import { seedSettings } from '@/data/seed'
@@ -850,6 +850,19 @@ export const useUiStore = create<UiState>((set, get) => ({
       const { aiByEntry, tags } = get()
       const cites = localRecall(query, entries, aiByEntry, tags)
 
+      // trace：思维链记录，UI 默认折叠可展开（D37）。
+      const trace: ChatTrace = {
+        intent: {
+          keywords: query.keywords ?? [],
+          scope: query.scope ? { type: query.scope.type, range: query.scope.range } : null,
+          categorySlugs: query.categorySlugs,
+        },
+        recalled: cites.map((c) => ({
+          id: c.id,
+          label: aiByEntry[c.id]?.titleSuggestion || aiByEntry[c.id]?.summary || c.textExcerpt.slice(0, 20) || '条目',
+        })),
+      }
+
       // 4. answer 轮：localRecall 兜底保证 cites 非空（全 0 命中时回落近期 top-K）。
       // 不再因 cites 空硬裸答——交给 LLM 综合判断相关性并自然作答（D35：效果优先）。
       set({ chatLoading: 'answer' })
@@ -861,14 +874,16 @@ export const useUiStore = create<UiState>((set, get) => ({
       // 缓存（entries 签名不变即复用）。
       chatAnswerCache.set(chatCacheKey(trimmed, entries), answer)
 
-      const aiMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: answer.answer, citedEntryIds: answer.citedEntryIds, createdAt: new Date().toISOString() }
+      const aiMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: answer.answer, citedEntryIds: answer.citedEntryIds, createdAt: new Date().toISOString(), trace }
       conv = appendMessage(conv, aiMsg)
       set({ conversation: conv, chatLoading: 'idle' })
       void di.storage.saveConversation(conv).catch((e) => console.error('[store] saveConversation(answer) failed', e))
     } catch (e) {
       // 任一 LLM 轮失败：追加 error 消息（不抛——UI 显重试态而非卡 loading）。
+      // D37: content 带真实失败原因（非笼统「稍后重试」），trace.error 存原文便于排查。
       console.error('[store] sendMessage failed', e)
-      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: '问答出了点问题，稍后重试。', createdAt: new Date().toISOString(), error: true }
+      const reason = e instanceof Error ? e.message : String(e)
+      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: `问答出了点问题：${reason}`, createdAt: new Date().toISOString(), error: true, trace: { error: reason } }
       conv = appendMessage(conv, errMsg)
       set({ conversation: conv, chatLoading: 'idle' })
       void di.storage.saveConversation(conv).catch((e2) => console.error('[store] saveConversation(err) failed', e2))

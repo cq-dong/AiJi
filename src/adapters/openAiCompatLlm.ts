@@ -426,8 +426,21 @@ function parseAnswerJson(raw: string): { answer: string; citedEntryIds: string[]
   const start = s.indexOf('{')
   const end = s.lastIndexOf('}')
   if (start === -1 || end === -1 || end <= start) throw new Error('LLM 未返回 JSON')
-  const parsed = JSON.parse(s.slice(start, end + 1))
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('LLM 未返回 JSON 对象')
+  // D37: thinking 模型可能因 max_tokens 不足被截断（content 末尾 JSON 不完整）。
+  // 容忍：JSON.parse 失败时 best-effort 用正则抽 answer 字段，避免整轮作废报「问答出了点问题」。
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(s.slice(start, end + 1))
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) throw new Error('not object')
+  } catch {
+    const slice = s.slice(start)
+    const ansMatch = slice.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+    if (ansMatch) {
+      const answer = ansMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\')
+      return { answer, citedEntryIds: [] }
+    }
+    throw new Error('LLM JSON 被截断或格式错误')
+  }
   const p = parsed as Record<string, unknown>
   const answer = typeof p.answer === 'string' ? p.answer : ''
   const citedEntryIds = asStringArray(p.citedEntryIds) ?? []
@@ -702,7 +715,7 @@ export const openAiCompatLlm: LlmPort = {
       body: JSON.stringify({
         model,
         messages: buildAnswerPrompt(question, cites, conversation),
-        max_tokens: 1536,
+        max_tokens: 4096,
         temperature: 0.4,
         // 不禁 thinking：deepseek-v4-flash 是推理模型，禁了 thinking 会把规则 3「无依据」触发得太宽松，
         // 连明确相关的 cite 都拒答（实测「关于跑步的想法」+ e3 cite → 禁 thinking 返「库内未找到依据」，

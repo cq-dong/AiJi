@@ -229,6 +229,12 @@ export type ChatMessageRole = 'user' | 'assistant'
 
 // 用户消息只存 content；AI 消息存 content + citedEntryIds（后校验剔非法后的子集）。
 // error 非空时 content 是失败文案、citedEntryIds 空。
+// trace：AI 消息的思维链/操作过程（理解→召回→组织），UI 默认折叠可展开。
+export interface ChatTrace {
+  intent?: { keywords: string[]; scope?: { type: string; range: string } | null; categorySlugs?: string[] }
+  recalled?: { id: string; label: string; score?: number }[]
+  error?: string // 真实失败原因（error 消息才填）
+}
 export interface ChatMessage {
   id: string
   role: ChatMessageRole
@@ -236,6 +242,7 @@ export interface ChatMessage {
   citedEntryIds?: string[]
   createdAt: string
   error?: boolean
+  trace?: ChatTrace
 }
 
 // MVP 单会话：固定 id=1。多会话时改 schema + listConversations，UI 不动。

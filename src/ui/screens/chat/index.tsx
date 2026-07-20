@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, ChevronLeft, Eraser, Mic, Square } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Eraser, Mic, Square } from 'lucide-react'
 import { Chip, Spinner } from '@/ui/components'
 import { useUiStore } from '@/app/store'
-import type { ChatMessage, Entry } from '@/domain/types'
+import type { ChatMessage, ChatTrace, Entry } from '@/domain/types'
 
 // 裸路由顶栏：返回 ‹ + 标题「问 AI」+ 清空会话（Eraser）。
 function TopBar({ onBack, onClear, canClear }: { onBack: () => void; onClear: () => void; canClear: boolean }) {
@@ -106,6 +106,60 @@ function renderRichText(
   })
 }
 
+// D37: 思维链面板——理解问题→召回条目→组织回答的过程，默认折叠可展开。
+function TracePanel({ trace }: { trace: ChatTrace }) {
+  const [open, setOpen] = useState(false)
+  const intent = trace.intent
+  const recalled = trace.recalled ?? []
+  // 无内容可展示时（无 intent/recalled/error）不渲染。
+  if (!intent && recalled.length === 0 && !trace.error) return null
+
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 text-[11px] text-t3 transition duration-base ease-out active:scale-[0.97]"
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span>思考过程</span>
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-card bg-page px-3 py-2 text-[11px] leading-relaxed text-t2 space-y-1.5">
+          {intent && (
+            <div>
+              <p className="text-t3">理解问题</p>
+              <p>
+                关键词：{intent.keywords.length > 0 ? intent.keywords.join('、') : '（无，按时间范围检索）'}
+              </p>
+              {intent.scope && (
+                <p>时间：{intent.scope.type === 'day' ? '日' : intent.scope.type === 'week' ? '周' : '月'} {intent.scope.range}</p>
+              )}
+              {intent.categorySlugs && intent.categorySlugs.length > 0 && (
+                <p>类别：{intent.categorySlugs.join('、')}</p>
+              )}
+            </div>
+          )}
+          {recalled.length > 0 && (
+            <div>
+              <p className="text-t3">检索库中（{recalled.length} 条相关）</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                {recalled.map((r) => (
+                  <li key={r.id}>{r.label}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div>
+            <p className="text-t3">组织回答</p>
+            <p>基于上述条目综合生成回答。</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // AI 气泡：左对齐。解析 markdown 加粗/列表；引用 id 替换为条目名链接。
 function AiBubble({ msg }: { msg: ChatMessage }) {
   const navigate = useNavigate()
@@ -161,6 +215,7 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
           {renderMarkdown(msg.content)}
         </div>
         {msg.citedEntryIds && msg.citedEntryIds.length > 0 && <CitationChips ids={msg.citedEntryIds} />}
+        {msg.trace && <TracePanel trace={msg.trace} />}
       </div>
     </div>
   )
