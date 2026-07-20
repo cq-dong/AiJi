@@ -165,7 +165,7 @@ npm run build        # tsc -b && vite build
 **后续 / 待办**
 
 - 移动端 A1/A2 假设持续验证（麦克风 / 摄像头 / IndexedDB 配额，iOS 尤甚）
-- 账号系统实装（设计见 `docs/design/account-and-monetization.md`）
+- 账号系统实装（设计见 `docs/design/account-system.md`）
 - dark mode（后置到 MVP 后）
 
 ### v1.5（基于 main，2026-07-17）
@@ -177,12 +177,12 @@ npm run build        # tsc -b && vite build
 - **独立 VLM 端点 + 自定义模型下拉**：视觉分类走单独 VLM 端点，模型可选（`adfddcb`）
 - **采集重设计 + 提醒创建三联修 + chat 语音 + 各屏打磨**：WIP checkpoint（`4ef0b16`）
 - **按类别 .zip 导出**（`18b7fb6`）
-- **账号与变现设计文档 + app icon / splash 规格 + 发布研究**（`8d4ff5d`）
+- **账号系统设计文档 + app icon / splash 规格 + 发布研究**（`8d4ff5d`）
 - **根目录测试截图归档 + gitignore + CLAUDE.md 协作铁律 + 应用图标**（`6b1e6ea`）
 
 **后续 / 待办**
 
-- 账号系统实装（已在 `worktree-feat-account-system` 分支开工，设计见 `docs/design/account-and-monetization.md`）
+- 账号系统实装（已在 `worktree-feat-account-system` 分支开工，设计见 `docs/design/account-system.md`）
 - 移动端真机 A1/A2 验证（麦克风 / 摄像头 / IndexedDB 配额，iOS 尤甚）；不过则走 Capacitor 原生壳或砍视频
 - dark mode（后置到 MVP 后，单独阶段做）
 
