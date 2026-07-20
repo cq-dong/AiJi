@@ -711,7 +711,7 @@ function GeocodingSheet({ onClose }: { onClose: () => void }) {
               onChange={(e) => setKey(e.target.value)}
               placeholder={hasKey ? '••••••（留空保持不变）' : '在高德开放平台申请的 Web 服务 Key'}
             />
-            <p className="mt-1 text-[11px] text-t3">控制台 → 应用管理 → 创建「Web 服务」类型 Key。免费额度个人版每日 5000 次，足够。</p>
+            <p className="mt-1 text-[11px] text-t3">控制台 → 应用管理 → 创建「Web 服务」类型 Key。</p>
           </div>
         </div>
 
