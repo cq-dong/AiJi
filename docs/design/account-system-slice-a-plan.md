@@ -3,7 +3,7 @@
 > 分支：`worktree-feat-account-system`（隔离 worktree，基线 v1.5 tip `18b7fb6`）
 > 范围：登录页 UI + 游客本地注册 + settings "切换网络账号" 入口（stub）
 > 不在本切片：后端、网络真注册、权益包额度、云备份、§11 决策
-> 依据：`docs/design/account-and-monetization.md` §1/§2/§8 + 本次讨论决议
+> 依据：`docs/design/account-system.md` §1/§2/§8 + 本次讨论决议
 
 ---
 
