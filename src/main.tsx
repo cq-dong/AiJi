@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
+import { Capacitor } from '@capacitor/core'
 import './index.css'
 import App from './App.tsx'
 import { queryClient } from '@/app/query'
@@ -9,6 +10,21 @@ import { useUiStore } from '@/app/store'
 import { useAccountStore } from '@/app/accountStore'
 import { seedDevDefaults } from '@/app/devSeed'
 import { initReminderFire } from '@/app/reminderFire'
+
+// D38: 平台分流 Service Worker。
+// 原生壳（Capacitor）：注销存量 SW——vite-plugin-pwa 的 SW 会缓存 JS bundle（含烘焙的
+// __APP_VERSION__），APK 更新后首启仍加载旧缓存 → 显旧版。原生壳每次应从 APK 文件系统
+// 加载最新 bundle，不该被 SW 拦截。存量 SW 来自旧版（pre-D38）APK，需清掉过渡。
+// web（PWA）：PROD 注册 SW 走离线缓存；dev 无 sw.js 不注册。
+if ('serviceWorker' in navigator) {
+  if (Capacitor.isNativePlatform()) {
+    navigator.serviceWorker.getRegistrations()
+      .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+      .catch((e) => console.warn('[main] SW unregister failed', e))
+  } else if (import.meta.env.PROD) {
+    navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('[main] SW register failed', e))
+  }
+}
 
 // Slice A: 账号身份从 localStorage 同步载入（快，无 I/O）。AccountGate 判定前 hydrated 须为 true。
 useAccountStore.getState().hydrate()

@@ -142,20 +142,16 @@ function clearScheduledTimeout(id: string): void {
 }
 
 // 到点 fire：置 fired + 落库 + 更新 state + 清 timeout 表。
-// 通知展示由 di.localNotifications.schedule 预约（未来到点）或 fireReminder 内 notify（overdue 补推）处理。
-function fireReminder(r: Reminder, opts?: { fromOverdue?: boolean }): void {
+// D39: 始终显式 notify 一次系统通知。原非 overdue 路径省略 notify（依赖 schedule 预约），
+// 但 Android 前台 schedule 触发的系统横幅常被抑制 → 用户只看到 in-app 弹窗，通知栏无横幅。
+// notify 用 hashId(r.id) 与 schedule 同 id → NotificationManager 替换，不产生重复通知。
+function fireReminder(r: Reminder, _opts?: { fromOverdue?: boolean }): void {
   clearScheduledTimeout(r.id)
-  // overdue 补推路径（hydrate 时发现已过到点 <1h）未走过 schedule → 此处即时 notify。
-  // 未来到点路径：schedule 已预约系统通知，不重复 notify（避免双通知）。
-  if (opts?.fromOverdue) {
-    di.localNotifications.notify('AiJi 提醒', r.label, r.id)
-  } else {
-    // 前台 setTimeout 到点：原生 schedule 预约的系统通知在 Android 前台常被抑制（无横幅、
-    // localNotificationReceived listener 部分场景不触发）→ 直接 in-app 弹窗 + beep 兜底，
-    // 不依赖 listener。后台时 setTimeout 不跑，靠原生 schedule 发系统通知 + listener。
-    useUiStore.getState().showFiringReminder({ reminderId: r.id, entryId: r.entryId, label: r.label, dueAt: r.dueAt })
-    playReminderBeep()
-  }
+  di.localNotifications.notify('AiJi 提醒', r.label, r.id)
+  // 前台 setTimeout 到点：直接 in-app 弹窗 + beep 兜底（不依赖 listener）。后台时
+  // setTimeout 不跑，靠原生 schedule 发系统通知 + listener；notify 亦补一发系统横幅。
+  useUiStore.getState().showFiringReminder({ reminderId: r.id, entryId: r.entryId, label: r.label, dueAt: r.dueAt })
+  playReminderBeep()
   const fired: Reminder = { ...r, status: 'fired' }
   void di.storage.saveReminder(fired).catch((e) => console.error('[store] saveReminder(fired) failed', e))
   useUiStore.setState((s) => ({ reminders: s.reminders.map((x) => (x.id === r.id ? fired : x)) }))

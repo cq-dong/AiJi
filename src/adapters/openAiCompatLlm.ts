@@ -421,11 +421,17 @@ function parseIntentJson(raw: string): ChatQuery {
 
 function parseAnswerJson(raw: string): { answer: string; citedEntryIds: string[] } {
   let s = raw.trim()
+  if (!s) throw new Error('LLM 响应为空（thinking 可能耗尽 max_tokens，试试增大或清空会话）')
   const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
   if (fence) s = fence[1].trim()
   const start = s.indexOf('{')
   const end = s.lastIndexOf('}')
-  if (start === -1 || end === -1 || end <= start) throw new Error('LLM 未返回 JSON')
+  if (start === -1 || end === -1 || end <= start) {
+    // D39: 模型偶尔返纯文本无 JSON 包裹（thinking 模型带对话历史时尤甚——推理吃 token，
+    // content 末尾 JSON 没写出来，或整段退化成散文）。不硬报错——把整段当 answer 返回，
+    // 免「问答出了点问题」打断对话（citedEntryIds 丢失可接受，answer 文本仍在）。
+    return { answer: s, citedEntryIds: [] }
+  }
   // D37: thinking 模型可能因 max_tokens 不足被截断（content 末尾 JSON 不完整）。
   // 容忍：JSON.parse 失败时 best-effort 用正则抽 answer 字段，避免整轮作废报「问答出了点问题」。
   let parsed: Record<string, unknown>
@@ -439,7 +445,8 @@ function parseAnswerJson(raw: string): { answer: string; citedEntryIds: string[]
       const answer = ansMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\')
       return { answer, citedEntryIds: [] }
     }
-    throw new Error('LLM JSON 被截断或格式错误')
+    // 截断且抽不出 answer 字段：把首个 { 后的整段当裸 answer（比报错强）。
+    return { answer: slice.replace(/^\s*\{\s*"?answer"?\s*:\s*"?/, '').replace(/"\s*,?\s*$/, '') || slice, citedEntryIds: [] }
   }
   const p = parsed as Record<string, unknown>
   const answer = typeof p.answer === 'string' ? p.answer : ''
@@ -715,7 +722,7 @@ export const openAiCompatLlm: LlmPort = {
       body: JSON.stringify({
         model,
         messages: buildAnswerPrompt(question, cites, conversation),
-        max_tokens: 4096,
+        max_tokens: 8192,
         temperature: 0.4,
         // 不禁 thinking：deepseek-v4-flash 是推理模型，禁了 thinking 会把规则 3「无依据」触发得太宽松，
         // 连明确相关的 cite 都拒答（实测「关于跑步的想法」+ e3 cite → 禁 thinking 返「库内未找到依据」，

@@ -18,9 +18,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      // B2: auto-inject SW registration script into index.html —— 原默认 false 导致 SW 生成但运行时无注册代码，
-      // 不满足 PWA installability criteria（Chrome/iOS 不弹「添加到主屏」）。
-      injectRegister: 'auto',
+      // D38: 不自动注入 SW 注册脚本（原 'auto' 会把脚本写进 index.html，原生壳无法
+      // 条件跳过 → 与 main.tsx 的 native unregister 竞态，SW 会被重注册回控页面）。
+      // 改为 main.tsx 手动注册：web (PROD) 注册 SW 走离线缓存；原生壳跳过注册 +
+      // 注销存量 SW，每次从 APK 文件系统加载最新 bundle（修更新后首启显旧版 bug）。
+      injectRegister: false,
       manifest: {
         name: 'AiJi · AI 记',
         short_name: 'AiJi',
