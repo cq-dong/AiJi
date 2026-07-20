@@ -2,11 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { builtinStt } from '@/adapters/builtinStt'
 import { SessionExpiredError, NotNetworkError } from '@/ports'
 import { localSession } from '@/app/session'
-import { mockQuotaInternal } from '@/adapters/mockQuota'
 import { useAccountStore } from '@/app/accountStore'
 
-const { netState } = vi.hoisted(() => ({
+const { netState, refreshFn, consumeFn } = vi.hoisted(() => ({
   netState: () => ({ account: { id: 'u1', type: 'network', nickname: 'n', plan: 'free', createdAt: '' } }),
+  refreshFn: vi.fn(async () => ({ jwt: 'newjwt', refreshToken: 'r', expiresAt: '2099' })),
+  consumeFn: vi.fn(),
 }))
 
 vi.mock('@/app/di', () => ({
@@ -14,13 +15,14 @@ vi.mock('@/app/di', () => ({
     storage: {
       getMedia: vi.fn(async () => new Blob(['audio'], { type: 'audio/webm' })),
     },
+    auth: { refresh: refreshFn },
   },
 }))
 vi.mock('@/app/accountStore', () => ({
   useAccountStore: { getState: netState },
 }))
-vi.mock('@/adapters/mockAuth', () => ({
-  mockAuth: { refresh: vi.fn(async () => ({ jwt: 'newjwt', refreshToken: 'r', expiresAt: '2099' })) },
+vi.mock('@/app/quotaStore', () => ({
+  useQuotaStore: { getState: () => ({ consume: consumeFn }) },
 }))
 
 const okText = (text: string) => (globalThis.fetch = vi.fn(async () =>
@@ -31,10 +33,7 @@ beforeEach(async () => {
   localStorage.clear()
   localSession.set({ jwt: 'oldjwt', refreshToken: 'r', expiresAt: '2099' })
   vi.clearAllMocks()
-  // Restore default network account — the guest test reassigns getState directly
-  // (vi.clearAllMocks doesn't revert property reassignment on plain mock objects).
   ;(useAccountStore as unknown as { getState: () => unknown }).getState = netState
-  // Restore default getMedia mock (blob-found) — the not-found test reassigns it.
   const { di } = await import('@/app/di')
   ;(di.storage.getMedia as unknown as ReturnType<typeof vi.fn>).mockImplementation(
     async () => new Blob(['audio'], { type: 'audio/webm' }),
@@ -70,19 +69,18 @@ describe('builtinStt', () => {
     expect(calls).toBe(2)
     expect(out).toBe('retried text')
     expect(localSession.get()?.jwt).toBe('newjwt')
+    expect(refreshFn).toHaveBeenCalledOnce()
   })
   it('refresh fails → SessionExpiredError + session cleared', async () => {
-    const { mockAuth } = await import('@/adapters/mockAuth')
-    ;(mockAuth.refresh as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('AUTH_401'))
+    refreshFn.mockRejectedValueOnce(new Error('AUTH_401'))
     globalThis.fetch = vi.fn(async () => new Response('', { status: 401 })) as never
     await expect(builtinStt.transcribe('ref1')).rejects.toBeInstanceOf(SessionExpiredError)
     expect(localSession.get()).toBeNull()
   })
-  it('mockQuotaInternal.bumpStt called once on success', async () => {
+  it('success consumes stt quota', async () => {
     okText('ok')
-    const spy = vi.spyOn(mockQuotaInternal, 'bumpStt')
     await builtinStt.transcribe('ref1')
-    expect(spy).toHaveBeenCalledOnce()
+    expect(consumeFn).toHaveBeenCalledWith('stt', 5)
   })
   it('blob not found → throws', async () => {
     const { di } = await import('@/app/di')

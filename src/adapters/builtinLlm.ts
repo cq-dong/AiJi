@@ -12,9 +12,8 @@ import { SessionExpiredError, NotNetworkError } from '@/ports'
 import type { Aggregate, ChatAnswer, EntryAi } from '@/domain/types'
 import { di } from '@/app/di'
 import { useAccountStore } from '@/app/accountStore'
+import { useQuotaStore } from '@/app/quotaStore'
 import { localSession } from '@/app/session'
-import { mockAuth } from '@/adapters/mockAuth'
-import { mockQuotaInternal } from '@/adapters/mockQuota'
 import {
   entryText, toLocalIso, buildPrompt, parseJson,
   buildAggregatePrompt, parseAggregateJson,
@@ -46,7 +45,8 @@ async function chat(messages: { role: string; content: unknown }[]): Promise<str
   if (res.status === 401) {
     let newSession
     try {
-      newSession = await mockAuth.refresh()
+      // di.auth.refresh：http 模式走 httpAuth 单飞锁（并发 401 共享一次），mock 模式走 mockAuth。
+      newSession = await di.auth.refresh()
       localSession.set(newSession)
     } catch {
       localSession.clear()
@@ -77,7 +77,7 @@ export const builtinLlm: LlmPort = {
     const tags = await di.storage.listTags()
     const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, false)
     const raw = await chat(messages)
-    mockQuotaInternal.bumpLlm()
+    useQuotaStore.getState().consume('llm', 1)
     const parsed = parseJson(raw)
     const now = new Date().toISOString()
     const dedupTags = [...new Set(parsed.tags ?? [])]
@@ -130,8 +130,8 @@ export const builtinLlm: LlmPort = {
     const clampedLevel = Math.min(5, Math.max(1, detailLevel ?? 3))
     const messages = buildAggregatePrompt(valid, scope, clampedLevel)
     const raw = await chat(messages)
-    mockQuotaInternal.bumpLlm()
-    mockQuotaInternal.bumpAgg()
+    useQuotaStore.getState().consume('llm', 1)
+    useQuotaStore.getState().consume('agg', 1)
     const parsed = parseAggregateJson(raw)
     // ⚠️ Aggregate 构造：逐行对照 openAiCompatLlm.aggregate 同段（scope/summary/highlights 字段）
     const now = new Date().toISOString()
@@ -153,7 +153,7 @@ export const builtinLlm: LlmPort = {
     assertNetwork()
     const messages = buildIntentPrompt(question, toLocalIso(nowIso))
     const raw = await chat(messages)
-    mockQuotaInternal.bumpLlm()
+    useQuotaStore.getState().consume('llm', 1)
     return parseIntentJson(raw)
   },
 
@@ -161,7 +161,7 @@ export const builtinLlm: LlmPort = {
     assertNetwork()
     const messages = buildAnswerPrompt(question, cites, conversation)
     const raw = await chat(messages)
-    mockQuotaInternal.bumpLlm()
+    useQuotaStore.getState().consume('llm', 1)
     const parsed = parseAnswerJson(raw)
     const validIds = new Set(cites.map((c) => c.id))
     const citedEntryIds = parsed.citedEntryIds.filter((cid) => validIds.has(cid))

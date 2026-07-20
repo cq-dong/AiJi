@@ -10,9 +10,8 @@ import type { SttPort } from '@/ports'
 import { SessionExpiredError, NotNetworkError } from '@/ports'
 import { di } from '@/app/di'
 import { localSession } from '@/app/session'
-import { mockAuth } from '@/adapters/mockAuth'
-import { mockQuotaInternal } from '@/adapters/mockQuota'
 import { useAccountStore } from '@/app/accountStore'
+import { useQuotaStore } from '@/app/quotaStore'
 
 const BASE = import.meta.env.VITE_AIJI_BACKEND_BASE ?? ''
 
@@ -39,7 +38,7 @@ export const builtinStt: SttPort = {
     if (res.status === 401) {
       let newSession
       try {
-        newSession = await mockAuth.refresh()
+        newSession = await di.auth.refresh()
         localSession.set(newSession)
       } catch {
         localSession.clear()
@@ -51,7 +50,9 @@ export const builtinStt: SttPort = {
       const t = await res.text().catch(() => '')
       throw new Error(`builtinStt HTTP ${res.status}: ${t.slice(0, 200)}`)
     }
-    mockQuotaInternal.bumpStt()
+    // 乐观递增：前端不知实际时长，按保守 5 秒计（后端按 wav 字节估的真实 duration 扣权威值，
+    // 下次 quotaStore.refresh 修正显示）。
+    useQuotaStore.getState().consume('stt', 5)
     return (await res.text()).trim()
   },
 }

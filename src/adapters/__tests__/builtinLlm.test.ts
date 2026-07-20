@@ -2,11 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { builtinLlm } from '@/adapters/builtinLlm'
 import { SessionExpiredError, NotNetworkError } from '@/ports'
 import { localSession } from '@/app/session'
-import { mockQuotaInternal } from '@/adapters/mockQuota'
 import { useAccountStore } from '@/app/accountStore'
 
-const { netState } = vi.hoisted(() => ({
+const { netState, refreshFn, consumeFn } = vi.hoisted(() => ({
   netState: () => ({ account: { id: 'u1', type: 'network', nickname: 'n', plan: 'free', createdAt: '' } }),
+  refreshFn: vi.fn(async () => ({ jwt: 'newjwt', refreshToken: 'r', expiresAt: '2099' })),
+  consumeFn: vi.fn(),
 }))
 
 vi.mock('@/app/di', () => ({
@@ -22,13 +23,14 @@ vi.mock('@/app/di', () => ({
       saveTag: vi.fn(async () => {}),
       saveCategory: vi.fn(async () => {}),
     },
+    auth: { refresh: refreshFn },
   },
 }))
 vi.mock('@/app/accountStore', () => ({
   useAccountStore: { getState: netState },
 }))
-vi.mock('@/adapters/mockAuth', () => ({
-  mockAuth: { refresh: vi.fn(async () => ({ jwt: 'newjwt', refreshToken: 'r', expiresAt: '2099' })) },
+vi.mock('@/app/quotaStore', () => ({
+  useQuotaStore: { getState: () => ({ consume: consumeFn }) },
 }))
 
 const okReply = (reply: string) => (globalThis.fetch = vi.fn(async () =>
@@ -39,8 +41,6 @@ beforeEach(() => {
   localStorage.clear()
   localSession.set({ jwt: 'oldjwt', refreshToken: 'r', expiresAt: '2099' })
   vi.clearAllMocks()
-  // Restore default network account — the guest test reassigns getState directly
-  // (vi.clearAllMocks doesn't revert property reassignment on plain mock objects).
   ;(useAccountStore as unknown as { getState: () => unknown }).getState = netState
 })
 
@@ -60,11 +60,16 @@ describe('builtinLlm', () => {
     okReply(JSON.stringify({ categorySlug: 'idea', tags: [], facets: {} }))
     await builtinLlm.classify('e1') // di.secrets 未 mock → 若读 vlm:key 会抛
   })
-  it('classify bumps llm quota', async () => {
+  it('classify consumes llm quota', async () => {
     okReply(JSON.stringify({ categorySlug: 'idea', tags: [], facets: {} }))
-    const spy = vi.spyOn(mockQuotaInternal, 'bumpLlm')
     await builtinLlm.classify('e1')
-    expect(spy).toHaveBeenCalledOnce()
+    expect(consumeFn).toHaveBeenCalledWith('llm', 1)
+  })
+  it('aggregate consumes llm + agg quota', async () => {
+    okReply(JSON.stringify({ sentences: ['x'], highlights: [] }))
+    await builtinLlm.aggregate(['e1'], 'day', '2026-07-17', 3)
+    expect(consumeFn).toHaveBeenCalledWith('llm', 1)
+    expect(consumeFn).toHaveBeenCalledWith('agg', 1)
   })
   it('guest account throws NotNetworkError', async () => {
     const m = await import('@/app/accountStore')
@@ -82,10 +87,10 @@ describe('builtinLlm', () => {
     await builtinLlm.classify('e1')
     expect(calls).toBe(2)
     expect(localSession.get()?.jwt).toBe('newjwt')
+    expect(refreshFn).toHaveBeenCalledOnce()
   })
   it('401 → refresh fails → SessionExpiredError + session cleared', async () => {
-    const { mockAuth } = await import('@/adapters/mockAuth')
-    ;(mockAuth.refresh as unknown as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('AUTH_401'))
+    refreshFn.mockRejectedValueOnce(new Error('AUTH_401'))
     globalThis.fetch = vi.fn(async () => new Response('', { status: 401 })) as never
     await expect(builtinLlm.classify('e1')).rejects.toBeInstanceOf(SessionExpiredError)
     expect(localSession.get()).toBeNull()

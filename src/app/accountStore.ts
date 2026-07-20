@@ -3,6 +3,7 @@ import type { Account, AuthSession } from '@/domain/account'
 import { localAccount } from '@/adapters/localAccount'
 import { localSession } from '@/app/session'
 import { di } from '@/app/di'
+import { SessionExpiredError } from '@/ports'
 
 interface AccountState {
   account: Account | null
@@ -38,7 +39,15 @@ export const useAccountStore = create<AccountState>((set, get) => ({
           localSession.set(s)
           set({ session: s, sessionStale: false })
         })
-        .catch(() => set({ sessionStale: true }))
+        .catch((e) => {
+          // 分型：refresh 失效（401）→ 会话过期清 session；其他（网络）→ 标 stale 待重试。
+          if (e instanceof SessionExpiredError) {
+            localSession.clear()
+            set({ session: null, sessionStale: false })
+          } else {
+            set({ sessionStale: true })
+          }
+        })
     }
   },
   registerGuest: (nickname) => {

@@ -12,6 +12,9 @@ import { githubFeedback } from '@/adapters/githubFeedback'
 import { mockAuth } from '@/adapters/mockAuth'
 import { mockQuota } from '@/adapters/mockQuota'
 import { mockPlan } from '@/adapters/mockPlan'
+import { httpAuth } from '@/adapters/httpAuth'
+import { httpQuota } from '@/adapters/httpQuota'
+import { httpPlan } from '@/adapters/httpPlan'
 import { builtinLlm } from '@/adapters/builtinLlm'
 import { builtinStt } from '@/adapters/builtinStt'
 import { Capacitor } from '@capacitor/core'
@@ -19,6 +22,13 @@ import type {
   AppUpdatePort, AuthPort, CapturePort, FeedbackPort, LocalNotificationsPort,
   LlmPort, PlanPort, QuotaPort, SecretStorePort, StoragePort, SttPort,
 } from '@/ports'
+
+// Slice B Phase A env 分流：VITE_AIJI_BACKEND='http' → 真实后端（httpAuth/httpQuota/httpPlan），
+// 否则 mock（mockAuth/mockQuota/mockPlan）。BASE 由各 http 适配器自读 VITE_AIJI_BACKEND_BASE。
+const useHttp = import.meta.env.VITE_AIJI_BACKEND === 'http'
+const authImpl: AuthPort = useHttp ? httpAuth : mockAuth
+const quotaImpl: QuotaPort = useHttp ? httpQuota : mockQuota
+const planImpl: PlanPort = useHttp ? httpPlan : mockPlan
 
 // DI 根：注入端口适配器。Slice B 起接入 auth/quota/plan（mock 实现）；llm/stt 改为二级代理——
 // 按 settings.keySource 路由：builtin → 内置 proxy（builtinLlm/builtinStt），byok → 用户自配
@@ -83,9 +93,9 @@ export const di: Di = {
   llm: llmProxy,
   stt: sttProxy,
   secrets: localStorageSecrets,
-  auth: mockAuth,
-  quota: mockQuota,
-  plan: mockPlan,
+  auth: authImpl,
+  quota: quotaImpl,
+  plan: planImpl,
   notifications,
   appUpdate: Capacitor.isNativePlatform() ? capacitorAppUpdate : webAppUpdate,
   localNotifications,
