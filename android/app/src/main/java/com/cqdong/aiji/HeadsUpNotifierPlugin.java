@@ -60,7 +60,8 @@ public class HeadsUpNotifierPlugin extends Plugin {
     public void notifyNow(PluginCall call) {
         String title = call.getString("title", "AiJi 提醒");
         String body = call.getString("body", "");
-        int id = (int) call.getInt("id", System.currentTimeMillis() % Integer.MAX_VALUE);
+        Integer idVal = call.getInt("id", (int) (System.currentTimeMillis() % Integer.MAX_VALUE));
+        int id = idVal != null ? idVal : (int) (System.currentTimeMillis() % Integer.MAX_VALUE);
         ensureChannel();
         postNotification(id, title, body);
         call.resolve();
@@ -71,8 +72,10 @@ public class HeadsUpNotifierPlugin extends Plugin {
     public void schedule(PluginCall call) {
         String title = call.getString("title", "AiJi 提醒");
         String body = call.getString("body", "");
-        int id = (int) call.getInt("id", System.currentTimeMillis() % Integer.MAX_VALUE);
-        long at = call.getLong("at", 0L);
+        Integer idVal = call.getInt("id", (int) (System.currentTimeMillis() % Integer.MAX_VALUE));
+        int id = idVal != null ? idVal : (int) (System.currentTimeMillis() % Integer.MAX_VALUE);
+        Long atVal = call.getLong("at", 0L);
+        long at = atVal != null ? atVal : 0L;
         if (at <= 0) {
             call.reject("at (epoch ms) is required");
             return;
