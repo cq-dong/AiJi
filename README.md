@@ -3,6 +3,11 @@
 > AI 辅助的「记」——多模态随手记（文本 / 语音 / 视频），云端 LLM（BYOK）自动涌现分类与聚合，本地优先存储。
 > 移动优先 PWA，视口 390×844。产品 spec 见 `docs/superpowers/specs/2026-07-15-aiji-design.md`（PRD，8 节）；工程约束见 `CLAUDE.md`。
 
+## 安装
+
+- **Android APK**：下载 [最新版](https://github.com/cq-dong/AiJi/releases/latest/download/aiji.apk)（tag `v*` 自动构建），允许「未知来源」后安装。装好后在「设置 → 关于 AiJi」可检查更新并一键升级。
+- **PWA（浏览器）**：访问在线地址，浏览器「添加到主屏」即可。
+
 ## 1. 这是什么
 
 AiJi（AI 记）是一个**通用的「记」的工具，不是日记**。条目异构：生活片段 / 跳脱想法 / 项目进展，三种只是举例说明异构，**不是固定枚举**。
@@ -25,6 +30,10 @@ AiJi（AI 记）是一个**通用的「记」的工具，不是日记**。条目
 - **本地优先存储**：Dexie（IndexedDB）存条目元数据 + OPFS 存媒体 blob；30 天回收站、多草稿
 - **导出 / 分享**：.zip 打包（手写 STORE + CRC32，无新依赖）+ Web Share API
 - **PWA 离线壳**：vite-plugin-pwa + manifest + 192/512 icons + autoUpdate SW
+- **Android APK**：Capacitor 壳 + GitHub Actions CI 自动构建发版（tag 触发）
+- **应用内自更新**：原生壳内检查 GitHub 最新版 + 一键下载安装（自定义 ApkInstaller 插件）
+- **提醒 heads-up 横幅**：自建 HeadsUpNotifier 插件，前后台/被杀均弹横幅
+- **使用反馈**：设置页提建议 + 截图 → GitHub Issue
 - **BYOK**：用户自带 LLM / STT / VLM 密钥，明文 localStorage（自担风险，见 roadmap 后置决策）
 
 ## 3. 技术栈与架构
@@ -88,6 +97,29 @@ npm run build        # tsc -b && vite build
 > **后续 / 待办**
 > - <本分支未完成或留给下条分支的>
 > ```
+
+### v2.0（基于 v1.5，2026-07-20）
+
+**主要更新**——Android 原生壳 + GitHub 分发 + 应用内自更新 + 真机缺陷全量修复
+
+- **Capacitor APK 壳 + GitHub Actions CI 发版**：PWA 包进 Capacitor Android 壳（`com.cqdong.aiji`，androidScheme https），tag `v*` 触发 CI 自动构建 APK 上传 Release（`307bfab`）
+- **应用内自更新**：`AppUpdatePort` 端口 + 平台分流适配器；自定义 `ApkInstaller` 插件（OkHttp 原生下载绕 CORS + FileProvider 拉起系统安装器）；设置页「关于 AiJi」检查最新版 + 一键下载安装（`307bfab` / `8c9dea8`）
+- **品牌图标 + 开屏页**：app icon / splash 打入 APK 资源，含开源信息与免责声明（`6b9692a`）
+- **release 签名**：release keystore 存 GitHub secret + 本机备份，固定签名修覆盖安装冲突（`b3f8d60`）
+- **使用反馈**：设置页 → /feedback 多建议 + 图片 → GitHub Issue（孤儿分支存图 + contents API，token CI 烘进 APK）（`3aed618` / `9199108` / `44f1d45`）
+- **内置高德地理编码 Key**：开箱即用地址解析，免用户自配（`7f51227`）
+- **AI 问答深度优化**：召回加地点面 + facets 多面搜索 + 实体抽取 + 自然对话 prompt + 思维链可展开（理解→检索→组织，默认折叠）+ 真实错误原因 + 抗截断容错（`1758945` / `8c32780` / `4a4b5f5`）
+- **多模态摘要附媒体内容**：摘要末尾附「图片内容：xxx / 视频内容：xxx」；类别地图地点聚类（`7cf5d03` / `33480b2`）
+- **提醒 heads-up 横幅**：自建 `HeadsUpNotifier` Capacitor 插件（`PRIORITY_HIGH` + `IMPORTANCE_HIGH` + AlarmManager exact 排程），绕过 `@capacitor/local-notifications` 写死 `PRIORITY_DEFAULT` 不弹横幅的根因；前后台/被杀均触发（`f3fc921` / `ceae6ae`）
+- **GitHub API 403 修复**：原生平台走 `CapacitorHttp` 绕 WebView User-Agent 限制（`33480b2` / `151d4f9`）
+- **SW 缓存致更新后首启显旧版修复**：原生壳注销 PWA Service Worker，每次从 APK 文件系统加载最新 bundle（`4a4b5f5`）
+- **真机缺陷全量修复**：D1-D30 共 30+ 条真机回归（安全区原生注入 / 通知声音 / 权限流程 / 铺屏比例 / 地址 / 失败重试 / 提醒弹窗 等）（`0926f9c` / `4d7bb1b` / `840e089` / `4ae8b15` / `0948a8b` / `f1d2d33` / `930c6e0`）
+
+**后续 / 待办**
+
+- 移动端 A1/A2 假设持续验证（麦克风 / 摄像头 / IndexedDB 配额，iOS 尤甚）
+- 账号系统实装（设计见 `docs/design/account-and-monetization.md`）
+- dark mode（后置到 MVP 后）
 
 ### v1.5（基于 main，2026-07-17）
 
