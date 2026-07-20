@@ -8,6 +8,53 @@
 - **Android APK**：下载 [最新版](https://github.com/cq-dong/AiJi/releases/latest/download/aiji.apk)（tag `v*` 自动构建），允许「未知来源」后安装。装好后在「设置 → 关于 AiJi」可检查更新并一键升级。
 - **PWA（浏览器）**：访问在线地址，浏览器「添加到主屏」即可。
 
+## 功能一览
+
+> 八个核心页面,从随手记一条到 AI 帮你整理、检索、提醒。每一屏都在为「最低摩擦地把脑子里的东西落地」服务。
+
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/01-home.png" alt="首页 · 时间线"/><br/><b>首页 · 时间线</b></td>
+    <td width="50%" align="center"><img src="docs/screenshots/02-capture.png" alt="采集"/><br/><b>采集 · 多模态随手记</b></td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>左 · 首页时间线</b>:所有「记」按时间倒序铺开,每条带 AI 涌现的类别色 chip 与摘要。不需要先选类别、不需要写标题——记完即走,AI 在后台默默分类。<br/>
+      <b>右 · 采集页</b>:文本 / 语音 / 图片 / 视频同框输入。语音走 DashScope Paraformer WebSocket 实时转写,图片走 VLM 视觉理解,一次记一条异构内容。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/03-detail.png" alt="详情"/><br/><b>详情 · AI 自动整理</b></td>
+    <td width="50%" align="center"><img src="docs/screenshots/04-categories.png" alt="类别"/><br/><b>类别 · 涌现式策展</b></td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>左 · 详情页</b>:原文 + AI 摘要 + 涌现类别 / 标签 / 情绪 / 实体 / 地点 + 媒体回放。AI 面板可手动重跑,失败不伤原文。<br/>
+      <b>右 · 类别页</b>:类别不是预定的,是从你的内容里涌现出来的。列表 / 看板双视图,合并 / 重命名 / 新增,按类别一键 .zip 导出。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/05-summary.png" alt="摘要"/><br/><b>摘要 · 多模态聚合</b></td>
+    <td width="50%" align="center"><img src="docs/screenshots/06-chat.png" alt="问 AI"/><br/><b>问 AI · 带思维链检索</b></td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>左 · 摘要页</b>:LLM 把一段时间内的条目聚合成结构化摘要,地点聚类成地图,图片 / 视频内容直接附在摘要末尾——一段时间的全貌一目了然。<br/>
+      <b>右 · 问 AI</b>:对全部「记」自然语言提问。两轮 LLM(理解→检索→组织)+ 本地多面召回 + markdown 渲染,思维链默认折叠可展开,答得有据。
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/07-reminders.png" alt="提醒"/><br/><b>提醒 · heads-up 横幅</b></td>
+    <td width="50%" align="center"><img src="docs/screenshots/08-settings.png" alt="设置"/><br/><b>设置 · BYOK + 自更新</b></td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <b>左 · 提醒页</b>:LLM 从文本识别待办意图 → 用户确认 → 定时推送。自建 HeadsUpNotifier 插件(<code>PRIORITY_HIGH</code> + AlarmManager exact 排程),App 在前台 / 后台 / 被杀都弹 heads-up 横幅,错过自动补推。<br/>
+      <b>右 · 设置页</b>:BYOK 自带 LLM / STT / VLM 密钥(明文 localStorage),内置高德地理编码 Key 开箱即用。「关于 AiJi」检查 GitHub 最新版一键升级,「使用反馈」直达 GitHub Issue。
+    </td>
+  </tr>
+</table>
+
 ## 1. 这是什么
 
 AiJi（AI 记）是一个**通用的「记」的工具，不是日记**。条目异构：生活片段 / 跳脱想法 / 项目进展，三种只是举例说明异构，**不是固定枚举**。
