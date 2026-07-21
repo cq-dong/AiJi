@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 阶段 A：后端暂无域名/HTTPS（http://106.54.26.195）。targetSdk 28+ 默认禁明文 HTTP，
+     WebView fetch 会被平台层以 ERR_CLEARTEXT_NOT_PERMITTED 拒掉（混合内容策略放行不够，
+     这是网络层拦截）。仅对后端 IP 放行明文，不全局开 usesCleartextTraffic。
+     后端上 HTTPS + 域名后删除本文件并去掉 manifest 的 networkSecurityConfig 引用。 -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">106.54.26.195</domain>
+    </domain-config>
+</network-security-config>
