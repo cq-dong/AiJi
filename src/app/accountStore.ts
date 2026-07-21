@@ -16,6 +16,55 @@ async function adoptLocalSafe(accountId: string): Promise<void> {
   }
 }
 
+// network 账号登录/绑定后把 keySource 置 'builtin'——di.ts readKeySource 据此路由到内置
+// proxy（builtinLlm/builtinStt）。默认 'byok' 会让 network 用户 LLM/STT/chat/VLM 全走
+// BYOK 适配器 → 「BYOK 未配置」报错（内置 key 永不可达）。失败只记日志不阻塞登录。
+async function setKeySourceBuiltin(): Promise<void> {
+  try {
+    const s = await di.storage.getSettings()
+    if (s.keySource !== 'builtin') {
+      await di.storage.saveSettings({ ...s, keySource: 'builtin' })
+    }
+  } catch (e) {
+    console.error('[accountStore] set keySource=builtin failed', e)
+  }
+}
+
+// 账号切换后触发 UI store 全量重载——清掉内存里旧 owner 的 entries/categories/tags/
+// aggregates/reminders/conversation 快照。store.hydrate 的 `if (hydrated) return` 守卫使
+// 得不重置就跳过 → 新账号看到旧账号数据（隔离失效）。rehydrate reset hydrated→hydrate 全量重载。
+//
+// **破环方案——注册回调，非动态 import**：accountStore 不能静态 import store（成环
+// accountStore→store→di→builtinLlm→accountStore）。曾用 `await import('./store')` 动态 import
+// 破环，但 Vite dev 给动态 import 加 `?t=<hmr>` query → 解析成与 UI 不同的 useUiStore 实例，
+// rehydrate 跑在空实例上、真 store 不动（dev 下隔离仍失效；prod 无 `?t=` 才正常）。
+// 改用 store→accountStore 单向依赖（store 已 import accountStore）：store 模块加载时把
+// rehydrate 注册进 accountStore 的可变槽，accountStore 调槽函数。零动态 import、零环、零实例分裂。
+let storeRehydrateFn: (() => Promise<void>) | null = null
+
+/** store.ts 模块加载时注册：rehydrate 仅当 store 已 hydrated 时执行（boot 期 store 未 hydrated
+ * 时跳过——store.hydrate 后续会自读 adopt 后数据，不重复加载）。 */
+export function registerStoreRehydrate(fn: () => Promise<void>): void {
+  storeRehydrateFn = fn
+}
+
+async function triggerStoreRehydrate(): Promise<void> {
+  if (!storeRehydrateFn) return
+  try {
+    await storeRehydrateFn()
+  } catch (e) {
+    console.error('[accountStore] store rehydrate failed', e)
+  }
+}
+
+// network 账号登录/绑定后的 best-effort 收尾：先写 keySource='builtin'（防 di 路由漂移到 BYOK），
+// 再 rehydrate（重载新 owner 数据）。顺序有意——rehydrate 内会读 settings，先落 builtin 再重载
+// 避免 race 读到旧 byok。两者均吞错不阻塞登录主流程。
+async function postNetworkLogin(): Promise<void> {
+  await setKeySourceBuiltin()
+  await triggerStoreRehydrate()
+}
+
 interface AccountState {
   account: Account | null
   session: AuthSession | null
@@ -42,11 +91,18 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     if (get().hydrated) return
     const a = localAccount.get()
     // 恢复 currentOwner：network 账号 → 其 id（数据已在前次 login 时 adopt 到该 id）；
-    // 无账号 / guest → 'local'。hydrate 不再 adopt（adopt 仅在 fresh login 时一次性发生）。
+    // 无账号 / guest → 'local'。
     setCurrentOwner(a && a.type === 'network' ? a.id : 'local')
     set({ account: a, session: localSession.get(), hydrated: true })
     const cur = get().account
     if (cur && cur.type === 'network') {
+      // 防漂移：network 账号 boot 时确保 keySource='builtin'（内置 key 可达）。
+      void setKeySourceBuiltin()
+      // 幂等补 adopt：升级用户开机时存量数据可能在 'local'（db v7 回填），adopt 收养到 cur.id。
+      // adopt 完成后若 store 已 hydrated 则触发 rehydrate 重载收养后的数据——修「升级用户开机空库」
+      // （store.hydrate 可能在 adopt 完成前先跑读到空库，rehydrate 兜底重读）。
+      // triggerStoreRehydrate 内注册的 fn 自带 `if (hydrated)` 守卫，未 hydrated 时跳过。
+      void adoptLocalSafe(cur.id).then(() => triggerStoreRehydrate())
       di.auth
         .refresh()
         .then((s) => {
@@ -77,6 +133,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // guest 走 'local' 分区（非 network account.id）。
     setCurrentOwner('local')
     set({ account })
+    // 切回 'local' 视图：清旧 owner 快照重载。guest 通常从 logout 或首装来，旧快照可能残留。
+    void triggerStoreRehydrate()
     return account
   },
   login: async (email, password) => {
@@ -88,6 +146,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     setCurrentOwner(account.id)
     await adoptLocalSafe(account.id)
     set({ account, session, sessionStale: false })
+    // 内置 key 可达 + 清旧 owner 快照重载（隔离）。best-effort 不阻塞登录。
+    void postNetworkLogin()
   },
   register: async (email, password) => {
     const { account, session } = await di.auth.register(email, password)
@@ -96,6 +156,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     setCurrentOwner(account.id)
     await adoptLocalSafe(account.id)
     set({ account, session, sessionStale: false })
+    void postNetworkLogin()
   },
   bindNetwork: async (email, password) => {
     const cur = get().account
@@ -116,6 +177,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     setCurrentOwner(next.id)
     await adoptLocalSafe(next.id)
     set({ account: next, session, sessionStale: false })
+    void postNetworkLogin()
   },
   upgradePlan: async (planId) => {
     const r = await di.plan.upgrade(planId)
@@ -152,6 +214,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         return undefined
       })
       .catch((e) => console.error('[accountStore] logout reset keySource failed', e))
+    // 切回 'local' 视图：清旧 owner 快照重载（隔离）。登出无内置访问权，keySource 保持 byok。
+    void triggerStoreRehydrate()
   },
   setAvatar: (dataUrl) => {
     const cur = get().account

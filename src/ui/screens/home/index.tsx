@@ -18,7 +18,8 @@ export default function Home() {
   const categories = useUiStore((s) => s.categories)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
 
-  const todayKey = todayKeyFrom(entries)
+  // 空库时 todayKeyFrom 返 ''，topDateLabel('') 会渲出「NaN月undefined日」——回落系统今天。
+  const todayKey = todayKeyFrom(entries) || dateKey(new Date().toISOString())
   const todayCount = entries.filter((e) => dateKey(e.createdAt) === todayKey).length
 
   const showOffline = !online

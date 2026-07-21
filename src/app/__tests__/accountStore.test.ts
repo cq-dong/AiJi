@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
   adoptLocal: vi.fn(),
+  storeRehydrate: vi.fn(),
+  storeHydrated: false,
 }))
 
 vi.mock('@/app/di', () => ({
@@ -30,9 +32,17 @@ vi.mock('@/app/di', () => ({
   },
 }))
 
-import { useAccountStore } from '@/app/accountStore'
+import { useAccountStore, registerStoreRehydrate } from '@/app/accountStore'
 import { localAccount } from '@/adapters/localAccount'
 import { localSession } from '@/app/session'
+
+// 注册 rehydrate 回调（模拟 store.ts 模块加载时的注册）。回调含 `if (hydrated)` 守卫——
+// storeHydrated=false 时跳过（模拟 boot 期 store 未 hydrated），=true 时调 rehydrate。
+// login/logout/registerGuest 测试设 storeHydrated=true 断言 rehydrate 被调；
+// hydrate（post-adopt）测试保持 storeHydrated=false 断言 rehydrate 不被调。
+registerStoreRehydrate(async () => {
+  if (mocks.storeHydrated) await mocks.storeRehydrate()
+})
 
 const networkAccount: Account = {
   id: 'net-1',
@@ -56,6 +66,9 @@ beforeEach(() => {
   mocks.saveSettings.mockReset()
   mocks.adoptLocal.mockReset()
   mocks.adoptLocal.mockResolvedValue(undefined)
+  mocks.storeRehydrate.mockReset()
+  mocks.storeRehydrate.mockResolvedValue(undefined)
+  mocks.storeHydrated = false
   useAccountStore.setState({ account: null, session: null, sessionStale: false, hydrated: false })
 })
 
@@ -78,6 +91,18 @@ describe('accountStore — login', () => {
     const s = useAccountStore.getState()
     expect(s.account).toBeNull()
     expect(s.session).toBeNull()
+  })
+
+  it('login 成功 → keySource 写 builtin + 触发 store rehydrate', async () => {
+    mocks.authLogin.mockResolvedValue({ account: networkAccount, session: sess })
+    mocks.getSettings.mockResolvedValue({ keySource: 'byok' })
+    mocks.saveSettings.mockResolvedValue(undefined)
+    mocks.storeHydrated = true // login 在 boot 完成后发生，store 已 hydrated
+    await useAccountStore.getState().login('a@b.com', 'password1')
+    // keySource 被写 builtin
+    await vi.waitFor(() => expect(mocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ keySource: 'builtin' })))
+    // store rehydrate 被触发（清旧 owner 快照）
+    await vi.waitFor(() => expect(mocks.storeRehydrate).toHaveBeenCalledOnce())
   })
 })
 
@@ -130,10 +155,11 @@ describe('accountStore — upgradePlan', () => {
 })
 
 describe('accountStore — logout', () => {
-  it('logout → account/session null + saveSettings 被调且 keySource=byok', async () => {
+  it('logout → account/session null + saveSettings 被调且 keySource=byok + 触发 rehydrate', async () => {
     useAccountStore.setState({ account: networkAccount, session: sess })
     mocks.getSettings.mockResolvedValue({ keySource: 'builtin' })
     mocks.saveSettings.mockResolvedValue(undefined)
+    mocks.storeHydrated = true // logout 在 boot 完成后发生，store 已 hydrated
     useAccountStore.getState().logout()
     await vi.waitFor(() => expect(mocks.saveSettings).toHaveBeenCalledOnce())
     const s = useAccountStore.getState()
@@ -143,6 +169,8 @@ describe('accountStore — logout', () => {
     expect(localAccount.get()).toBeNull()
     expect(localSession.get()).toBeNull()
     expect(mocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ keySource: 'byok' }))
+    // 切回 'local' 视图也触发 rehydrate
+    await vi.waitFor(() => expect(mocks.storeRehydrate).toHaveBeenCalledOnce())
   })
 })
 
@@ -151,6 +179,8 @@ describe('accountStore — hydrate', () => {
     localAccount.set(networkAccount)
     localSession.set(sess)
     mocks.authRefresh.mockRejectedValue(new Error('AUTH_401:refresh token 已失效'))
+    mocks.getSettings.mockResolvedValue({ keySource: 'byok' })
+    mocks.saveSettings.mockResolvedValue(undefined)
     useAccountStore.getState().hydrate()
     // hydrate 同步设 hydrated + 载入 local；fire-and-forget refresh 异步落定
     await vi.waitFor(() => expect(useAccountStore.getState().sessionStale).toBe(true))
@@ -158,5 +188,33 @@ describe('accountStore — hydrate', () => {
     expect(s.hydrated).toBe(true)
     expect(s.account?.type).toBe('network')
     expect(s.session).not.toBeNull() // 载入的 local session 仍在（refresh 失败不清空）
+  })
+
+  it('hydrate 持久化 network 账号 → adoptLocal 被调 + keySource=builtin', async () => {
+    localAccount.set(networkAccount)
+    localSession.set(sess)
+    mocks.authRefresh.mockResolvedValue(sess)
+    mocks.getSettings.mockResolvedValue({ keySource: 'byok' })
+    mocks.saveSettings.mockResolvedValue(undefined)
+    useAccountStore.getState().hydrate()
+    // 幂等补 adopt（修升级用户开机空库）
+    await vi.waitFor(() => expect(mocks.adoptLocal).toHaveBeenCalledWith(networkAccount.id))
+    // 防漂移：keySource 写 builtin
+    await vi.waitFor(() => expect(mocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ keySource: 'builtin' })))
+    // store 未 hydrated（mock hydrated=false）→ post-adopt rehydrate 守卫跳过，不调 rehydrate
+    expect(mocks.storeRehydrate).not.toHaveBeenCalled()
+  })
+
+  it('hydrate 持久化 network 账号 + store 已 hydrated → post-adopt 触发 rehydrate', async () => {
+    localAccount.set(networkAccount)
+    localSession.set(sess)
+    mocks.authRefresh.mockResolvedValue(sess)
+    mocks.getSettings.mockResolvedValue({ keySource: 'builtin' })
+    mocks.saveSettings.mockResolvedValue(undefined)
+    mocks.storeHydrated = true // store 已 hydrated（adopt 完成时 store 早载完）
+    useAccountStore.getState().hydrate()
+    await vi.waitFor(() => expect(mocks.adoptLocal).toHaveBeenCalledWith(networkAccount.id))
+    // store 已 hydrated → post-adopt rehydrate 被调（兜底重读 adopt 后数据）
+    await vi.waitFor(() => expect(mocks.storeRehydrate).toHaveBeenCalledOnce())
   })
 })
