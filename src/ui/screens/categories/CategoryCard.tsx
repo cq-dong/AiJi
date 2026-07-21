@@ -12,10 +12,10 @@ interface CategoryCardProps {
 }
 
 const DOT: Record<NonNullable<Category['accent']>, string> = {
-  catIdea: 'bg-catIdea',
-  catProject: 'bg-catProject',
-  catPending: 'bg-catPending',
-  catFail: 'bg-catFail',
+  catIdea: 'from-catIdea to-catIdea/60 ring-catIdea/25',
+  catProject: 'from-catProject to-catProject/60 ring-catProject/25',
+  catPending: 'from-catPending to-catPending/60 ring-catPending/25',
+  catFail: 'from-catFail to-catFail/60 ring-catFail/25',
 }
 
 const LONG_PRESS_MS = 500
@@ -76,16 +76,18 @@ export function CategoryCard({ category, snippet, liveCount, onClick, onLongPres
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       className={cn(
-        'h-[140px] p-4 flex flex-col gap-2.5 transition duration-base ease-out select-none focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-        onClick && 'cursor-pointer active:scale-[0.99]',
+        'h-[140px] p-4 flex flex-col gap-2.5 transition-all duration-base ease-out select-none hover:border-t3/30 hover:shadow-cardHover focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+        onClick && 'cursor-pointer active:scale-[0.98]',
       )}
     >
       <div className="flex items-center gap-2">
-        <span className={cn('size-3 rounded-full', dot)} />
+        <span className={cn('size-3.5 rounded-full bg-gradient-to-br ring-2 ring-offset-1 ring-offset-card', dot)} />
         <span className="text-[15px] font-bold text-ink">{category.label}</span>
       </div>
-      <p className="text-[12px] font-medium text-t3">{liveCount} 条</p>
-      <p className="text-[12px] text-t2 line-clamp-1">{snippet || '——'}</p>
+      <p className="text-[12px] font-medium text-t3">
+        <span className="text-[13px] font-semibold tabular-nums text-t2">{liveCount}</span> 条
+      </p>
+      <p className="text-[12px] leading-snug text-t2 line-clamp-2">{snippet || '——'}</p>
     </Card>
   )
 }

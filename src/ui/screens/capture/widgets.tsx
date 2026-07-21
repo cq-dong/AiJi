@@ -328,11 +328,11 @@ export function FlowPart({
 // ── Empty compose state: a real prompt, not a dead placeholder ──
 export function EmptyCompose() {
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
-      <div className="flex size-16 items-center justify-center rounded-full bg-priS">
+    <div className="flex flex-col items-center justify-center px-6 py-20 text-center animate-fade-in-up">
+      <div className="flex size-16 items-center justify-center rounded-full bg-gradient-to-b from-priS to-priS/50 ring-1 ring-pri/10 shadow-glowPriSm">
         <Mic size={28} strokeWidth={2} className="text-pri" />
       </div>
-      <p className="mt-5 text-[15px] font-medium text-ink">说一句、打几个字、或拍一张</p>
+      <p className="mt-5 text-[15px] font-semibold text-ink">说一句、打几个字、或拍一张</p>
       <p className="mt-2 max-w-[260px] text-[12px] leading-relaxed text-t3">
         不点保存继续记，多条会堆成一条多片段
       </p>
@@ -362,13 +362,15 @@ function ToolButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'flex flex-1 flex-col items-center gap-1.5 py-1 cursor-pointer transition duration-base ease-out active:scale-95 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
+        'flex flex-1 flex-col items-center gap-1.5 py-1 cursor-pointer transition-all duration-base ease-out active:scale-90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
       )}
     >
       <span
         className={cn(
-          'flex size-12 items-center justify-center rounded-card border',
-          primary ? 'border-transparent bg-pri text-white' : 'border-brd bg-card text-ink',
+          'flex size-12 items-center justify-center rounded-card border transition-shadow duration-base',
+          primary
+            ? 'border-transparent bg-gradient-to-b from-pri to-pri/85 text-white shadow-glowPriSm'
+            : 'border-brd/80 bg-card text-ink shadow-sm hover:border-t3/40',
         )}
       >
         {icon}
@@ -423,7 +425,7 @@ export function SaveBar({
         type="button"
         onClick={onClear}
         disabled={disabled || saving}
-        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd/80 bg-card text-[13px] font-medium text-t2 shadow-sm cursor-pointer transition-all duration-base ease-out hover:border-t3/40 active:scale-[0.97] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <Trash2 size={16} strokeWidth={2} />
         清空
@@ -432,7 +434,7 @@ export function SaveBar({
         type="button"
         onClick={onSaveDraft}
         disabled={disabled || saving}
-        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd/80 bg-card text-[13px] font-medium text-t2 shadow-sm cursor-pointer transition-all duration-base ease-out hover:border-t3/40 active:scale-[0.97] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <Bookmark size={16} strokeWidth={2} />
         存草稿
@@ -442,8 +444,10 @@ export function SaveBar({
         onClick={onSave}
         disabled={disabled || saving}
         className={cn(
-          'flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-btn text-[15px] font-medium cursor-pointer transition duration-base ease-out active:scale-[0.99] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
-          saving ? 'border border-brd bg-priS text-pri' : 'bg-pri text-white',
+          'flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-btn text-[15px] font-medium cursor-pointer transition-all duration-base ease-out active:scale-[0.98] disabled:opacity-40 disabled:shadow-none focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
+          saving
+            ? 'border border-pri/20 bg-priS text-pri'
+            : 'bg-gradient-to-b from-pri to-pri/85 text-white shadow-glowPriSm hover:brightness-[1.06] active:brightness-95',
         )}
       >
         {saving ? (
@@ -470,7 +474,7 @@ export function VoiceBar({
   onStop: () => void
 }) {
   return (
-    <div className="flex h-16 shrink-0 items-center gap-3 border-t border-brd bg-card px-4">
+    <div className="flex h-16 shrink-0 items-center gap-3 border-t border-brd/70 bg-card/90 px-4 backdrop-blur-lg animate-slide-up">
       <span className="flex items-center" style={{ gap: 3 }}>
         {LIVE_HEIGHTS.slice(0, 5).map((h, i) => (
           <span
@@ -495,7 +499,7 @@ export function VoiceBar({
         type="button"
         onClick={onStop}
         aria-label="停止录音"
-        className="ml-auto flex size-12 items-center justify-center rounded-full bg-pri text-white shadow-lg shadow-pri/30 cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+        className="ml-auto flex size-12 items-center justify-center rounded-full bg-gradient-to-b from-pri to-pri/85 text-white shadow-glowPri cursor-pointer transition-all duration-base ease-out hover:brightness-[1.06] active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <span className="block size-5 rounded-[3px] bg-white" />
       </button>
@@ -508,8 +512,11 @@ export function VoiceBar({
 // can see what's being captured without a full-screen takeover.
 export function InterimBubble({ liveTranscript }: { liveTranscript: string }) {
   return (
-    <div className="rounded-card border border-pri/20 bg-priS/30 p-3">
-      <p className="text-[11px] font-medium text-pri">正在转写</p>
+    <div className="rounded-card border border-pri/20 bg-priS/40 p-3 shadow-sm backdrop-blur-sm animate-fade-in-up">
+      <p className="flex items-center gap-1.5 text-[11px] font-medium text-pri">
+        <span className="inline-block size-1.5 animate-pulse rounded-full bg-pri" />
+        正在转写
+      </p>
       <p className="mt-1.5 min-h-[1.5em] text-[13px] leading-relaxed text-t2">
         {liveTranscript || '…'}
       </p>

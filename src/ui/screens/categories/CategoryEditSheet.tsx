@@ -94,7 +94,7 @@ export function CategoryEditSheet({
         aria-label="关闭"
         onClick={onClose}
         className={cn(
-          'absolute inset-0 bg-ink/40 animate-fade-in transition-opacity duration-200',
+          'absolute inset-0 bg-ink/45 backdrop-blur-[2px] animate-fade-in transition-opacity duration-200',
           entered ? 'opacity-100' : 'opacity-0',
         )}
       />
@@ -103,7 +103,7 @@ export function CategoryEditSheet({
         aria-modal="true"
         aria-label="编辑类别"
         className={cn(
-          'relative rounded-t-card bg-card px-4 pt-3 pb-6 shadow-sheet animate-slide-up transition-transform duration-200',
+          'relative rounded-t-card border-t border-white/10 bg-card px-4 pt-3 pb-6 shadow-sheet animate-slide-up transition-transform duration-200',
           entered ? 'translate-y-0' : 'translate-y-full',
         )}
       >
@@ -128,7 +128,7 @@ export function CategoryEditSheet({
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="类别名称"
-            className="mt-1.5 h-11 w-full rounded-btn border border-brd bg-page px-3 text-[14px] text-ink outline-none focus:border-pri"
+            className="mt-1.5 h-11 w-full rounded-btn border border-brd/80 bg-card px-3 text-[14px] text-ink shadow-sm placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20"
           />
         </label>
 
@@ -151,7 +151,7 @@ export function CategoryEditSheet({
                       'size-11 rounded-full',
                       DOT[a],
                       selected
-                        ? 'ring-2 ring-ink ring-offset-2'
+                        ? 'ring-2 ring-ink/80 ring-offset-2 shadow-sm'
                         : 'ring-1 ring-brd',
                     )}
                   />
@@ -190,7 +190,7 @@ export function CategoryEditSheet({
               </button>
             </div>
           ) : (
-            <div className="rounded-card border border-catFail/30 bg-catFail/5 p-3">
+            <div className="rounded-card border border-catFail/30 bg-catFail/5 p-3 animate-scale-in">
               <p className="text-[12px] leading-relaxed text-ink">
                 确定删除「{category.label}」？
               </p>
@@ -232,11 +232,11 @@ export function CategoryEditSheet({
       {/* D10: 导出确认 sheet——z-[110] 盖在编辑 sheet（z-[100]）之上。 */}
       {zipConfirm && (
         <div
-          className="fixed inset-0 z-[110] flex items-end justify-center bg-black/40 animate-fade-in"
+          className="fixed inset-0 z-[110] flex items-end justify-center bg-black/45 backdrop-blur-[2px] animate-fade-in"
           onClick={() => setZipConfirm(false)}
         >
           <div
-            className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up"
+            className="w-full max-w-[420px] rounded-screen border-t border-white/10 bg-page p-4 shadow-sheet animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">

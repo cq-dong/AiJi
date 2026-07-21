@@ -25,8 +25,8 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
   return (
     <div
       className={cn(
-        'flex h-11 items-center gap-2 rounded-full border border-brd bg-card px-4 transition',
-        'focus-within:border-pri/40 focus-within:ring-2 focus-within:ring-pri/30',
+        'flex h-11 items-center gap-2 rounded-full border border-brd/80 bg-card px-4 shadow-card transition-all duration-base',
+        'focus-within:border-pri/50 focus-within:shadow-glowPriSm focus-within:ring-2 focus-within:ring-pri/20',
       )}
     >
       <SearchIcon className="size-4 shrink-0 text-t3" />
@@ -43,9 +43,9 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
           type="button"
           aria-label="清除"
           onClick={() => onChange('')}
-          className="flex size-11 shrink-0 items-center justify-center rounded-btn text-t3 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          className="-mr-2 flex size-8 shrink-0 items-center justify-center rounded-full bg-page text-t3 transition-all duration-base ease-out hover:text-t2 active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
-          <X size={18} strokeWidth={2} />
+          <X size={15} strokeWidth={2.2} />
         </button>
       )}
     </div>

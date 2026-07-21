@@ -8,11 +8,12 @@ import { firstText, firstThumbRef, modalityLabel, timeLabel } from './helpers'
 
 type Accent = 'catIdea' | 'catProject' | 'catPending' | 'catFail' | undefined
 
+// 左侧竖条：渐变色条内嵌卡片（上下留白），比贴边细线更精致
 const BAR: Record<NonNullable<Accent>, string> = {
-  catIdea: 'bg-catIdea/50',
-  catProject: 'bg-catProject/50',
-  catPending: 'bg-catPending/50',
-  catFail: 'bg-catFail/50',
+  catIdea: 'from-catIdea to-catIdea/40',
+  catProject: 'from-catProject to-catProject/40',
+  catPending: 'from-catPending to-catPending/40',
+  catFail: 'from-catFail to-catFail/40',
 }
 
 const CHIP_TONE: Record<NonNullable<Accent>, 'idea' | 'project' | 'pending' | 'fail'> = {
@@ -27,12 +28,24 @@ interface CardProps {
   ai?: EntryAi
   catLabel?: string
   catAccent?: Accent
+  index?: number
 }
 
-export function TimelineCard({ entry, ai, catLabel, catAccent }: CardProps) {
+// 卡片通用交互类：浮起阴影 + hover 边框提亮 + 按压下沉
+const CARD_CLS =
+  'group relative min-h-[84px] cursor-pointer overflow-hidden rounded-card border border-brd/80 bg-card shadow-card transition-all duration-base ease-out hover:border-t3/30 hover:shadow-cardHover active:scale-[0.98] active:shadow-sm focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
+
+function cardStyle(index: number): React.CSSProperties {
+  // stagger 入场：每张卡延迟 45ms，封顶 8 张（更早的立即出现，避免长列表持续跳动）
+  return index < 8
+    ? { animationDelay: `${index * 45}ms` }
+    : { animation: 'none' }
+}
+
+export function TimelineCard({ entry, ai, catLabel, catAccent, index = 99 }: CardProps) {
   const isReady = entry.status === 'ready'
-  if (isReady) return <ReadyCard entry={entry} ai={ai} catLabel={catLabel} catAccent={catAccent} />
-  return <ProcessingCard entry={entry} catAccent={catAccent} />
+  if (isReady) return <ReadyCard entry={entry} ai={ai} catLabel={catLabel} catAccent={catAccent} index={index} />
+  return <ProcessingCard entry={entry} catAccent={catAccent} index={index} />
 }
 
 // 右侧 48×48 媒体缩略图：图片直出，视频取首帧（#t=0.1）。seed 无 blob → 占位灰块。
@@ -54,23 +67,23 @@ function MediaThumb({ mediaRef }: { mediaRef: string }) {
     }
   }, [mediaRef])
   if (!url) {
-    return <div className="size-12 shrink-0 rounded-[10px] bg-page" aria-hidden="true" />
+    return <div className="size-12 shrink-0 rounded-[10px] bg-page ring-1 ring-brd/60" aria-hidden="true" />
   }
   return (
     <img
       src={url}
       alt=""
       loading="lazy"
-      className="size-12 shrink-0 rounded-[10px] object-cover"
+      className="size-12 shrink-0 rounded-[10px] object-cover ring-1 ring-brd/60"
     />
   )
 }
 
-function ReadyCard({ entry, ai, catLabel, catAccent }: CardProps) {
+function ReadyCard({ entry, ai, catLabel, catAccent, index = 99 }: CardProps) {
   const navigate = useNavigate()
   const title = ai?.titleSuggestion || firstText(entry.parts) || '未命名'
   const preview = firstText(entry.parts)
-  const bar = catAccent ? BAR[catAccent] : 'bg-t3/40'
+  const bar = catAccent ? BAR[catAccent] : 'from-t3/50 to-t3/20'
   const tone = catAccent ? CHIP_TONE[catAccent] : 'default'
   const thumbRef = firstThumbRef(entry.parts)
   const hasPreview = preview && preview !== title
@@ -85,23 +98,25 @@ function ReadyCard({ entry, ai, catLabel, catAccent }: CardProps) {
           navigate(`/detail/${entry.id}`)
         }
       }}
-      className="relative min-h-[84px] cursor-pointer overflow-hidden rounded-card border border-brd bg-card shadow-sm transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+      style={cardStyle(index)}
+      className={cn(CARD_CLS, 'animate-fade-in-up')}
     >
-      <span className={cn('absolute left-0 top-0 bottom-0 w-0.5', bar)} />
-      <div className="flex gap-3 py-3 pl-[14px] pr-3">
+      <span className={cn('absolute bottom-3 left-[7px] top-3 w-[3px] rounded-full bg-gradient-to-b', bar)} />
+      <div className="flex gap-3 py-3 pl-[18px] pr-3">
         <div className="flex min-w-0 flex-1 flex-col">
-          <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug text-ink">{title}</h3>
+          <h3 className="line-clamp-2 text-[15px] font-semibold leading-snug text-ink transition-colors duration-base group-hover:text-pri">
+            {title}
+          </h3>
           {hasPreview && (
             <p className="mt-1 line-clamp-2 text-[12px] leading-snug text-t3">{preview}</p>
           )}
           <div className="mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-1 pt-2 text-[11px] text-t3">
             {catLabel && <Chip tone={tone} className="!py-0">{catLabel}</Chip>}
             <span className="tabular-nums">{timeLabel(entry.createdAt)}</span>
-            <span aria-hidden="true">·</span>
+            <span aria-hidden="true" className="text-t3/50">·</span>
             <span>{modalityLabel(entry.parts)}</span>
-            <span aria-hidden="true">·</span>
-            <span className="inline-flex items-center gap-0.5 text-t3/80">
-              <Check size={11} strokeWidth={2.5} className="text-catProject" />
+            <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-catProject/10 px-1.5 py-px font-medium text-catProject">
+              <Check size={10} strokeWidth={3} />
               AI
             </span>
           </div>
@@ -112,10 +127,10 @@ function ReadyCard({ entry, ai, catLabel, catAccent }: CardProps) {
   )
 }
 
-function ProcessingCard({ entry, catAccent }: CardProps) {
+function ProcessingCard({ entry, catAccent, index = 99 }: CardProps) {
   const navigate = useNavigate()
   const title = firstText(entry.parts) || '未命名'
-  const bar = catAccent ? BAR[catAccent] : 'bg-catPending/50'
+  const bar = catAccent ? BAR[catAccent] : 'from-catPending to-catPending/40'
   const { leftText, rightLabel, rightClass } = statusMeta(entry.status)
   const thumbRef = firstThumbRef(entry.parts)
   return (
@@ -129,14 +144,15 @@ function ProcessingCard({ entry, catAccent }: CardProps) {
           navigate(`/detail/${entry.id}`)
         }
       }}
-      className="relative min-h-[84px] cursor-pointer overflow-hidden rounded-card border border-brd bg-card shadow-sm transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+      style={cardStyle(index)}
+      className={cn(CARD_CLS, 'animate-fade-in-up')}
     >
-      <span className={cn('absolute left-0 top-0 bottom-0 w-0.5', bar)} />
-      <div className="flex gap-3 py-3 pl-[14px] pr-3">
+      <span className={cn('absolute bottom-3 left-[7px] top-3 w-[3px] rounded-full bg-gradient-to-b', bar)} />
+      <div className="flex gap-3 py-3 pl-[18px] pr-3">
         <div className="flex min-w-0 flex-1 flex-col">
           <h3 className="line-clamp-1 text-[15px] font-semibold leading-snug text-ink">{title}</h3>
-          <div className="mt-3 h-[5px] w-full max-w-[180px] overflow-hidden rounded-[3px] bg-catPending/10">
-            <div className="h-full w-2/5 rounded-[3px] bg-catPending animate-indeterminate" />
+          <div className="mt-3 h-[5px] w-full max-w-[180px] overflow-hidden rounded-full bg-catPending/10">
+            <div className="h-full w-2/5 rounded-full bg-gradient-to-r from-catPending/60 to-catPending animate-indeterminate" />
           </div>
           <div className="mt-auto flex items-center gap-1.5 pt-2 text-[11px] font-medium">
             <span className="text-catPending">{leftText}</span>

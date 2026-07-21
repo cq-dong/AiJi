@@ -67,7 +67,7 @@ export default function Home() {
         {isEmpty ? (
           <EmptyState
             icon={
-              <div className="flex size-24 items-center justify-center rounded-full bg-priS">
+              <div className="flex size-24 items-center justify-center rounded-full bg-gradient-to-b from-priS to-priS/50 ring-1 ring-pri/10 shadow-glowPriSm">
                 <Mic size={36} className="text-pri" />
               </div>
             }
@@ -81,11 +81,14 @@ export default function Home() {
           />
         ) : (
           <div className="flex flex-col gap-6">
-            {groups.map((g) => (
+            {groups.map((g, gi) => (
               <section key={g.key}>
-                <h2 className="mb-2 text-[12px] font-medium text-t3">{g.label}</h2>
+                <h2 className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">
+                  {g.label}
+                  <span className="h-px flex-1 bg-gradient-to-r from-brd to-transparent" aria-hidden="true" />
+                </h2>
                 <div className="flex flex-col gap-2.5">
-                  {g.entries.map((e) => {
+                  {g.entries.map((e, ei) => {
                     const ai = aiMap.get(e.id)
                     const cat = ai ? catMap.get(ai.category) : undefined
                     return (
@@ -95,6 +98,7 @@ export default function Home() {
                         ai={ai}
                         catLabel={cat?.label}
                         catAccent={cat?.accent}
+                        index={gi * 3 + ei}
                       />
                     )
                   })}

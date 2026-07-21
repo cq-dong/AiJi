@@ -144,11 +144,11 @@ export default function Summary() {
   }
 
   return (
-    <div className="px-4 pb-4 pt-4">
+    <div className="px-4 pb-6 pt-4">
       <h1 className="text-[24px] font-bold text-ink">时间摘要</h1>
 
-      {/* scope tabs: 日/周/月 */}
-      <div className="mt-3 flex gap-2">
+      {/* scope tabs: 日/周/月 —— 与 categories ViewSwitcher 同款分段控件，全局一致 */}
+      <div className="mt-3 grid grid-cols-3 gap-1 rounded-[14px] border border-brd/60 bg-page p-1 shadow-inner">
         {SCOPES.map((s) => {
           const active = s.key === scope
           return (
@@ -157,8 +157,10 @@ export default function Summary() {
               type="button"
               onClick={() => onScopeChange(s.key)}
               className={[
-                'h-11 flex-1 cursor-pointer rounded-[18px] text-[14px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-                active ? 'bg-pri text-white' : 'border border-brd bg-card text-t3',
+                'h-10 cursor-pointer rounded-[10px] text-[13px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                active
+                  ? 'bg-card font-semibold text-ink shadow-sm'
+                  : 'font-medium text-t3 hover:text-t2 active:scale-95',
               ].join(' ')}
             >
               {s.label}
@@ -169,8 +171,8 @@ export default function Summary() {
 
       {/* detail level selector: 极简/简洁/标准/详细/详尽 */}
       <div className="mt-3">
-        <div className="mb-1.5 text-[11px] font-medium text-t3">详细度</div>
-        <div className="flex gap-1 rounded-btn bg-page p-1">
+        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-t3">详细度</div>
+        <div className="flex gap-1 rounded-[14px] border border-brd/60 bg-page p-1 shadow-inner">
           {DETAIL_LEVELS.map(({ level, label }) => {
             const active = level === detailLevel
             return (
@@ -179,8 +181,10 @@ export default function Summary() {
                 type="button"
                 onClick={() => onLevelChange(level)}
                 className={[
-                  'h-11 flex-1 cursor-pointer rounded-[10px] text-[11px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-                  active ? 'bg-card text-ink shadow-sm' : 'text-t3',
+                  'h-9 flex-1 cursor-pointer rounded-[9px] text-[11px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                  active
+                    ? 'bg-card font-semibold text-ink shadow-sm'
+                    : 'font-medium text-t3 hover:text-t2 active:scale-95',
                 ].join(' ')}
               >
                 {label}

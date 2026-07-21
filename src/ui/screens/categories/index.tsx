@@ -89,10 +89,14 @@ export default function Categories() {
         />
       ) : (
         <>
-          <div>
+          <div className="animate-fade-in-up">
             <h1 className="text-[24px] font-bold leading-tight text-ink">类别地图</h1>
-            <p className="mt-1 text-[12px] text-t3">
-              {categories.length} 个涌现类别 · {totalCount} 条 · LLM 自动发现
+            <p className="mt-1 flex items-center gap-1.5 text-[12px] text-t3">
+              <span className="font-medium tabular-nums text-t2">{categories.length}</span> 个涌现类别
+              <span aria-hidden="true" className="inline-block size-[3px] rounded-full bg-t3/50" />
+              <span className="font-medium tabular-nums text-t2">{totalCount}</span> 条
+              <span aria-hidden="true" className="inline-block size-[3px] rounded-full bg-t3/50" />
+              LLM 自动发现
             </p>
           </div>
           <div className="mt-3">

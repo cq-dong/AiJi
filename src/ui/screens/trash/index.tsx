@@ -49,7 +49,7 @@ function ConfirmHardDeleteDialog({
         onClick={onClose}
         className="absolute inset-0 bg-black/40 animate-fade-in"
       />
-      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card bg-card p-4 animate-fade-in shadow-lg">
+      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card border border-brd/80 bg-card p-4 animate-scale-in shadow-pop">
         <h3 className="text-[14px] font-bold text-ink">永久删除</h3>
         <p className="text-[12px] leading-relaxed text-t2">永久删除？此操作不可恢复</p>
         <div className="flex items-center gap-2 pt-1">
@@ -101,7 +101,7 @@ function TrashedCard({
   }
 
   return (
-    <Card className="flex flex-col gap-2">
+    <Card className="flex flex-col gap-2 shadow-card animate-fade-in-up">
       <p className="line-clamp-1 text-[14px] font-medium text-ink">{title}</p>
       <p className="line-clamp-2 text-[13px] leading-relaxed text-t2">
         {preview || '（仅音频/视频）'}

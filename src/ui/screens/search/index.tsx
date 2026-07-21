@@ -30,17 +30,17 @@ function DocIcon() {
 
 function EmptySearch({ onPick, suggestions }: { onPick: (s: string) => void; suggestions: string[] }) {
   return (
-    <div className="mt-2">
-      <p className="text-[13px] font-medium text-ink">最近搜索</p>
+    <div className="mt-2 animate-fade-in-up">
+      <p className="text-[13px] font-semibold text-ink">最近搜索</p>
       <p className="mt-3 text-[12px] text-t3">还没有搜索记录</p>
-      <p className="mt-6 text-[12px] text-t3">试试</p>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.06em] text-t3">试试</p>
+      <div className="mt-2.5 flex flex-wrap gap-2">
         {suggestions.map((s) => (
           <button
             key={s}
             type="button"
             onClick={() => onPick(s)}
-            className="min-h-11 cursor-pointer rounded-full bg-priS px-4 text-[12px] font-medium text-pri transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            className="min-h-10 cursor-pointer rounded-chip border border-brd/80 bg-card px-4 text-[12px] font-medium text-pri shadow-sm transition-all duration-base ease-out hover:border-pri/30 hover:shadow-glowPriSm active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
           >
             {s}
           </button>
@@ -66,8 +66,10 @@ function ChipRow({ label, chips, active, onPick }: ChipRowProps) {
           type="button"
           onClick={() => onPick('all')}
           className={cn(
-            'min-h-11 shrink-0 cursor-pointer rounded-full border px-3 text-[12px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-            active === 'all' ? 'border-transparent bg-pri text-card' : 'border-brd bg-card text-t2',
+            'min-h-9 shrink-0 cursor-pointer rounded-full border px-3.5 text-[12px] font-medium transition-all duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            active === 'all'
+              ? 'border-transparent bg-pri text-card shadow-glowPriSm'
+              : 'border-brd/80 bg-card text-t2 shadow-sm hover:border-t3/40',
           )}
         >
           全部
@@ -78,8 +80,10 @@ function ChipRow({ label, chips, active, onPick }: ChipRowProps) {
             type="button"
             onClick={() => onPick(c.slug)}
             className={cn(
-              'min-h-11 shrink-0 cursor-pointer rounded-full border px-3 text-[12px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-              active === c.slug ? 'border-transparent bg-pri text-card' : 'border-brd bg-card text-t2',
+              'min-h-9 shrink-0 cursor-pointer rounded-full border px-3.5 text-[12px] font-medium transition-all duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+              active === c.slug
+                ? 'border-transparent bg-pri text-card shadow-glowPriSm'
+                : 'border-brd/80 bg-card text-t2 shadow-sm hover:border-t3/40',
             )}
           >
             {c.label}

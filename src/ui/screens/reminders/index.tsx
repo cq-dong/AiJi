@@ -22,7 +22,7 @@ const STATUS_LABELS = {
 
 function EmptyPlaceholder({ text }: { text: string }) {
   return (
-    <div className="flex items-center justify-center rounded-card border border-dashed border-brd py-3">
+    <div className="flex items-center justify-center rounded-card border border-dashed border-brd py-4">
       <p className="text-[12px] text-t3">{text}</p>
     </div>
   )
@@ -31,12 +31,13 @@ function EmptyPlaceholder({ text }: { text: string }) {
 function SectionHeader({ title, count }: { title: string; count: number }) {
   return (
     <div className="flex items-center gap-2">
-      <h2 className="text-[12px] font-semibold text-t2">{title}</h2>
+      <h2 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-t2">{title}</h2>
       {count > 0 && (
-        <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-priS px-1 text-[11px] font-medium text-pri">
+        <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-priS px-1.5 text-[11px] font-semibold tabular-nums text-pri">
           {count}
         </span>
       )}
+      <span className="h-px flex-1 bg-gradient-to-r from-brd to-transparent" aria-hidden="true" />
     </div>
   )
 }
@@ -75,10 +76,10 @@ export default function Reminders() {
             <EmptyPlaceholder text="暂无待提醒事项" />
           ) : (
             pending.map((r) => (
-              <div key={r.id} className="rounded-card border border-brd bg-card p-3 shadow-sm">
+              <div key={r.id} className="rounded-card border border-brd/80 bg-card p-3.5 shadow-card animate-fade-in-up">
                 <div className="flex items-center justify-between">
-                  <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
-                  <span className="rounded-chip bg-priS px-2 py-0.5 text-[11px] font-medium text-pri">
+                  <span className="text-[12px] tabular-nums text-t3">{formatDueAt(r.dueAt)}</span>
+                  <span className="rounded-chip border border-pri/10 bg-priS px-2 py-0.5 text-[11px] font-medium text-pri">
                     {STATUS_LABELS[r.status]}
                   </span>
                 </div>
@@ -113,7 +114,7 @@ export default function Reminders() {
             fired.map((r) => (
               <div
                 key={r.id}
-                className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3 shadow-sm"
+                className="flex w-full items-center justify-between rounded-card border border-brd/80 bg-card p-3 shadow-card animate-fade-in-up"
               >
                 <button
                   type="button"
@@ -150,7 +151,7 @@ export default function Reminders() {
             missed.map((r) => (
               <div
                 key={r.id}
-                className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-3 shadow-sm"
+                className="flex w-full items-center justify-between rounded-card border border-brd/80 bg-card p-3 shadow-card animate-fade-in-up"
               >
                 <button
                   type="button"

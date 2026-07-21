@@ -20,7 +20,7 @@ interface ViewSwitcherProps {
 // Segmented control — 6 equal tabs in one row (2-char labels fit 390px viewport).
 export function ViewSwitcher({ view, onChange }: ViewSwitcherProps) {
   return (
-    <div className="grid grid-cols-6 gap-1 rounded-btn bg-page p-1">
+    <div className="grid grid-cols-6 gap-1 rounded-[14px] border border-brd/60 bg-page p-1 shadow-inner">
       {VIEWS.map((v) => (
         <button
           key={v.key}
@@ -28,10 +28,10 @@ export function ViewSwitcher({ view, onChange }: ViewSwitcherProps) {
           onClick={() => onChange(v.key)}
           aria-pressed={view === v.key}
           className={cn(
-            'rounded-btn py-1.5 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            'rounded-[10px] py-1.5 text-[12px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
             view === v.key
-              ? 'bg-card text-ink shadow-sm'
-              : 'text-t3 active:scale-95',
+              ? 'bg-card font-semibold text-ink shadow-sm'
+              : 'font-medium text-t3 hover:text-t2 active:scale-95',
           )}
         >
           {v.label}

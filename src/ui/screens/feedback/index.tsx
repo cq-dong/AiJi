@@ -179,12 +179,12 @@ export default function Feedback() {
   return (
     <div className="flex h-full flex-col">
       {/* 顶栏 */}
-      <div className="flex shrink-0 items-center gap-2 border-b border-brd px-2 py-3">
+      <div className="flex shrink-0 items-center gap-2 border-b border-brd/70 bg-card/90 px-2 py-3 backdrop-blur-lg shadow-sm">
         <button
           type="button"
           onClick={() => navigate(-1)}
           aria-label="返回"
-          className="flex size-9 items-center justify-center rounded-full text-ink active:bg-page"
+          className="flex size-9 items-center justify-center rounded-full text-ink transition duration-base ease-out active:scale-90 hover:bg-page"
         >
           <ChevronLeft size={22} />
         </button>
@@ -194,7 +194,7 @@ export default function Feedback() {
       {/* 建议列表 */}
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
         {items.map((it, idx) => (
-          <Card key={it.key} className="p-3">
+          <Card key={it.key} className="p-3 shadow-card animate-fade-in-up">
             <div className="flex items-center justify-between">
               <span className="text-[13px] font-medium text-ink">建议 {idx + 1}</span>
               {items.length > 1 && (
@@ -213,7 +213,7 @@ export default function Feedback() {
               onChange={(e) => updateItem(it.key, { text: e.target.value })}
               placeholder="说说你的建议、遇到的问题或想法…"
               rows={3}
-              className="mt-2 w-full resize-none rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri"
+              className="mt-2 w-full resize-none rounded-btn border border-brd/80 bg-card px-3 py-2 text-[13px] text-ink shadow-sm placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20"
             />
             {it.images.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
@@ -251,7 +251,7 @@ export default function Feedback() {
         <button
           type="button"
           onClick={addItem}
-          className="flex w-full items-center justify-center gap-1 rounded-card border border-dashed border-brd py-2.5 text-[13px] font-medium text-t2 active:bg-page"
+          className="flex w-full items-center justify-center gap-1 rounded-card border border-dashed border-brd/60 py-2.5 text-[13px] font-medium text-t2 transition-all active:bg-page active:scale-[0.98]"
         >
           <Plus size={16} /> 添加建议
         </button>
@@ -262,7 +262,7 @@ export default function Feedback() {
       </div>
 
       {/* 底栏提交 */}
-      <div className="shrink-0 border-t border-brd px-4 py-3">
+      <div className="shrink-0 border-t border-brd/70 bg-card/90 px-4 py-3 backdrop-blur-lg">
         <Button onClick={submit} disabled={!canSubmit} size="lg" className="w-full">
           {submitting ? (
             <>

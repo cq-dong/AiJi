@@ -27,7 +27,7 @@ function TopBar({ title, onBack, onMore }: { title: string; onBack: () => void; 
         type="button"
         onClick={onBack}
         aria-label="返回"
-        className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        className="-ml-2 flex size-11 items-center justify-center rounded-full text-ink transition-all duration-base ease-out hover:bg-page active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
       >
         <ChevronLeft size={26} strokeWidth={2} />
       </button>
@@ -37,7 +37,7 @@ function TopBar({ title, onBack, onMore }: { title: string; onBack: () => void; 
           type="button"
           onClick={onMore}
           aria-label="更多"
-          className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          className="-mr-2 flex size-11 items-center justify-center rounded-full text-t2 transition-all duration-base ease-out hover:bg-page active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           <MoreHorizontal size={22} strokeWidth={2} />
         </button>
@@ -390,9 +390,9 @@ function ConfirmDeleteDialog({
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
-      <button type="button" aria-label="取消" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/40 animate-fade-in" />
-      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card bg-card p-4 animate-fade-in shadow-lg">
-        <h3 className="text-[14px] font-bold text-ink">移到回收站</h3>
+      <button type="button" aria-label="取消" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/45 backdrop-blur-[2px] animate-fade-in" />
+      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card border border-brd/60 bg-card p-5 animate-scale-in shadow-pop">
+        <h3 className="text-[15px] font-bold text-ink">移到回收站</h3>
         <p className="text-[12px] leading-relaxed text-t2">移到回收站？30 天内可在回收站恢复。</p>
         <div className="flex items-center gap-2 pt-1">
           <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
@@ -441,14 +441,14 @@ function ExportConfirmSheet({
       : '浏览器下载目录'
   return (
     <div
-      className="fixed inset-0 z-[55] flex items-end justify-center bg-black/40 animate-fade-in"
+      className="fixed inset-0 z-[55] flex items-end justify-center bg-black/45 backdrop-blur-[2px] animate-fade-in"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="导出确认"
     >
       <div
-        className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up"
+        className="w-full max-w-[420px] rounded-screen border-t border-white/10 bg-page p-5 shadow-sheet animate-slide-up"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
@@ -462,20 +462,20 @@ function ExportConfirmSheet({
             <X size={18} strokeWidth={2} />
           </button>
         </div>
-        <div className="mt-3 space-y-2">
-          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+        <div className="mt-3.5 space-y-1.5">
+          <div className="flex items-center justify-between rounded-card border border-brd/80 bg-card px-3.5 py-2.5 shadow-sm">
             <span className="text-[13px] text-t2">导出范围</span>
-            <span className="text-[13px] font-medium text-ink">本条目</span>
+            <span className="text-[13px] font-semibold text-ink">本条目</span>
           </div>
-          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+          <div className="flex items-center justify-between rounded-card border border-brd/80 bg-card px-3.5 py-2.5 shadow-sm">
             <span className="text-[13px] text-t2">媒体数</span>
-            <span className="text-[13px] font-medium text-ink">{mediaCount} 个</span>
+            <span className="text-[13px] font-semibold tabular-nums text-ink">{mediaCount} 个</span>
           </div>
-          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+          <div className="flex items-center justify-between rounded-card border border-brd/80 bg-card px-3.5 py-2.5 shadow-sm">
             <span className="text-[13px] text-t2">文件名</span>
             <span className="text-[12px] font-medium text-ink">{filename}</span>
           </div>
-          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+          <div className="flex items-center justify-between rounded-card border border-brd/80 bg-card px-3.5 py-2.5 shadow-sm">
             <span className="text-[13px] text-t2">保存位置</span>
             <span className="text-[12px] font-medium text-t2">{locationHint}</span>
           </div>
@@ -524,15 +524,15 @@ function ExistingReminderCard({
   onEdit: () => void
 }) {
   return (
-    <div className="flex flex-col gap-2 rounded-card bg-priS p-4 shadow-sm">
+    <div className="flex flex-col gap-2 rounded-card border border-pri/15 bg-gradient-to-b from-priS to-priS/60 p-4 shadow-card">
       <div className="flex items-center gap-2">
-        <span className="size-2 rounded-full bg-pri" />
+        <span className="size-2 rounded-full bg-pri shadow-glowPriSm" />
         <p className="text-[12px] font-bold text-pri">已设提醒</p>
         <button
           type="button"
           onClick={onEdit}
           aria-label="编辑提醒"
-          className="ml-auto flex items-center gap-1 rounded-chip border border-brd bg-card px-2 py-1 text-[11px] font-medium text-pri transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          className="ml-auto flex items-center gap-1 rounded-chip border border-brd/80 bg-card px-2 py-1 text-[11px] font-medium text-pri shadow-sm transition-all duration-base ease-out hover:border-t3/40 active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           <Pencil size={11} strokeWidth={2.2} />
           编辑
@@ -758,14 +758,16 @@ export default function Detail() {
         onMore={() => setMoreOpen(true)}
       />
 
-      <div className="flex items-center gap-1 self-start rounded-btn bg-page p-1">
+      <div className="flex items-center gap-1 self-start rounded-[12px] border border-brd/60 bg-page p-1 shadow-inner">
         <button
           type="button"
           onClick={() => setViewMode('record')}
           aria-pressed={viewMode === 'record'}
           className={cn(
-            'rounded-btn px-3 py-1 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-            viewMode === 'record' ? 'bg-card text-ink shadow-sm' : 'text-t3 active:scale-95',
+            'rounded-[9px] px-3.5 py-1.5 text-[12px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            viewMode === 'record'
+              ? 'bg-card font-semibold text-ink shadow-sm'
+              : 'font-medium text-t3 hover:text-t2 active:scale-95',
           )}
         >
           记录
@@ -775,8 +777,10 @@ export default function Detail() {
           onClick={() => setViewMode('source')}
           aria-pressed={viewMode === 'source'}
           className={cn(
-            'rounded-btn px-3 py-1 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-            viewMode === 'source' ? 'bg-card text-ink shadow-sm' : 'text-t3 active:scale-95',
+            'rounded-[9px] px-3.5 py-1.5 text-[12px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            viewMode === 'source'
+              ? 'bg-card font-semibold text-ink shadow-sm'
+              : 'font-medium text-t3 hover:text-t2 active:scale-95',
           )}
         >
           原态

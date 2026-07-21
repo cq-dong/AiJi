@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, ChevronDown, ChevronRight, Download, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Download, Info, MapPin, MessageSquare, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
@@ -372,22 +372,31 @@ function Toast({ message, ok, onDismiss }: { message: string; ok: boolean; onDis
 function ChevronRow({
   label,
   value,
+  icon,
   onClick,
 }: {
   label: string
   value?: string
+  icon?: React.ReactNode
   onClick?: () => void
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center justify-between rounded-card border border-brd bg-card p-4 text-left shadow-sm transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+      className="flex w-full items-center justify-between rounded-card border border-brd/80 bg-card p-4 text-left shadow-card transition-all duration-base ease-out cursor-pointer hover:border-t3/30 hover:shadow-cardHover active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
     >
-      <span className="text-[14px] font-medium text-ink">{label}</span>
+      <span className="flex items-center gap-3">
+        {icon && (
+          <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-priS text-pri">
+            {icon}
+          </span>
+        )}
+        <span className="text-[14px] font-medium text-ink">{label}</span>
+      </span>
       <span className="flex items-center gap-2">
         {value && <span className="text-[11px] text-t3">{value}</span>}
-        <ChevronRight size={18} className="text-t2" />
+        <ChevronRight size={17} strokeWidth={2.2} className="text-t3" />
       </span>
     </button>
   )
@@ -396,7 +405,13 @@ function ChevronRow({
 // 使用反馈入口：跳 /feedback（裸路由，多建议 + 可选图片，提交建 GitHub Issue）。
 function FeedbackRow() {
   const navigate = useNavigate()
-  return <ChevronRow label="使用反馈" onClick={() => navigate('/feedback')} />
+  return (
+    <ChevronRow
+      label="使用反馈"
+      icon={<MessageSquare size={15} strokeWidth={2.2} />}
+      onClick={() => navigate('/feedback')}
+    />
+  )
 }
 
 function ModelRow({
@@ -1200,7 +1215,7 @@ export default function Settings() {
       <Card className="mt-4">
         <p className="text-[14px] font-bold text-ink">外观</p>
         <p className="mt-1 text-[11px] text-t3">主题（亮/暗切换）</p>
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 grid grid-cols-3 gap-1 rounded-[14px] border border-brd/60 bg-page p-1 shadow-inner">
           {THEMES.map((t) => {
             const active = t.key === theme
             return (
@@ -1209,8 +1224,10 @@ export default function Settings() {
                 type="button"
                 onClick={() => setSettings({ theme: t.key })}
                 className={cn(
-                  'h-11 flex-1 rounded-[16px] text-[12px] font-medium transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-                  active ? 'bg-pri text-white' : 'border border-brd bg-card text-t2',
+                  'h-10 cursor-pointer rounded-[10px] text-[12px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                  active
+                    ? 'bg-card font-semibold text-ink shadow-sm'
+                    : 'font-medium text-t3 hover:text-t2 active:scale-95',
                 )}
               >
                 {t.label}
@@ -1221,12 +1238,17 @@ export default function Settings() {
       </Card>
 
       {/* 记录地点 */}
-      <div className="mt-3 flex items-center justify-between rounded-card border border-brd bg-card p-4">
-        <div>
-          <p className="text-[14px] font-medium text-ink">记录地点</p>
-          <p className="mt-0.5 text-[11px] text-t3">
-            默认关闭，开启后给条目加位置
-          </p>
+      <div className="mt-3 flex items-center justify-between rounded-card border border-brd/80 bg-card p-4 shadow-card">
+        <div className="flex items-center gap-3">
+          <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-priS text-pri">
+            <MapPin size={15} strokeWidth={2.2} />
+          </span>
+          <div>
+            <p className="text-[14px] font-medium text-ink">记录地点</p>
+            <p className="mt-0.5 text-[11px] text-t3">
+              默认关闭，开启后给条目加位置
+            </p>
+          </div>
         </div>
         <Toggle checked={recordLocation} onChange={(v) => setSettings({ recordLocation: v })} />
       </div>
@@ -1342,7 +1364,12 @@ export default function Settings() {
 
       {/* 关于 */}
       <div className="mt-3">
-        <ChevronRow label="关于 AiJi" value={`v${__APP_VERSION__}`} onClick={() => setEditingAbout(true)} />
+        <ChevronRow
+          label="关于 AiJi"
+          value={`v${__APP_VERSION__}`}
+          icon={<Info size={15} strokeWidth={2.2} />}
+          onClick={() => setEditingAbout(true)}
+        />
       </div>
 
       {editing && <ByokSheet onClose={() => setEditing(false)} />}

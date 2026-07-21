@@ -3,8 +3,8 @@
 
 export function AvatarRing() {
   return (
-    <div className="flex size-11 shrink-0 items-center justify-center rounded-full border border-brd">
-      <div className="flex size-9 items-center justify-center rounded-full bg-pri">
+    <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-b from-priS to-priS/60 ring-1 ring-pri/15 shadow-sm">
+      <div className="flex size-9 items-center justify-center rounded-full bg-gradient-to-b from-pri to-pri/85 shadow-glowPriSm">
         <span className="text-[15px] font-medium text-white">我</span>
       </div>
     </div>
@@ -18,11 +18,15 @@ interface HeaderProps {
 
 export function HomeHeader({ topDateLabel, todayCount }: HeaderProps) {
   return (
-    <header className="flex items-start justify-between">
+    <header className="flex items-start justify-between animate-fade-in-up">
       <div>
-        <h1 className="text-[34px] font-bold leading-none text-ink">记</h1>
-        <p className="mt-[8px] text-[13px] text-t3">
-          {topDateLabel} · 今天 {todayCount} 条
+        <h1 className="text-[34px] font-bold leading-none tracking-[-0.01em] text-ink">记</h1>
+        <p className="mt-[8px] flex items-center gap-1.5 text-[13px] text-t3">
+          <span>{topDateLabel}</span>
+          <span aria-hidden="true" className="inline-block size-[3px] rounded-full bg-t3/50" />
+          <span>
+            今天 <span className="font-medium tabular-nums text-t2">{todayCount}</span> 条
+          </span>
         </p>
       </div>
       <AvatarRing />

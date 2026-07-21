@@ -453,7 +453,7 @@ export default function Capture() {
           // Wave 3 #2: compact recording bar at footer — parts list stays visible
           <VoiceBar elapsed={elapsed} onStop={handleStopVoice} />
         ) : !micDenied && (
-          <footer className="flex shrink-0 flex-col gap-3 border-t border-brd bg-card px-4 pb-5 pt-3">
+          <footer className="flex shrink-0 flex-col gap-3 border-t border-brd/70 bg-card/90 px-4 pb-5 pt-3 backdrop-blur-lg">
             <CaptureToolbar
               onText={() => setTextOpen(true)}
               onVoice={handleVoice}

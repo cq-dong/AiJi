@@ -34,9 +34,9 @@ export function FiringReminderPopup() {
         if (e.target === e.currentTarget) dismiss()
       }}
     >
-      <div className="m-4 w-full max-w-sm animate-slide-up rounded-card bg-card p-4 shadow-lg">
+      <div className="m-4 w-full max-w-sm animate-slide-up rounded-card border border-brd/80 bg-card p-4 shadow-pop">
         <div className="flex items-center gap-2">
-          <span className="size-2 rounded-full bg-pri animate-pulse" />
+          <span className="size-2.5 rounded-full bg-gradient-to-br from-pri to-pri/60 ring-2 ring-pri/15 animate-pulse" />
           <p className="text-[12px] font-bold text-pri">提醒</p>
         </div>
         <p className="mt-2 text-[15px] font-medium leading-snug text-ink">{firing.label}</p>

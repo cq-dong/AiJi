@@ -7,22 +7,22 @@ import { Fab, FiringReminderPopup, NavBottom, ReminderPopup, Statusbar } from '@
 function TopBar() {
   const navigate = useNavigate()
   return (
-    <div className="flex h-9 shrink-0 items-center justify-end gap-2 px-4">
+    <div className="flex h-10 shrink-0 items-center justify-end gap-2 px-4">
       <button
         type="button"
         onClick={() => navigate('/chat')}
-        className="flex h-8 items-center gap-1 rounded-full bg-priS px-3 text-[12px] font-medium text-pri active:opacity-70"
+        className="flex h-8 items-center gap-1.5 rounded-full border border-pri/15 bg-priS px-3.5 text-[12px] font-medium text-pri shadow-sm transition-all duration-base ease-out hover:border-pri/25 active:scale-95"
       >
-        <Sparkles size={14} strokeWidth={2} />
+        <Sparkles size={14} strokeWidth={2.2} />
         问 AI
       </button>
       <button
         type="button"
         onClick={() => navigate('/search')}
         aria-label="搜索"
-        className="flex size-8 items-center justify-center rounded-full text-t2 active:bg-page"
+        className="flex size-8 items-center justify-center rounded-full border border-brd/80 bg-card text-t2 shadow-sm transition-all duration-base ease-out hover:text-ink active:scale-90"
       >
-        <Search size={20} strokeWidth={2} />
+        <Search size={17} strokeWidth={2.2} />
       </button>
     </div>
   )

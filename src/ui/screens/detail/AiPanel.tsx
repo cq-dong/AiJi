@@ -42,7 +42,7 @@ function ReadyBody({
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[11px] text-t3">
+      <p className="text-[11px] tabular-nums text-t3">
         {ai.modelUsed} · {relativeTime(ai.createdAt)}
       </p>
       <div className="flex items-center gap-2">
@@ -60,7 +60,7 @@ function ReadyBody({
         </div>
       )}
       <FacetChips facets={ai.facets} />
-      <div className="h-px bg-brd" />
+      <div className="h-px bg-gradient-to-r from-transparent via-brd to-transparent" />
       {ai.titleSuggestion && (
         <div className="flex flex-col gap-1">
           <span className="text-[11px] text-t3">标题</span>
@@ -77,10 +77,10 @@ function ReadyBody({
           </p>
         </div>
       )}
-      <div className="flex items-center gap-4 pt-1">
-        <button type="button" onClick={onEdit} className="inline-flex min-h-11 items-center py-2.5 text-[12px] text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">编辑</button>
-        <button type="button" onClick={onReprocess} className="inline-flex min-h-11 items-center py-2.5 text-[12px] text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">重处理</button>
-        <button type="button" onClick={onDelete} className="inline-flex min-h-11 items-center py-2.5 text-[12px] text-catFail cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">删除</button>
+      <div className="flex items-center gap-2 pt-1">
+        <button type="button" onClick={onEdit} className="inline-flex min-h-9 items-center rounded-btn border border-brd/80 bg-card px-3 text-[12px] font-medium text-t2 shadow-sm cursor-pointer transition-all duration-base ease-out hover:border-t3/40 active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">编辑</button>
+        <button type="button" onClick={onReprocess} className="inline-flex min-h-9 items-center rounded-btn border border-brd/80 bg-card px-3 text-[12px] font-medium text-t2 shadow-sm cursor-pointer transition-all duration-base ease-out hover:border-t3/40 active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">重处理</button>
+        <button type="button" onClick={onDelete} className="inline-flex min-h-9 items-center rounded-btn border border-catFail/20 bg-catFail/5 px-3 text-[12px] font-medium text-catFail cursor-pointer transition-all duration-base ease-out hover:bg-catFail/10 active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">删除</button>
       </div>
     </div>
   )
@@ -150,9 +150,12 @@ export function AiPanel({
   const categories = useUiStore((s) => s.categories)
   const tags = useUiStore((s) => s.tags)
   return (
-    <Card className="flex flex-col gap-3">
+    <Card className="flex flex-col gap-3 shadow-card">
       <div className="flex items-center justify-between">
-        <h2 className="text-[13px] font-bold text-ink">AI 处理</h2>
+        <h2 className="flex items-center gap-2 text-[13px] font-bold text-ink">
+          <span className="inline-block size-2 rounded-full bg-gradient-to-br from-pri to-pri/50 ring-2 ring-pri/15" aria-hidden="true" />
+          AI 处理
+        </h2>
       </div>
       {state === 'ready' && ai && (
         <ReadyBody

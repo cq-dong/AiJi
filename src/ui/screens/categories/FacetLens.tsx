@@ -67,9 +67,9 @@ export function FacetLens({ kind, entries, aiByEntry, categories }: FacetLensPro
   return (
     <div className="mt-4 flex flex-col gap-3">
       {clusters.map((c) => (
-        <Card key={c.value} padded={false} className="p-3">
+        <Card key={c.value} padded={false} className="p-3 shadow-card animate-fade-in-up">
           <div className="mb-2 flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-pri" />
+            <span className="size-2 rounded-full bg-gradient-to-br from-pri to-pri/60 ring-2 ring-pri/15" />
             <h3 className="text-[14px] font-medium text-ink">{c.value}</h3>
             <span className="text-[11px] text-t3">{c.count} 条</span>
           </div>

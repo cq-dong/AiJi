@@ -20,14 +20,14 @@ export function Toggle({ checked, onChange, className }: ToggleProps) {
     >
       <span
         className={cn(
-          'relative h-[22px] w-[40px] rounded-full transition-colors',
-          checked ? 'bg-pri' : 'bg-brd',
+          'relative h-[26px] w-[46px] rounded-full transition-all duration-200 ease-out',
+          checked ? 'bg-pri shadow-glowPriSm' : 'bg-brd',
         )}
       >
         <span
           className={cn(
-            'absolute top-0.5 h-[18px] w-[18px] rounded-full bg-card transition-transform',
-            checked ? 'translate-x-[20px]' : 'translate-x-[2px]',
+            'absolute top-[4px] h-[18px] w-[18px] rounded-full bg-card shadow-sm transition-all duration-200 ease-out',
+            checked ? 'left-[24px]' : 'left-[4px]',
           )}
         />
       </span>

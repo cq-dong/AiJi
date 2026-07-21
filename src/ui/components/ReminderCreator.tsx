@@ -145,9 +145,9 @@ export function ReminderCreator({
       : () => useUiStore.getState().confirmReminder(entryId, resolvedIso, label)
 
   return (
-    <div className="flex flex-col gap-3 rounded-card bg-priS p-4 shadow-sm">
+    <div className="flex flex-col gap-3 rounded-card border border-pri/15 bg-gradient-to-b from-priS to-priS/60 p-4 shadow-card animate-fade-in-up">
       <div className="flex items-center gap-2">
-        <span className="size-2 rounded-full bg-pri" />
+        <span className="size-2 rounded-full bg-pri shadow-glowPriSm" />
         <p className="text-[12px] font-bold text-pri">{headerLabel}</p>
       </div>
       <div className="flex flex-col gap-1.5">
@@ -163,8 +163,10 @@ export function ReminderCreator({
               type="button"
               onClick={() => setSelectedKey(p.key)}
               className={cn(
-                'rounded-chip px-3 py-1.5 text-[12px] font-medium transition',
-                selectedKey === p.key ? 'bg-pri text-white' : 'bg-card text-t2 border border-brd',
+                'rounded-chip px-3 py-1.5 text-[12px] font-medium transition-all duration-base ease-out active:scale-95',
+                selectedKey === p.key
+                  ? 'bg-pri text-white shadow-glowPriSm'
+                  : 'bg-card text-t2 border border-brd/80 shadow-sm hover:border-t3/40',
               )}
             >
               {p.label}
@@ -174,8 +176,10 @@ export function ReminderCreator({
             type="button"
             onClick={() => setSelectedKey('custom')}
             className={cn(
-              'rounded-chip px-3 py-1.5 text-[12px] font-medium transition',
-              selectedKey === 'custom' ? 'bg-pri text-white' : 'bg-card text-t2 border border-brd',
+              'rounded-chip px-3 py-1.5 text-[12px] font-medium transition-all duration-base ease-out active:scale-95',
+              selectedKey === 'custom'
+                ? 'bg-pri text-white shadow-glowPriSm'
+                : 'bg-card text-t2 border border-brd/80 shadow-sm hover:border-t3/40',
             )}
           >
             自定义

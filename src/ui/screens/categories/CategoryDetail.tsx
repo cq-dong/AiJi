@@ -219,7 +219,7 @@ export function CategoryDetail({
         onExportClick={() => setZipConfirm(true)}
         exporting={zipExporting}
       />
-      <div className="mt-3 grid grid-cols-4 gap-1 rounded-btn bg-page p-1">
+      <div className="mt-3 grid grid-cols-4 gap-1 rounded-[12px] border border-brd/60 bg-page p-1 shadow-inner">
         {GROUP_OPTIONS.map((o) => (
           <button
             key={o.key}
@@ -227,9 +227,9 @@ export function CategoryDetail({
             onClick={() => setGroupBy(o.key)}
             aria-pressed={groupBy === o.key}
             className={cn(
-              'rounded-btn py-1 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+              'rounded-[8px] py-1 text-[12px] font-medium transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
               groupBy === o.key
-                ? 'bg-card text-ink shadow-sm'
+                ? 'bg-card text-ink shadow-sm font-semibold'
                 : 'text-t3 active:scale-95',
             )}
           >
@@ -309,9 +309,9 @@ function GroupedEntries({ items, aiByEntry, category, kind }: GroupedEntriesProp
   return (
     <div className="flex flex-col gap-3">
       {clusters.map((c) => (
-        <Card key={c.value} padded={false} className="p-3">
+        <Card key={c.value} padded={false} className="p-3 shadow-card animate-fade-in-up">
           <div className="mb-2 flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-pri" />
+            <span className="size-2 rounded-full bg-gradient-to-br from-pri to-pri/60 ring-2 ring-pri/15" />
             <h3 className="text-[14px] font-medium text-ink">{c.value}</h3>
             <span className="text-[11px] text-t3">{c.count} 条</span>
           </div>

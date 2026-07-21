@@ -15,7 +15,7 @@ export function ReminderPopup() {
   if (!pending) return null
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-[2px] animate-fade-in sm:items-center"
       role="dialog"
       aria-modal="true"
       aria-label="提醒确认"

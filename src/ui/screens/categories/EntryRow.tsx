@@ -46,9 +46,9 @@ export function EntryRow({ entry, ai, category }: EntryRowProps) {
         }
       }}
       padded={false}
-      className="relative cursor-pointer p-3 pl-4 transition duration-base ease-out active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+      className="relative cursor-pointer p-3 pl-4 shadow-card transition-all duration-base ease-out hover:border-t3/30 hover:shadow-cardHover active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card animate-fade-in-up"
     >
-      <span className={cn('absolute left-0 top-0 bottom-0 w-1', bar)} />
+      <span className={cn('absolute left-0 top-0 bottom-0 w-1 rounded-l-card', bar)} />
       <h3 className="line-clamp-1 text-[14px] font-medium leading-tight text-ink">{title}</h3>
       {preview && preview !== title && (
         <p className="mt-0.5 line-clamp-1 text-[12px] leading-tight text-t2">{preview}</p>

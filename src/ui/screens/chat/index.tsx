@@ -8,7 +8,7 @@ import type { ChatMessage, ChatTrace, Entry } from '@/domain/types'
 // 裸路由顶栏：返回 ‹ + 标题「问 AI」+ 清空会话（Eraser）。
 function TopBar({ onBack, onClear, canClear }: { onBack: () => void; onClear: () => void; canClear: boolean }) {
   return (
-    <div className="flex h-12 shrink-0 items-center justify-between px-2">
+    <div className="flex h-12 shrink-0 items-center justify-between border-b border-brd/70 bg-card/90 px-2 backdrop-blur-lg shadow-sm">
       <button
         type="button"
         onClick={onBack}
@@ -208,10 +208,10 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[85%]">
-        <div
-          className={`rounded-card px-3 py-2 text-[13px] leading-relaxed whitespace-normal break-words ${msg.error ? 'bg-page text-t3' : 'bg-card text-ink border border-brd'}`}
-        >
+        <div className="max-w-[85%]">
+          <div
+            className={`rounded-card px-3 py-2 text-[13px] leading-relaxed whitespace-normal break-words shadow-sm ${msg.error ? 'bg-page text-t3' : 'bg-card text-ink border border-brd/80'}`}
+          >
           {renderMarkdown(msg.content)}
         </div>
         {msg.citedEntryIds && msg.citedEntryIds.length > 0 && <CitationChips ids={msg.citedEntryIds} />}
@@ -224,7 +224,7 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
 function UserBubble({ msg }: { msg: ChatMessage }) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-card bg-pri px-3 py-2 text-[13px] leading-relaxed text-white whitespace-pre-wrap break-words">
+      <div className="max-w-[85%] rounded-card bg-gradient-to-b from-pri to-pri/90 px-3 py-2 text-[13px] leading-relaxed text-white shadow-glowPriSm whitespace-pre-wrap break-words">
         {msg.content}
       </div>
     </div>
@@ -240,7 +240,7 @@ const LOADING_TEXT: Record<'intent' | 'recall' | 'answer', string> = {
 function LoadingBubble({ phase }: { phase: 'intent' | 'recall' | 'answer' }) {
   return (
     <div className="flex justify-start">
-      <div className="flex items-center gap-2 rounded-card bg-card px-3 py-2 text-[13px] text-t2 border border-brd">
+      <div className="flex items-center gap-2 rounded-card border border-brd/80 bg-card px-3 py-2 text-[13px] text-t2 shadow-sm">
         <Spinner size={14} />
         <span>{LOADING_TEXT[phase]}</span>
       </div>
@@ -337,7 +337,7 @@ export default function Chat() {
         </div>
       </div>
 
-      <form onSubmit={submit} className="shrink-0 border-t border-brd bg-card px-3 py-2">
+      <form onSubmit={submit} className="shrink-0 border-t border-brd/70 bg-card/90 px-3 py-2 backdrop-blur-lg">
         {!online && (
           <p className="mb-1.5 text-[11px] text-catFail">离线中，连上网再问</p>
         )}
@@ -371,13 +371,13 @@ export default function Chat() {
             readOnly={recording}
             disabled={loading}
             rows={1}
-            className="flex-1 resize-none rounded-btn bg-page px-3 py-2 text-[14px] text-ink placeholder:text-t3 focus:outline-none focus:ring-1 focus:ring-pri/40 read-only:focus:ring-0 disabled:opacity-50"
+            className="flex-1 resize-none rounded-btn border border-brd/80 bg-card px-3 py-2 text-[14px] text-ink shadow-sm placeholder:text-t3 focus:outline-none focus:border-pri/50 focus:shadow-glowPriSm focus-visible:ring-2 focus-visible:ring-pri/20 read-only:focus:shadow-sm read-only:focus:ring-0 disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={!text.trim() || loading || !online || recording}
             aria-label="发送"
-            className="flex size-10 shrink-0 items-center justify-center rounded-btn bg-pri text-white disabled:opacity-40"
+            className="flex size-10 shrink-0 items-center justify-center rounded-btn bg-gradient-to-b from-pri to-pri/90 text-white shadow-glowPriSm transition-all active:scale-90 disabled:opacity-40"
           >
             <ArrowUp size={18} />
           </button>

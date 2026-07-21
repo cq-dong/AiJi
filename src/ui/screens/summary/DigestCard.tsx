@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Aggregate, Category, EntryAi } from '@/domain/types'
-import { Button, Card, Chip, Skeleton, Spinner } from '@/ui/components'
+import { Button, Card, Chip, Skeleton, Spinner, cn } from '@/ui/components'
 import {
   aggregateChips,
   formatCreated,
@@ -42,17 +42,18 @@ export function DigestCard({
   const detailLevel = aggregate.detailLevel ?? 3
 
   return (
-    <Card className={recalculating ? 'bg-priS' : 'bg-card'}>
+    <Card className={cn('animate-fade-in-up shadow-card', recalculating && 'border-pri/20 bg-priS/50')}>
       <div className="flex items-baseline justify-between">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
+          <span className="inline-block size-2.5 rounded-full bg-gradient-to-br from-pri to-pri/50 ring-2 ring-pri/15" aria-hidden="true" />
           <span className="text-[15px] font-bold text-pri">{cardLabel}</span>
           {!empty && (
-            <span className="rounded-chip bg-priS px-1.5 py-0.5 text-[10px] font-medium text-pri">
+            <span className="rounded-chip border border-pri/10 bg-priS/80 px-2 py-0.5 text-[10px] font-semibold text-pri/80">
               {DETAIL_LABELS[detailLevel] ?? '标准'}
             </span>
           )}
         </div>
-        <span className="text-[12px] text-t3">{cardRange}</span>
+        <span className="text-[12px] tabular-nums text-t3">{cardRange}</span>
       </div>
 
       {empty ? (
@@ -119,7 +120,7 @@ export function DigestCard({
           )}
 
           <div className="mt-2 flex items-center gap-2">
-            <span className="text-[11px] text-t3">
+            <span className="text-[11px] tabular-nums text-t3">
               {aggregate.entryIds.length} 条 · 挂链
             </span>
             {aggregate.stale && (
@@ -130,7 +131,7 @@ export function DigestCard({
           </div>
 
           {chips.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
               {chips.map((c) => (
                 <Chip key={c.label} tone={c.tone}>
                   {c.label}
@@ -139,8 +140,8 @@ export function DigestCard({
             </div>
           )}
 
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="text-[11px] text-t3">
+          <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-brd/50 pt-2.5">
+            <span className="text-[11px] tabular-nums text-t3">
               生成于 {formatCreated(aggregate.createdAt)} ·{' '}
               {friendlyModel(aggregate.modelUsed)}
             </span>

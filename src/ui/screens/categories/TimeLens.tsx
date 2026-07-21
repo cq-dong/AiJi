@@ -43,7 +43,7 @@ export function TimeLens({ entries, aiByEntry, categories }: TimeLensProps) {
     <div className="mt-4 flex flex-col gap-5">
       {groups.map((g) => (
         <section key={g.key}>
-          <h2 className="mb-2 text-[12px] font-medium text-t3">{g.label}</h2>
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-t3">{g.label}</h2>
           <div className="flex flex-col gap-2">
             {g.entries.map((e) => {
               const ai = aiByEntry[e.id]

@@ -52,7 +52,7 @@ function DraftRow({
   }
 
   return (
-    <Card padded={false} className="overflow-hidden">
+    <Card padded={false} className="overflow-hidden shadow-card animate-fade-in-up">
       <div className="flex items-stretch">
         <button
           type="button"
