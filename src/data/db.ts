@@ -91,6 +91,31 @@ export class AiJiDB extends Dexie {
       drafts: 'id, updatedAt',
       conversations: 'id, updatedAt',
     })
+    // v7: 账号分区——6 张分区表（entries/categories/tags/aggregates/reminders/conversations）
+    // 加 ownerId 索引；entryAi 不加（条目已分区，AI 结果随条目可见性走，简单优先）。
+    // drafts/settings 保持全局（设备级，不分区）。.stores() 非增量——所有 store 逐字重声明
+    // （现有索引逐字保留，仅 6 表追加 , ownerId）。upgrade 回填存量行 ownerId='local'，
+    // 让未登录期间已落库的数据归属 'local'，待首次登录网络账号时被 adoptLocal 收养。
+    this.version(7).stores({
+      entries: 'id, createdAt, updatedAt, status, deletedAt, ownerId',
+      entryAi: 'id, entryId, version',
+      categories: 'slug, usageCount, ownerId',
+      tags: 'slug, usageCount, ownerId',
+      aggregates: 'id, scope.type, scope.range, stale, ownerId',
+      settings: '++id',
+      reminders: 'id, dueAt, status, entryId, ownerId',
+      drafts: 'id, updatedAt',
+      conversations: 'id, updatedAt, ownerId',
+    }).upgrade(async (tx) => {
+      // 存量行回填 'local'。ownerId 字段此前不存在 → 全部行缺失，统一改盖 'local'。
+      // toCollection().modify 是 Dexie 批量改字段的标准姿势，逐表事务内执行。
+      await tx.table('entries').toCollection().modify({ ownerId: 'local' })
+      await tx.table('categories').toCollection().modify({ ownerId: 'local' })
+      await tx.table('tags').toCollection().modify({ ownerId: 'local' })
+      await tx.table('aggregates').toCollection().modify({ ownerId: 'local' })
+      await tx.table('reminders').toCollection().modify({ ownerId: 'local' })
+      await tx.table('conversations').toCollection().modify({ ownerId: 'local' })
+    })
   }
 }
 

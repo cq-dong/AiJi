@@ -6,70 +6,70 @@ import type { Aggregate, Category, Entry, EntryAi, Reminder, Tag } from '@/domai
 const t = (iso: string) => iso
 
 export const seedCategories: Category[] = [
-  { slug: 'idea', label: '想法', aliases: [], usageCount: 18, accent: 'catIdea', createdAt: '2026-07-01' },
-  { slug: 'project', label: '项目进展', aliases: [], usageCount: 12, accent: 'catProject', createdAt: '2026-07-02' },
-  { slug: 'life', label: '生活片段', aliases: [], usageCount: 9, accent: 'catPending', createdAt: '2026-07-03' },
-  { slug: 'reading', label: '阅读笔记', aliases: [], usageCount: 5, accent: 'catIdea', createdAt: '2026-07-05' },
-  { slug: 'errand', label: '待办', aliases: [], usageCount: 7, accent: 'catFail', createdAt: '2026-07-06' },
+  { slug: 'idea', ownerId: 'local', label: '想法', aliases: [], usageCount: 18, accent: 'catIdea', createdAt: '2026-07-01' },
+  { slug: 'project', ownerId: 'local', label: '项目进展', aliases: [], usageCount: 12, accent: 'catProject', createdAt: '2026-07-02' },
+  { slug: 'life', ownerId: 'local', label: '生活片段', aliases: [], usageCount: 9, accent: 'catPending', createdAt: '2026-07-03' },
+  { slug: 'reading', ownerId: 'local', label: '阅读笔记', aliases: [], usageCount: 5, accent: 'catIdea', createdAt: '2026-07-05' },
+  { slug: 'errand', ownerId: 'local', label: '待办', aliases: [], usageCount: 7, accent: 'catFail', createdAt: '2026-07-06' },
 ]
 
 export const seedTags: Tag[] = [
-  { slug: 'aiji', label: 'AiJi', usageCount: 8, createdAt: '2026-07-04' },
-  { slug: 'stt', label: 'STT', usageCount: 3, createdAt: '2026-07-04' },
-  { slug: 'design', label: '设计', usageCount: 6, createdAt: '2026-07-05' },
-  { slug: 'reflection', label: '反思', usageCount: 4, createdAt: '2026-07-06' },
-  { slug: 'subway', label: '地铁', usageCount: 2, createdAt: '2026-07-08' },
-  { slug: 'whisper', label: 'Whisper', usageCount: 2, createdAt: '2026-07-09' },
+  { slug: 'aiji', ownerId: 'local', label: 'AiJi', usageCount: 8, createdAt: '2026-07-04' },
+  { slug: 'stt', ownerId: 'local', label: 'STT', usageCount: 3, createdAt: '2026-07-04' },
+  { slug: 'design', ownerId: 'local', label: '设计', usageCount: 6, createdAt: '2026-07-05' },
+  { slug: 'reflection', ownerId: 'local', label: '反思', usageCount: 4, createdAt: '2026-07-06' },
+  { slug: 'subway', ownerId: 'local', label: '地铁', usageCount: 2, createdAt: '2026-07-08' },
+  { slug: 'whisper', ownerId: 'local', label: 'Whisper', usageCount: 2, createdAt: '2026-07-09' },
 ]
 
 export const seedEntries: Entry[] = [
   {
-    id: 'e1', createdAt: t('2026-07-15T08:12:00+08:00'), updatedAt: t('2026-07-15T08:14:00+08:00'),
+    id: 'e1', ownerId: 'local', createdAt: t('2026-07-15T08:12:00+08:00'), updatedAt: t('2026-07-15T08:14:00+08:00'),
     status: 'ready', aiId: 'ai1',
     parts: [{ type: 'audio', ref: 'e1.opus', durationSec: 32, transcript: '地铁里想到如果记一条东西能顺便变成提醒就好了' }],
   },
   {
-    id: 'e2', createdAt: t('2026-07-15T07:40:00+08:00'), updatedAt: t('2026-07-15T07:42:00+08:00'),
+    id: 'e2', ownerId: 'local', createdAt: t('2026-07-15T07:40:00+08:00'), updatedAt: t('2026-07-15T07:42:00+08:00'),
     status: 'ready', aiId: 'ai2', moodSelf: '专注',
     parts: [{ type: 'text', content: '把 CapturePort 抽成接口，PWA 和 Capacitor 各实现一个，UI 层不动。' }],
   },
   {
-    id: 'e3', createdAt: t('2026-07-14T22:30:00+08:00'), updatedAt: t('2026-07-14T22:31:00+08:00'),
+    id: 'e3', ownerId: 'local', createdAt: t('2026-07-14T22:30:00+08:00'), updatedAt: t('2026-07-14T22:31:00+08:00'),
     status: 'ready', aiId: 'ai3',
     parts: [{ type: 'text', content: '今天跑步的时候在想：人记不住所有事是因为没把记忆外包，工具应该替你记。' }],
   },
   {
-    id: 'e4', createdAt: t('2026-07-14T19:05:00+08:00'), updatedAt: t('2026-07-14T19:07:00+08:00'),
+    id: 'e4', ownerId: 'local', createdAt: t('2026-07-14T19:05:00+08:00'), updatedAt: t('2026-07-14T19:07:00+08:00'),
     status: 'ready', aiId: 'ai4',
     parts: [{ type: 'audio', ref: 'e4.opus', durationSec: 48, transcript: '读到一篇讲 second brain 的文章，核心是不要整理只要捕获，整理交给后端。' }],
   },
   {
-    id: 'e5', createdAt: t('2026-07-14T14:20:00+08:00'), updatedAt: t('2026-07-14T14:21:00+08:00'),
+    id: 'e5', ownerId: 'local', createdAt: t('2026-07-14T14:20:00+08:00'), updatedAt: t('2026-07-14T14:21:00+08:00'),
     status: 'ready', aiId: 'ai5', moodSelf: '开心',
     parts: [{ type: 'video', ref: 'e5.webm', durationSec: 22, transcript: '楼下咖啡店新出的桂花拿铁，拍了一段。' }],
   },
   {
-    id: 'e6', createdAt: t('2026-07-14T10:00:00+08:00'), updatedAt: t('2026-07-14T10:02:00+08:00'),
+    id: 'e6', ownerId: 'local', createdAt: t('2026-07-14T10:00:00+08:00'), updatedAt: t('2026-07-14T10:02:00+08:00'),
     status: 'processing',
     parts: [{ type: 'text', content: 'AiJi 的分类要涌现，不预定大类——让 LLM 看内容自己发现类别，用户再策展。' }],
   },
   {
-    id: 'e7', createdAt: t('2026-07-13T21:15:00+08:00'), updatedAt: t('2026-07-13T21:16:00+08:00'),
+    id: 'e7', ownerId: 'local', createdAt: t('2026-07-13T21:15:00+08:00'), updatedAt: t('2026-07-13T21:16:00+08:00'),
     status: 'failed',
     parts: [{ type: 'audio', ref: 'e7.opus', durationSec: 60, transcript: ' Whisper 把这段转坏了，重试一下。' }],
   },
   {
-    id: 'e8', createdAt: t('2026-07-13T16:30:00+08:00'), updatedAt: t('2026-07-13T16:31:00+08:00'),
+    id: 'e8', ownerId: 'local', createdAt: t('2026-07-13T16:30:00+08:00'), updatedAt: t('2026-07-13T16:31:00+08:00'),
     status: 'ready', aiId: 'ai8',
     parts: [{ type: 'text', content: '要记得周三给设计稿反馈，别拖到周末。' }],
   },
   {
-    id: 'e9', createdAt: t('2026-07-13T09:45:00+08:00'), updatedAt: t('2026-07-13T09:46:00+08:00'),
+    id: 'e9', ownerId: 'local', createdAt: t('2026-07-13T09:45:00+08:00'), updatedAt: t('2026-07-13T09:46:00+08:00'),
     status: 'offline-pending',
     parts: [{ type: 'text', content: '地铁里没信号记的，回家联网补跑分类。' }],
   },
   {
-    id: 'e10', createdAt: t('2026-07-12T20:10:00+08:00'), updatedAt: t('2026-07-12T20:11:00+08:00'),
+    id: 'e10', ownerId: 'local', createdAt: t('2026-07-12T20:10:00+08:00'), updatedAt: t('2026-07-12T20:11:00+08:00'),
     status: 'ready', aiId: 'ai10',
     parts: [
       { type: 'text', content: '多模态一条：先打字又补了语音。' },
@@ -77,12 +77,12 @@ export const seedEntries: Entry[] = [
     ],
   },
   {
-    id: 'e11', createdAt: t('2026-07-12T13:00:00+08:00'), updatedAt: t('2026-07-12T13:01:00+08:00'),
+    id: 'e11', ownerId: 'local', createdAt: t('2026-07-12T13:00:00+08:00'), updatedAt: t('2026-07-12T13:01:00+08:00'),
     status: 'ready', aiId: 'ai11',
     parts: [{ type: 'text', content: '《卡片笔记写作法》重点：原子化、链接、不分类。和 AiJi 的涌现思路一致。' }],
   },
   {
-    id: 'e12', createdAt: t('2026-07-11T18:22:00+08:00'), updatedAt: t('2026-07-11T18:23:00+08:00'),
+    id: 'e12', ownerId: 'local', createdAt: t('2026-07-11T18:22:00+08:00'), updatedAt: t('2026-07-11T18:23:00+08:00'),
     status: 'ready', aiId: 'ai12', moodSelf: '疲惫',
     parts: [{ type: 'text', content: '连续改了三天 bug，今天该早睡。明天再啃 STT 那块。' }],
   },
@@ -103,27 +103,27 @@ export const seedEntryAi: EntryAi[] = [
 export const seedReminders: Reminder[] = [
   // e8: "要记得周三给设计稿反馈，别拖到周末。" — pending reminder for tomorrow morning.
   {
-    id: 'rm1', entryId: 'e8', dueAt: '2026-07-16T10:00:00+08:00',
+    id: 'rm1', ownerId: 'local', entryId: 'e8', dueAt: '2026-07-16T10:00:00+08:00',
     label: '给设计稿反馈', status: 'pending', createdAt: '2026-07-13T21:16:00+08:00',
   },
   // e12: "明天再啃 STT 那块。" — overdue, marked missed (Q3: >1h overdue → missed).
   {
-    id: 'rm2', entryId: 'e12', dueAt: '2026-07-12T09:00:00+08:00',
+    id: 'rm2', ownerId: 'local', entryId: 'e12', dueAt: '2026-07-12T09:00:00+08:00',
     label: '啃 STT 那块', status: 'missed', createdAt: '2026-07-11T18:23:00+08:00',
   },
 ]
 
 export const seedAggregates: Aggregate[] = [
   {
-    id: 'ag-w28', scope: { type: 'week', range: '2026-W28' }, summary: '本周以 AiJi 项目推进为主轴：抽象端口、涌现分类、STT 方案逐步成形；穿插两次生活片段（跑步、咖啡）与一篇阅读笔记（second brain / 卡片笔记）。情绪整体偏专注，周末略疲惫。\n\n🎬 视频理解：视频画面：咖啡店吧台前，一杯拿铁放在木质桌面上，顶部撒有金色桂花碎，热气升腾；背景是暖光灯与咖啡机。',
+    id: 'ag-w28', ownerId: 'local', scope: { type: 'week', range: '2026-W28' }, summary: '本周以 AiJi 项目推进为主轴：抽象端口、涌现分类、STT 方案逐步成形；穿插两次生活片段（跑步、咖啡）与一篇阅读笔记（second brain / 卡片笔记）。情绪整体偏专注，周末略疲惫。\n\n🎬 视频理解：视频画面：咖啡店吧台前，一杯拿铁放在木质桌面上，顶部撒有金色桂花碎，热气升腾；背景是暖光灯与咖啡机。',
     entryIds: ['e2', 'e3', 'e4', 'e5', 'e6', 'e10', 'e11', 'e12'], modelUsed: 'deepseek-chat', createdAt: '2026-07-15T09:00:00+08:00', stale: false, detailLevel: 3,
   },
   {
-    id: 'ag-d715', scope: { type: 'day', range: '2026-07-15' }, summary: '今天记了两条：地铁里的想法（记一条顺便变提醒）和 CapturePort 接口化的项目进展。情绪专注。',
+    id: 'ag-d715', ownerId: 'local', scope: { type: 'day', range: '2026-07-15' }, summary: '今天记了两条：地铁里的想法（记一条顺便变提醒）和 CapturePort 接口化的项目进展。情绪专注。',
     entryIds: ['e1', 'e2'], modelUsed: 'deepseek-chat', createdAt: '2026-07-15T09:01:00+08:00', stale: false, detailLevel: 3,
   },
   {
-    id: 'ag-w27', scope: { type: 'week', range: '2026-W27' }, summary: '上周主要在打磨 Figma 原型，把采集流的三模态选择器和边缘态补齐。',
+    id: 'ag-w27', ownerId: 'local', scope: { type: 'week', range: '2026-W27' }, summary: '上周主要在打磨 Figma 原型，把采集流的三模态选择器和边缘态补齐。',
     entryIds: [], modelUsed: 'deepseek-chat', createdAt: '2026-07-08T09:00:00+08:00', stale: true, detailLevel: 3,
   },
 ]

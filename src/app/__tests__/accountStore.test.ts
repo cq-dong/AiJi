@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   planUpgrade: vi.fn(),
   getSettings: vi.fn(),
   saveSettings: vi.fn(),
+  adoptLocal: vi.fn(),
 }))
 
 vi.mock('@/app/di', () => ({
@@ -24,6 +25,7 @@ vi.mock('@/app/di', () => ({
     storage: {
       getSettings: () => mocks.getSettings(),
       saveSettings: (...a: unknown[]) => mocks.saveSettings(...a),
+      adoptLocal: (...a: unknown[]) => mocks.adoptLocal(...a),
     },
   },
 }))
@@ -52,6 +54,8 @@ beforeEach(() => {
   mocks.planUpgrade.mockReset()
   mocks.getSettings.mockReset()
   mocks.saveSettings.mockReset()
+  mocks.adoptLocal.mockReset()
+  mocks.adoptLocal.mockResolvedValue(undefined)
   useAccountStore.setState({ account: null, session: null, sessionStale: false, hydrated: false })
 })
 

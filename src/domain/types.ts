@@ -68,6 +68,10 @@ export interface GeoPoint {
 
 export interface Entry {
   id: string
+  // 账号分区键（Slice B 本地账号分区）：'local'=未登录本地数据 | network account.id。
+  // 可选仅为构造期便利——dexieStorage.saveEntry 强制盖章 ownerId=getCurrentOwner()，
+  // 覆盖调用方传入值；db v7 upgrade 回填存量行 'local'。运行时所有行都有具体 ownerId。
+  ownerId?: string
   createdAt: string // ISO
   updatedAt: string // ISO
   parts: EntryPart[]
@@ -114,6 +118,8 @@ export type ReminderStatus = 'pending' | 'fired' | 'snoozed' | 'missed'
 
 export interface Reminder {
   id: string
+  // 账号分区键（同 Entry）。saveReminder 强制盖章 getCurrentOwner()。
+  ownerId?: string
   entryId: string // links back to the Entry that gave rise to this reminder
   dueAt: string // ISO 8601 absolute timestamp (LLM-parsed, Q2)
   label: string // short description shown in notification + settings sheet
@@ -123,6 +129,8 @@ export interface Reminder {
 
 export interface Category {
   slug: string
+  // 账号分区键（同 Entry）。saveCategory 强制盖章 getCurrentOwner()。
+  ownerId?: string
   label: string
   aliases: string[]
   usageCount: number
@@ -132,6 +140,8 @@ export interface Category {
 
 export interface Tag {
   slug: string
+  // 账号分区键（同 Entry）。saveTag 强制盖章 getCurrentOwner()。
+  ownerId?: string
   label: string
   usageCount: number
   createdAt: string
@@ -141,6 +151,8 @@ export type AggregateScopeType = 'day' | 'week' | 'month'
 
 export interface Aggregate {
   id: string
+  // 账号分区键（同 Entry）。saveAggregate 强制盖章 getCurrentOwner()。
+  ownerId?: string
   scope: { type: AggregateScopeType; range: string } // range: '2026-07-15' / '2026-W28' / '2026-07'
   summary: string
   highlights?: string[] // optional LLM-highlighted key items
@@ -250,6 +262,8 @@ export interface ChatMessage {
 // MVP 单会话：固定 id=1。多会话时改 schema + listConversations，UI 不动。
 export interface Conversation {
   id: string
+  // 账号分区键（同 Entry）。saveConversation 强制盖章 getCurrentOwner()。
+  ownerId?: string
   messages: ChatMessage[]
   updatedAt: string
 }

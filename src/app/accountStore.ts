@@ -4,6 +4,17 @@ import { localAccount } from '@/adapters/localAccount'
 import { localSession } from '@/app/session'
 import { di } from '@/app/di'
 import { SessionExpiredError } from '@/ports'
+import { setCurrentOwner } from '@/app/currentOwner'
+
+// adoptLocal 包装：收养失败不让 login/register reject——登录本身已成功（session 已落），
+// 数据收养是 best-effort 后台动作。失败只记日志，用户仍处登录态（数据可能暂缺，下次登录可重试收养）。
+async function adoptLocalSafe(accountId: string): Promise<void> {
+  try {
+    await di.storage.adoptLocal(accountId)
+  } catch (e) {
+    console.error('[accountStore] adoptLocal failed', e)
+  }
+}
 
 interface AccountState {
   account: Account | null
@@ -29,9 +40,13 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   hydrated: false,
   hydrate: () => {
     if (get().hydrated) return
-    set({ account: localAccount.get(), session: localSession.get(), hydrated: true })
-    const a = get().account
-    if (a && a.type === 'network') {
+    const a = localAccount.get()
+    // 恢复 currentOwner：network 账号 → 其 id（数据已在前次 login 时 adopt 到该 id）；
+    // 无账号 / guest → 'local'。hydrate 不再 adopt（adopt 仅在 fresh login 时一次性发生）。
+    setCurrentOwner(a && a.type === 'network' ? a.id : 'local')
+    set({ account: a, session: localSession.get(), hydrated: true })
+    const cur = get().account
+    if (cur && cur.type === 'network') {
       di.auth
         .refresh()
         .then((s) => {
@@ -59,6 +74,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       createdAt: new Date().toISOString(),
     }
     localAccount.set(account)
+    // guest 走 'local' 分区（非 network account.id）。
+    setCurrentOwner('local')
     set({ account })
     return account
   },
@@ -66,12 +83,18 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     const { account, session } = await di.auth.login(email, password)
     localAccount.set(account)
     localSession.set(session)
+    // 先切 owner 再 adopt——adoptLocal 把 'local' 行改盖为 account.id，
+    // 之后 listEntries 按 account.id 过滤即可看到收养来的历史数据。
+    setCurrentOwner(account.id)
+    await adoptLocalSafe(account.id)
     set({ account, session, sessionStale: false })
   },
   register: async (email, password) => {
     const { account, session } = await di.auth.register(email, password)
     localAccount.set(account)
     localSession.set(session)
+    setCurrentOwner(account.id)
+    await adoptLocalSafe(account.id)
     set({ account, session, sessionStale: false })
   },
   bindNetwork: async (email, password) => {
@@ -88,6 +111,9 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     }
     localAccount.set(next)
     localSession.set(session)
+    // 绑定即升级为 network 账号：guest 期间记的 'local' 数据收养到 account.id（此处为保留的 guest.id）。
+    setCurrentOwner(next.id)
+    await adoptLocalSafe(next.id)
     set({ account: next, session, sessionStale: false })
   },
   upgradePlan: async (planId) => {
@@ -112,6 +138,9 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // spec §4.9 全清：session + account + reset keySource='byok'
     localSession.clear()
     localAccount.clear()
+    // 登出 → 数据分区回到 'local'（未登录态）。已收养到旧 account.id 的数据保留在库中，
+    // 下次该账号登录仍可见；新记的数据落到 'local'，待下次登录收养。
+    setCurrentOwner('local')
     set({ account: null, session: null, sessionStale: false })
     void di.storage
       .getSettings()

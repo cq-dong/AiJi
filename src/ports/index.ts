@@ -58,6 +58,10 @@ export interface StoragePort {
   getConversation(id: string): Promise<Conversation | undefined>
   saveConversation(c: Conversation): Promise<void>
   deleteConversation(id: string): Promise<void>
+  // 账号分区 · 收养 local 数据（Slice B）。login/register 成功后调用：把 6 张分区表里
+  // ownerId==='local' 的行改盖为 accountId，未登录期间记的数据归属首次登录的网络账号。
+  // 单用户手机语义；多用户共用设备不在本期。entryAi/drafts/settings 不参与。
+  adoptLocal(accountId: string): Promise<void>
 }
 
 export interface CapturePort {

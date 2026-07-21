@@ -1,4 +1,5 @@
 import { db } from '@/data/db'
+import { getCurrentOwner } from '@/app/currentOwner'
 import type { StoragePort } from '@/ports'
 import type { Aggregate, AggregateScopeType, Conversation, Draft, Entry, Reminder } from '@/domain/types'
 import {
@@ -15,39 +16,54 @@ import {
 // DEV 环境保留自动 seed 方便开发（import.meta.env.DEV 在 prod build 为 false，整块被
 // tree-shake）；生产环境空库，用户可在 onboarding/settings 主动调 importSampleData() 导入。
 // seedSettings 仍作 getSettings 默认形状兜底（默认配置，非样例数据）。
+//
+// 账号分区：seed 行的 ownerId 在 seed.ts 里默认 'local'，但落库时一律改盖 getCurrentOwner()——
+// 这样 DEV 首启或 onboarding 导入示例数据时，数据归属当前使用者（local 或已登录网络账号），
+// 不会出现「网络账号登录后看到空库 + 一份孤立的 local 种子数据」。
 let seeded = false
+
+// 把 seed 行的 ownerId 改盖为当前 owner（落库前调用）。seed.ts 标 'local' 只是默认字面量。
+function stampOwner<T extends { ownerId?: string }>(row: T): T {
+  return { ...row, ownerId: getCurrentOwner() }
+}
+
 async function ensureSeeded(): Promise<void> {
   if (seeded) return
   if (import.meta.env.DEV) {
     // DEV only：空库时灌完整原型数据集，方便开发调试（生产 build 此块被 tree-shake 掉）。
     const entriesEmpty = (await db.entries.count()) === 0
     if (entriesEmpty) {
-      await db.entries.bulkPut(seedEntries)
-      await db.categories.bulkPut(seedCategories)
-      await db.tags.bulkPut(seedTags)
+      await db.entries.bulkPut(seedEntries.map(stampOwner))
+      await db.categories.bulkPut(seedCategories.map(stampOwner))
+      await db.tags.bulkPut(seedTags.map(stampOwner))
       await db.entryAi.bulkPut(seedEntryAi)
     } else {
       // 存量库（用户在过往阶段存过真实条目）：补灌 categories/tags/entryAi（若缺）。
-      if ((await db.categories.count()) === 0) await db.categories.bulkPut(seedCategories)
-      if ((await db.tags.count()) === 0) await db.tags.bulkPut(seedTags)
+      // 仅补当前 owner 缺的——避免给已登录网络账号灌入别人的种子类别。
+      const owner = getCurrentOwner()
+      const cats = await db.categories.where('ownerId').equals(owner).toArray()
+      if (cats.length === 0) await db.categories.bulkPut(seedCategories.map(stampOwner))
+      const tags = await db.tags.where('ownerId').equals(owner).toArray()
+      if (tags.length === 0) await db.tags.bulkPut(seedTags.map(stampOwner))
       if ((await db.entryAi.count()) === 0) await db.entryAi.bulkPut(seedEntryAi)
     }
-    if ((await db.aggregates.count()) === 0) await db.aggregates.bulkPut(seedAggregates)
-    if ((await db.reminders.count()) === 0) await db.reminders.bulkPut(seedReminders)
+    if ((await db.aggregates.count()) === 0) await db.aggregates.bulkPut(seedAggregates.map(stampOwner))
+    if ((await db.reminders.count()) === 0) await db.reminders.bulkPut(seedReminders.map(stampOwner))
   }
   seeded = true
 }
 
 // D9: 主动导入示例数据（onboarding 首启引导 / settings 数据管理按钮调用）。
 // 写入完整原型集（条目 + AI + 类别/标签/聚合/提醒）。幂等：已存在的行被覆盖（同主键 put）。
+// 落库时 ownerId 改盖为当前 owner——导入即归属当前使用者。
 // 调用后需 rehydrate store 才能刷新 UI（store.rehydrate 重读 Dexie）。
 export async function importSampleData(): Promise<void> {
-  await db.entries.bulkPut(seedEntries)
-  await db.categories.bulkPut(seedCategories)
-  await db.tags.bulkPut(seedTags)
+  await db.entries.bulkPut(seedEntries.map(stampOwner))
+  await db.categories.bulkPut(seedCategories.map(stampOwner))
+  await db.tags.bulkPut(seedTags.map(stampOwner))
   await db.entryAi.bulkPut(seedEntryAi)
-  await db.aggregates.bulkPut(seedAggregates)
-  await db.reminders.bulkPut(seedReminders)
+  await db.aggregates.bulkPut(seedAggregates.map(stampOwner))
+  await db.reminders.bulkPut(seedReminders.map(stampOwner))
   seeded = true
 }
 
@@ -68,7 +84,8 @@ async function removeMediaForEntry(e: Entry): Promise<void> {
 export const dexieStorage: StoragePort = {
   async listEntries() {
     await ensureSeeded()
-    const all = await db.entries.toArray()
+    const owner = getCurrentOwner()
+    const all = await db.entries.where('ownerId').equals(owner).toArray()
     // Wave 4: trashed entries (deletedAt set) live in the trash view, not the main list.
     const active = all.filter((e) => !e.deletedAt)
     // 跨 +08:00 / Z ISO 必须用时序比较，字符串序非时序（见 D4）。
@@ -76,13 +93,19 @@ export const dexieStorage: StoragePort = {
   },
   async getEntry(id) {
     await ensureSeeded()
-    return db.entries.get(id)
+    const owner = getCurrentOwner()
+    const e = await db.entries.get(id)
+    // 跨账号 id 直读防护：owner 不匹配视为不存在。
+    if (!e || e.ownerId !== owner) return undefined
+    return e
   },
   async saveEntry(entry) {
-    await db.entries.put(entry)
+    // 强制盖章当前 owner——防调用方漏传或构造时用错 owner。
+    await db.entries.put({ ...entry, ownerId: getCurrentOwner() })
   },
   async getEntryAi(entryId) {
     await ensureSeeded()
+    // EntryAi 不分区（无 ownerId）：其可见性由所属 Entry 的 owner 把关（getEntry 已校验）。
     const rows = await db.entryAi.where('entryId').equals(entryId).toArray()
     if (rows.length === 0) return undefined
     // D1: 严格 > 在等版本上随机取（Dexie toArray 主键序）。改 >= + createdAt tie-break，
@@ -97,39 +120,44 @@ export const dexieStorage: StoragePort = {
   },
   async listCategories() {
     await ensureSeeded()
-    return db.categories.toArray()
+    const owner = getCurrentOwner()
+    return db.categories.where('ownerId').equals(owner).toArray()
   },
   async saveCategory(cat) {
-    await db.categories.put(cat)
+    await db.categories.put({ ...cat, ownerId: getCurrentOwner() })
   },
   async listTags() {
     await ensureSeeded()
-    return db.tags.toArray()
+    const owner = getCurrentOwner()
+    return db.tags.where('ownerId').equals(owner).toArray()
   },
   async saveTag(tag) {
-    await db.tags.put(tag)
+    await db.tags.put({ ...tag, ownerId: getCurrentOwner() })
   },
   async listAggregates() {
     await ensureSeeded()
-    const all = await db.aggregates.toArray()
+    const owner = getCurrentOwner()
+    const all = await db.aggregates.where('ownerId').equals(owner).toArray()
     // Newest first — matches seed ordering and store expectations.
     return all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   },
   async getAggregate(scope: AggregateScopeType, range: string): Promise<Aggregate | undefined> {
     await ensureSeeded()
+    const owner = getCurrentOwner()
     // scope.range is a compound index — filter by type then range for an exact match.
     const rows = await db.aggregates
-      .where('scope.type')
-      .equals(scope)
+      .where('ownerId')
+      .equals(owner)
       .toArray()
-    return rows.find((r) => r.scope.range === range)
+    return rows.find((r) => r.scope.type === scope && r.scope.range === range)
   },
   async saveAggregate(ag: Aggregate): Promise<void> {
-    await db.aggregates.put(ag)
+    await db.aggregates.put({ ...ag, ownerId: getCurrentOwner() })
   },
   async getSettings() {
     // D2: 合并 seedSettings defaults——旧用户行缺 Wave 3 加的 aggregateDetailLevel 等字段时，
     // seed 兜底（不返 undefined 谎称类型）。row 不存在时 {...seed, ...{}} = seed。
+    // settings 不分区（设备级全局），固定 key=1。
     const row = await db.settings.get(1)
     return { ...seedSettings, ...row }
   },
@@ -173,26 +201,40 @@ export const dexieStorage: StoragePort = {
   },
   async listReminders(): Promise<Reminder[]> {
     await ensureSeeded()
-    const all = await db.reminders.toArray()
+    const owner = getCurrentOwner()
+    const all = await db.reminders.where('ownerId').equals(owner).toArray()
     // Earliest due first — pending reminders surface to top; missed naturally fall below.
     return all.sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
   },
   async getReminder(id: string): Promise<Reminder | undefined> {
     await ensureSeeded()
-    return db.reminders.get(id)
+    const owner = getCurrentOwner()
+    const r = await db.reminders.get(id)
+    if (!r || r.ownerId !== owner) return undefined
+    return r
   },
   async saveReminder(r: Reminder): Promise<void> {
-    await db.reminders.put(r)
+    await db.reminders.put({ ...r, ownerId: getCurrentOwner() })
   },
   async deleteReminder(id: string): Promise<void> {
+    const owner = getCurrentOwner()
+    const r = await db.reminders.get(id)
+    // 仅删当前 owner 的——防跨账号 slug/id 误删（防御性，store 调用链已按 owner 过滤）。
+    if (!r || r.ownerId !== owner) return
     await db.reminders.delete(id)
   },
   async deleteCategory(slug: string): Promise<void> {
+    const owner = getCurrentOwner()
+    const c = await db.categories.get(slug)
+    if (!c || c.ownerId !== owner) return
     await db.categories.delete(slug)
   },
   async deleteEntry(id: string): Promise<void> {
     // D5: 先取 entry 清 OPFS 媒体，再删 Dexie 行 + 级联 AI/reminders。
+    // 账号分区：仅删当前 owner 的条目；跨账号 id 直删防护。
+    const owner = getCurrentOwner()
     const e = await db.entries.get(id)
+    if (!e || e.ownerId !== owner) return
     if (e) await removeMediaForEntry(e)
     await db.entries.delete(id)
     await db.entryAi.where('entryId').equals(id).delete()
@@ -200,6 +242,7 @@ export const dexieStorage: StoragePort = {
   },
   async saveDraft(d: Draft): Promise<void> {
     // Wave 4: multi-row. d.id is string; put by keyPath (no explicit key).
+    // drafts 不分区（设备级草稿，不绑账号）。
     await db.drafts.put(d)
   },
   async listDrafts(): Promise<Draft[]> {
@@ -217,26 +260,31 @@ export const dexieStorage: StoragePort = {
   },
   async listTrashed(): Promise<Entry[]> {
     await ensureSeeded()
-    const all = await db.entries.toArray()
+    const owner = getCurrentOwner()
+    const all = await db.entries.where('ownerId').equals(owner).toArray()
     // Trashed = deletedAt set. 最近删除在上（30 天倒计时从 deletedAt 起算）。
     const trashed = all.filter((e) => e.deletedAt)
     return trashed.sort((a, b) => new Date(b.deletedAt!).getTime() - new Date(a.deletedAt!).getTime())
   },
   async trashEntry(id: string): Promise<void> {
+    const owner = getCurrentOwner()
     const e = await db.entries.get(id)
-    if (!e) return
+    if (!e || e.ownerId !== owner) return
     await db.entries.put({ ...e, deletedAt: new Date().toISOString() })
   },
   async recoverEntry(id: string): Promise<void> {
+    const owner = getCurrentOwner()
     const e = await db.entries.get(id)
-    if (!e || !e.deletedAt) return
+    if (!e || e.ownerId !== owner || !e.deletedAt) return
     // undefined props are dropped by structured clone → deletedAt absent on next read.
     await db.entries.put({ ...e, deletedAt: undefined })
   },
   async purgeExpired(): Promise<number> {
     // 30-day window: entries trashed before cutoff are hard-deleted (+ cascade AI + reminders).
+    // 仅清当前 owner 的过期回收项。
+    const owner = getCurrentOwner()
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
-    const all = await db.entries.toArray()
+    const all = await db.entries.where('ownerId').equals(owner).toArray()
     const expired = all.filter((e) => e.deletedAt && new Date(e.deletedAt).getTime() < cutoff)
     for (const e of expired) {
       await removeMediaForEntry(e)
@@ -248,18 +296,40 @@ export const dexieStorage: StoragePort = {
   },
   // AI Chat · conversations (docs/design/ai-chat-impl-plan.md §3)。MVP 单会话 id=1，
   // messages 内嵌数组——saveConversation 整体覆写（无 message 级 diff，简单优先）。
+  // 账号分区：conversations 加 ownerId，按当前 owner 过滤/盖章。
   async listConversations(): Promise<Conversation[]> {
-    const all = await db.conversations.toArray()
+    const owner = getCurrentOwner()
+    const all = await db.conversations.where('ownerId').equals(owner).toArray()
     // 最近更新在上——单会话时仅 1 行，多会话时倒序。
     return all.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
   },
   async getConversation(id: string): Promise<Conversation | undefined> {
-    return db.conversations.get(id)
+    const owner = getCurrentOwner()
+    const c = await db.conversations.get(id)
+    if (!c || c.ownerId !== owner) return undefined
+    return c
   },
   async saveConversation(c: Conversation): Promise<void> {
-    await db.conversations.put(c)
+    await db.conversations.put({ ...c, ownerId: getCurrentOwner() })
   },
   async deleteConversation(id: string): Promise<void> {
+    const owner = getCurrentOwner()
+    const c = await db.conversations.get(id)
+    if (!c || c.ownerId !== owner) return
     await db.conversations.delete(id)
+  },
+  // 账号分区 · 收养 local 数据。login/register 成功后 accountStore 调用：
+  // 把 6 张分区表里 ownerId==='local' 的行全部改盖为 accountId，让未登录期间记的数据
+  // 归属首次登录的网络账号（单用户手机语义）。entryAi/drafts/settings 不参与（无 ownerId）。
+  // 单事务保证原子性——要么全部收养，要么不动。
+  async adoptLocal(accountId: string): Promise<void> {
+    await db.transaction('rw', [db.entries, db.categories, db.tags, db.aggregates, db.reminders, db.conversations], async () => {
+      await db.entries.where('ownerId').equals('local').modify({ ownerId: accountId })
+      await db.categories.where('ownerId').equals('local').modify({ ownerId: accountId })
+      await db.tags.where('ownerId').equals('local').modify({ ownerId: accountId })
+      await db.aggregates.where('ownerId').equals('local').modify({ ownerId: accountId })
+      await db.reminders.where('ownerId').equals('local').modify({ ownerId: accountId })
+      await db.conversations.where('ownerId').equals('local').modify({ ownerId: accountId })
+    })
   },
 }
