@@ -9,6 +9,7 @@ import authRoutes from './routes/auth.js'
 import quotaRoutes from './routes/quota.js'
 import planRoutes from './routes/plan.js'
 import llmRoutes from './routes/llm.js'
+import vlmRoutes from './routes/vlm.js'
 import sttRoutes from './routes/stt.js'
 import healthRoutes from './routes/health.js'
 
@@ -31,12 +32,14 @@ app.route('/api/auth', authRoutes)
 // 需鉴权的路由挂 authMiddleware。
 app.use('/api/quota/*', authMiddleware)
 app.use('/api/llm/*', authMiddleware)
+app.use('/api/vlm/*', authMiddleware)
 app.use('/api/stt/*', authMiddleware)
 // plan: GET /api/plan 公开（前端未登录可拉套餐），仅 upgrade 需鉴权。
 app.use('/api/plan/upgrade', authMiddleware)
 app.route('/api/quota', quotaRoutes)
 app.route('/api/plan', planRoutes)
 app.route('/api/llm', llmRoutes)
+app.route('/api/vlm', vlmRoutes)
 app.route('/api/stt', sttRoutes)
 
 serve({ fetch: app.fetch, port: env.port }, (info) => {
