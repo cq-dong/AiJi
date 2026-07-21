@@ -17,8 +17,8 @@ const SECRET_KEY = 'llm:key'
 
 // OpenAI 兼容 message：content 可为纯文本或 image_url 多模态数组。buildPrompt 默认返纯文本
 // content；classify 在有图时把 user message 的 content 升级为多模态数组（image_url base64）。
-type VisionTextPart = { type: 'text'; text: string }
-type VisionImagePart = { type: 'image_url'; image_url: { url: string } }
+export type VisionTextPart = { type: 'text'; text: string }
+export type VisionImagePart = { type: 'image_url'; image_url: { url: string } }
 type MessageContent = string | Array<VisionTextPart | VisionImagePart>
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -52,7 +52,7 @@ const MEDIA_LABELS: Record<MediaType, string> = {
   audio: '【语音转文字】',
   video: '【视频】',
 }
-function inferMediaType(p: Entry['parts'][number]): MediaType {
+export function inferMediaType(p: Entry['parts'][number]): MediaType {
   if (p.mediaType) return p.mediaType
   if (p.type === 'text') return 'text'
   if (p.type === 'audio') return 'audio'
@@ -77,7 +77,8 @@ export function entryText(entry: Entry): string {
 
 // Vision：收集 entry 的 video parts 的图像 data URL。照片（durationSec<=0）整张压缩；
 // 视频抽帧（pickFrameTimes + extractFrame）后压缩。任一步失败跳过该帧，不崩。
-async function collectEntryImages(entry: Entry, intervalSec: number): Promise<string[]> {
+// builtinLlm 复用此函数抽图（内置 VLM 路径），故 export。
+export async function collectEntryImages(entry: Entry, intervalSec: number): Promise<string[]> {
   const out: string[] = []
   for (const p of entry.parts) {
     if (p.type !== 'video') continue
