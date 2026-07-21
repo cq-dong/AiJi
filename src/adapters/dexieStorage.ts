@@ -47,8 +47,13 @@ async function ensureSeeded(): Promise<void> {
       if (tags.length === 0) await db.tags.bulkPut(seedTags.map(stampOwner))
       if ((await db.entryAi.count()) === 0) await db.entryAi.bulkPut(seedEntryAi)
     }
-    if ((await db.aggregates.count()) === 0) await db.aggregates.bulkPut(seedAggregates.map(stampOwner))
-    if ((await db.reminders.count()) === 0) await db.reminders.bulkPut(seedReminders.map(stampOwner))
+    // aggregates/reminders 也按 owner 过滤（与上 categories/tags 一致）：owner A 已有数据时，
+    // 新切的 owner B 仍能拿到自己那份种子，不因全局 count>0 而跳过。
+    const owner = getCurrentOwner()
+    if ((await db.aggregates.where('ownerId').equals(owner).count()) === 0)
+      await db.aggregates.bulkPut(seedAggregates.map(stampOwner))
+    if ((await db.reminders.where('ownerId').equals(owner).count()) === 0)
+      await db.reminders.bulkPut(seedReminders.map(stampOwner))
   }
   seeded = true
 }

@@ -101,17 +101,18 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     const cur = get().account
     if (!cur) throw new Error('no account to bind')
     // 不 catch 409：直接抛 'AUTH_409:...'，T15c UI 按 msg.startsWith('AUTH_409') 提示。
-    const { session } = await di.auth.register(email, password)
+    const { account: serverAccount, session } = await di.auth.register(email, password)
+    // owner key 必须用服务器 account.id（S）而非保留 guest.id（G）：数据分区按 account.id
+    // 过滤，若收养到 G，logout 后同邮箱 login 拿回 S，G 下数据无任何路径可达（等价丢失）。
+    // 昵称/头像保留 guest 期的本地值（服务器 register 只有邮箱派生的默认昵称）。
     const next: Account = {
-      ...cur,
-      type: 'network',
-      plan: 'free',
-      email,
-      boundAt: new Date().toISOString(),
+      ...serverAccount,
+      nickname: cur.nickname || serverAccount.nickname,
+      avatar: cur.avatar ?? serverAccount.avatar,
     }
     localAccount.set(next)
     localSession.set(session)
-    // 绑定即升级为 network 账号：guest 期间记的 'local' 数据收养到 account.id（此处为保留的 guest.id）。
+    // 绑定即升级为 network 账号：guest 期间记的 'local' 数据收养到服务器 account.id。
     setCurrentOwner(next.id)
     await adoptLocalSafe(next.id)
     set({ account: next, session, sessionStale: false })

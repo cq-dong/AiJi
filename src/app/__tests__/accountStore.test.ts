@@ -82,19 +82,18 @@ describe('accountStore — login', () => {
 })
 
 describe('accountStore — bindNetwork', () => {
-  it('registerGuest → bindNetwork → account.id 不变 + type=network + plan=free + boundAt set + nickname 保留', async () => {
-    const guest = useAccountStore.getState().registerGuest('MyNick')
+  it('registerGuest → bindNetwork → account.id 用服务器 id + type=network + plan=free + nickname 保留', async () => {
+    useAccountStore.getState().registerGuest('MyNick')
     mocks.authRegister.mockResolvedValue({
-      // port 返回的 account.id 不同；store 必须保留 guest.id（绑定，不换号）
-      account: { ...networkAccount, id: 'other-id' },
+      // owner key 必须是服务器 account.id——否则 logout 后 login（服务器 id）看不到收养数据
+      account: { ...networkAccount, id: 'server-id' },
       session: sess,
     })
     await useAccountStore.getState().bindNetwork('a@b.com', 'password1')
     const s = useAccountStore.getState()
-    expect(s.account?.id).toBe(guest.id)
+    expect(s.account?.id).toBe('server-id')
     expect(s.account?.type).toBe('network')
     expect(s.account?.plan).toBe('free')
-    expect(s.account?.boundAt).toBeTruthy()
     expect(s.account?.nickname).toBe('MyNick')
     expect(s.session?.jwt).toBe('j')
     expect(localSession.get()).not.toBeNull()
