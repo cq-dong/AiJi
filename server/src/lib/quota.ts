@@ -38,6 +38,7 @@ function rowToAccount(row: UserRow): Account {
     avatar: row.avatar ?? undefined,
     paidPlanId: row.paid_plan_id ?? undefined,
     paidExpiresAt: row.paid_expires_at ?? undefined,
+    trialEndsAt: row.trial_expires_at ?? undefined,
   }
 }
 

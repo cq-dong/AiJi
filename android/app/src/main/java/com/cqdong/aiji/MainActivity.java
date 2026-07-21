@@ -2,6 +2,7 @@ package com.cqdong.aiji;
 
 import android.os.Bundle;
 import android.view.View;
+import android.webkit.WebSettings;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -18,6 +19,14 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(ApkInstallerPlugin.class);
         registerPlugin(HeadsUpNotifierPlugin.class);
         super.onCreate(savedInstanceState);
+        // 后端跑在 http://106.54.26.195（暂无域名/HTTPS）。WebView 起自 androidScheme:https
+        // → origin 为 https://localhost，向 http 后端发起 fetch 属 mixed content（https 页→http 资源）。
+        // Android WebView 默认阻拦 → 后端 API 全挂。开 MIXED_CONTENT_ALWAYS_ALLOW 放行。
+        // 相比全局开 CapacitorHttp（reroute 所有 fetch）更外科：只动 mixed-content 策略，
+        // 不碰 fetch 路径，规避 rc14 enabled:true 引入的 403 回归。CORS 已在 server 放行 https://localhost。
+        if (this.bridge != null && this.bridge.getWebView() != null) {
+            this.bridge.getWebView().getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
         // D1/D2: Edge-to-edge —— 内容延伸到系统栏后面，手动注入 insets 给 WebView。
         // env(safe-area-inset-*) 是 iOS WebKit 特性，Android WebView 不自动提供（inset 恒为 0），
         // 必须在原生层把 systemBars insets 转成 CSS 变量 --safe-top / --safe-bottom 注入 documentElement，

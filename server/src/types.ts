@@ -15,6 +15,8 @@ export interface Account {
   avatar?: string
   paidPlanId?: string
   paidExpiresAt?: string
+  // 新用户 24h 试用：此时间之前内置 LLM/STT/agg 额度全无限（-1）。过期后回落 plan 额度。
+  trialEndsAt?: string
 }
 
 export interface AuthSession {
@@ -61,7 +63,11 @@ export const PLAN_TIERS: PlanTier[] = [
 ]
 
 // 按 account.plan + paidPlanId 解析今日额度。paid 且未过期 → 用付费档额度，否则 free。
+// 24h 试用期内（trialEndsAt 未过期）→ 全部 -1 无限，覆盖付费档（让新用户免费用内置 key）。
 export function resolveLimits(account: Account): { llmLimit: number; sttLimitSec: number; aggLimit: number } {
+  if (account.trialEndsAt && new Date(account.trialEndsAt).getTime() > Date.now()) {
+    return { llmLimit: -1, sttLimitSec: -1, aggLimit: -1 }
+  }
   if (account.plan === 'paid' && account.paidPlanId && account.paidExpiresAt) {
     if (new Date(account.paidExpiresAt).getTime() > Date.now()) {
       const tier = PLAN_TIERS.find((t) => t.id === account.paidPlanId)

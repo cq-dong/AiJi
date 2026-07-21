@@ -23,7 +23,8 @@ export function getDb(): Database.Database {
       paid_expires_at TEXT,
       avatar TEXT,
       created_at TEXT NOT NULL,
-      bound_at TEXT
+      bound_at TEXT,
+      trial_expires_at TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
@@ -47,6 +48,13 @@ export function getDb(): Database.Database {
       PRIMARY KEY (user_id, date)
     );
   `)
+  // 迁移：旧库 users 表无 trial_expires_at 列 → 补加。SQLite ADD COLUMN 无 IF NOT EXISTS，
+  // 用 try/catch 容错（列已存在时抛 "duplicate column" → 忽略）。
+  try {
+    db.exec(`ALTER TABLE users ADD COLUMN trial_expires_at TEXT`)
+  } catch {
+    // 列已存在，忽略。
+  }
   _db = db
   return db
 }
@@ -62,6 +70,7 @@ export interface UserRow {
   avatar: string | null
   created_at: string
   bound_at: string | null
+  trial_expires_at: string | null
 }
 
 export interface RefreshTokenRow {

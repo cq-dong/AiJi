@@ -22,6 +22,7 @@ function rowToAccount(row: UserRow): Account {
     avatar: row.avatar ?? undefined,
     paidPlanId: row.paid_plan_id ?? undefined,
     paidExpiresAt: row.paid_expires_at ?? undefined,
+    trialEndsAt: row.trial_expires_at ?? undefined,
   }
 }
 
@@ -49,16 +50,19 @@ auth.post('/register', async (c) => {
   if (existing) return errorJson(c, 409, 'AUTH_409', '该邮箱已注册')
 
   const id = crypto.randomUUID()
-  const now = new Date().toISOString()
+  const now = new Date()
+  const nowIso = now.toISOString()
+  // 24h 试用：新用户内置 LLM/STT 额度全无限。到期后回落 free 档额度。
+  const trialExpiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString()
   const nickname = email.split('@')[0]
   const hash = await hashPassword(password)
   db.prepare(
-    `INSERT INTO users (id, email, password_hash, nickname, plan, created_at, bound_at) VALUES (?, ?, ?, ?, 'free', ?, ?)`,
-  ).run(id, email, hash, nickname, now, now)
+    `INSERT INTO users (id, email, password_hash, nickname, plan, created_at, bound_at, trial_expires_at) VALUES (?, ?, ?, ?, 'free', ?, ?, ?)`,
+  ).run(id, email, hash, nickname, nowIso, nowIso, trialExpiresAt)
 
   const session = await buildSession(id)
   const account: Account = {
-    id, type: 'network', nickname, email, plan: 'free', createdAt: now, boundAt: now,
+    id, type: 'network', nickname, email, plan: 'free', createdAt: nowIso, boundAt: nowIso, trialEndsAt: trialExpiresAt,
   }
   return c.json({ account, session })
 })
