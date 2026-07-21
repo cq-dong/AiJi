@@ -1,7 +1,7 @@
 import { db } from '@/data/db'
 import { getCurrentOwner } from '@/app/currentOwner'
 import type { StoragePort } from '@/ports'
-import type { Aggregate, AggregateScopeType, Conversation, Draft, Entry, Reminder } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Conversation, Draft, Entry, Memory, Reminder } from '@/domain/types'
 import {
   seedAggregates,
   seedCategories,
@@ -323,18 +323,37 @@ export const dexieStorage: StoragePort = {
     if (!c || c.ownerId !== owner) return
     await db.conversations.delete(id)
   },
+  // AI 记忆（2026-07-22）：用户明确记忆/偏好，classify 与 answerChat 注入 prompt。
+  // 分区语义同 reminders：list 按 getCurrentOwner 过滤、save 强制盖章、delete 先 get 验 owner。
+  async listMemories(): Promise<Memory[]> {
+    const owner = getCurrentOwner()
+    const all = await db.memories.where('ownerId').equals(owner).toArray()
+    // 最近更新在上——prompt 注入取 enabled 按 updatedAt 倒序前 20 条。
+    return all.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+  },
+  async saveMemory(m: Memory): Promise<void> {
+    await db.memories.put({ ...m, ownerId: getCurrentOwner() })
+  },
+  async deleteMemory(id: string): Promise<void> {
+    const owner = getCurrentOwner()
+    const m = await db.memories.get(id)
+    // 仅删当前 owner 的——防跨账号 id 误删（防御性，store 调用链已按 owner 过滤）。
+    if (!m || m.ownerId !== owner) return
+    await db.memories.delete(id)
+  },
   // 账号分区 · 收养 local 数据。login/register 成功后 accountStore 调用：
   // 把 6 张分区表里 ownerId==='local' 的行全部改盖为 accountId，让未登录期间记的数据
   // 归属首次登录的网络账号（单用户手机语义）。entryAi/drafts/settings 不参与（无 ownerId）。
   // 单事务保证原子性——要么全部收养，要么不动。
   async adoptLocal(accountId: string): Promise<void> {
-    await db.transaction('rw', [db.entries, db.categories, db.tags, db.aggregates, db.reminders, db.conversations], async () => {
+    await db.transaction('rw', [db.entries, db.categories, db.tags, db.aggregates, db.reminders, db.conversations, db.memories], async () => {
       await db.entries.where('ownerId').equals('local').modify({ ownerId: accountId })
       await db.categories.where('ownerId').equals('local').modify({ ownerId: accountId })
       await db.tags.where('ownerId').equals('local').modify({ ownerId: accountId })
       await db.aggregates.where('ownerId').equals('local').modify({ ownerId: accountId })
       await db.reminders.where('ownerId').equals('local').modify({ ownerId: accountId })
       await db.conversations.where('ownerId').equals('local').modify({ ownerId: accountId })
+      await db.memories.where('ownerId').equals('local').modify({ ownerId: accountId })
     })
   },
 }

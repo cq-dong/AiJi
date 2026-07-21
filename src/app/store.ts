@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
 import { scopeRange } from '@/domain/dateRange'
 import { localRecall } from '@/ui/screens/chat/helpers'
 import { seedSettings } from '@/data/seed'
@@ -7,7 +7,7 @@ import { enrichLocation } from '@/adapters/geocoding'
 import { playReminderBeep } from '@/adapters/reminderSound'
 import * as summaryCache from '@/adapters/summaryCache'
 import { di } from './di'
-import { useAccountStore } from './accountStore'
+import { useAccountStore, registerStoreRehydrate } from './accountStore'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：D9 后首屏空状态（不再
 // seed 兜底），hydrate() 异步从 Dexie 载入真实条目替换；finishSave 同时落库 + 入队分类。
@@ -38,6 +38,7 @@ interface UiState {
   reminders: Reminder[] // D9: 首屏空，hydrate 从 Dexie 载入；scheduleReminders 扫 pending 到点 fire
   drafts: Draft[] // Wave 4: multi-row capture drafts；hydrate 从 Dexie 载入；草稿视图消费
   trashed: Entry[] // Wave 4: 软删条目（deletedAt set）；hydrate 从 Dexie 载入 + purge >30d；回收站视图消费
+  memories: Memory[] // AI 记忆（2026-07-22）：hydrate 从 Dexie 载入；settings MemorySheet 消费
   recalculating: Record<string, boolean> // key=`${scope}:${range}`；recomputeAggregate in-flight 标记，UI 据此显 spinner（与 stale 分离，失败不永转）
   justSaved: boolean // 刚保存 → 首页 toast + 置顶处理中卡片
   // 保存后 LLM 检出 reminderSuggestion → 全局 ReminderPopup 即时确认。仅 finishSave(isFresh=true) 的
@@ -109,6 +110,11 @@ interface UiState {
   startChatVoice: () => Promise<void>
   stopChatVoice: () => Promise<string> // 返回 transcript（finalized+interim.trim），调用方写入输入框
   allowChatMic: () => void
+  // AI 记忆（2026-07-22）：增/删/开关。落库后 set 内存态，settings MemorySheet 消费。
+  // 风格照抄 reminder 相关 action：save upsert + 内存态替换、delete 落库 + 过滤、toggle 翻转 enabled。
+  saveMemory: (content: string) => Promise<void>
+  deleteMemory: (id: string) => Promise<void>
+  toggleMemory: (id: string) => Promise<void>
 }
 
 const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined, title: undefined }
@@ -246,6 +252,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   reminders: [],
   drafts: [],
   trashed: [],
+  memories: [],
   recalculating: {},
   justSaved: false,
   pendingReminder: null,
@@ -258,7 +265,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     try {
       // Wave 4: 先 purge >30d 软删条目（硬删 + cascade AI/提醒），再读列表（listTrashed 不返过期）。
       try { await di.storage.purgeExpired() } catch (e) { console.error('[store] purgeExpired failed', e) }
-      const [entries, settings, categories, tags, aggregates, reminders, drafts, trashed] = await Promise.all([
+      const [entries, settings, categories, tags, aggregates, reminders, drafts, trashed, memories] = await Promise.all([
         di.storage.listEntries(),
         di.storage.getSettings(),
         di.storage.listCategories(),
@@ -267,13 +274,14 @@ export const useUiStore = create<UiState>((set, get) => ({
         di.storage.listReminders(),
         di.storage.listDrafts(),
         di.storage.listTrashed(),
+        di.storage.listMemories(),
       ])
       // 载入每条条目的 AI（seed 条目 + 真实保存条目）。getEntryAi 返回最高 version。
       const aiPairs = await Promise.all(
         entries.map((e) => di.storage.getEntryAi(e.id).then((ai) => (ai ? [e.id, ai] as const : null))),
       )
       const aiByEntry = { ...Object.fromEntries(aiPairs.filter(Boolean) as [string, EntryAi][]) }
-      set({ entries, settings, categories, tags, aggregates, reminders, drafts, trashed, aiByEntry, hydrated: true })
+      set({ entries, settings, categories, tags, aggregates, reminders, drafts, trashed, memories, aiByEntry, hydrated: true })
       // 载入后扫 pending 提醒：未来调度到点；overdue <1h 补 fire、≥1h 标 missed（Q3）。
       scheduleReminders()
       // Wave 4: 恢复最近草稿（跨刷新/重启续记）。多草稿里取最新一条载入 capture（仅当 capture 空）。
@@ -935,4 +943,37 @@ export const useUiStore = create<UiState>((set, get) => ({
     return transcript
   },
   allowChatMic: () => set((s) => ({ chatVoice: { ...s.chatVoice, micDenied: false } })),
+  // ── AI 记忆 actions（2026-07-22）──────────────────────────────────────────
+  // 风格照抄 reminder 相关 action：save upsert + 内存态替换、delete 落库 + 过滤、toggle 翻转 enabled。
+  // prompt 注入由 classify/answerChat 调用点自行 di.storage.listMemories() 拉取，store 不参与注入逻辑。
+  saveMemory: async (content) => {
+    const trimmed = content.trim()
+    if (!trimmed) return
+    const now = new Date().toISOString()
+    const m: Memory = { id: crypto.randomUUID(), content: trimmed, enabled: true, createdAt: now, updatedAt: now }
+    await di.storage.saveMemory(m)
+    set((s) => ({ memories: [m, ...s.memories] }))
+  },
+  deleteMemory: async (id) => {
+    await di.storage.deleteMemory(id)
+    set((s) => ({ memories: s.memories.filter((m) => m.id !== id) }))
+  },
+  toggleMemory: async (id) => {
+    const cur = get().memories.find((m) => m.id === id)
+    if (!cur) return
+    const updated: Memory = { ...cur, enabled: !cur.enabled, updatedAt: new Date().toISOString() }
+    await di.storage.saveMemory(updated)
+    set((s) => ({ memories: s.memories.map((m) => (m.id === id ? updated : m)) }))
+  },
 }))
+
+// 账号切换（login/register/bindNetwork/logout/registerGuest）后，accountStore 调本回调触发
+// store 全量重载——清旧 owner 快照（隔离）。`if (hydrated)` 守卫：boot 期 accountStore.hydrate
+// 的 post-adopt 触发时 store 尚未 hydrated → 跳过（store.hydrate 后续自读 adopt 后数据，不双载）。
+// store→accountStore 单向依赖（本文件已 import accountStore），accountStore 不反向 import store，
+// 故无环。注册替代动态 import（避免 Vite dev `?t=` HMR query 造成 useUiStore 实例分裂）。
+registerStoreRehydrate(async () => {
+  if (useUiStore.getState().hydrated) {
+    await useUiStore.getState().rehydrate()
+  }
+})

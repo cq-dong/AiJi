@@ -34,6 +34,8 @@ vi.mock('@/app/di', () => ({
       saveCategory: vi.fn(async () => {}),
       getSettings: vi.fn(async () => fixtures.settings),
       getMedia: vi.fn(async () => fixtures.mediaBlob),
+      // AI 记忆注入（2026-07-22）：classify/answerChat 调 listMemories → 默认空数组（不注入）。
+      listMemories: vi.fn(async () => []),
     },
     auth: { refresh: refreshFn },
   },

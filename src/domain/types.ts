@@ -281,3 +281,17 @@ export interface FeedbackItem {
   text: string
   images: Blob[]
 }
+
+// AI 记忆（用户明确记忆）— docs/superpowers/specs/2026-07-22-ai-memory-design.md
+// 用户显式书写的记忆/偏好，两个消费点：① answerChat 回答时参考；② classify 分类时遵循
+// （如「X 都归到 Y 类」「我对花生过敏」）。enabled=false 停用不删除（不参与 prompt 注入）。
+// 不加 kind/category 枚举——分类理解靠 content 自然语言本身，枚举是过度设计。
+// 账号分区同 Entry：ownerId 可选 + save 盖章 + adoptLocal 收养（v8 新表，无存量回填负担）。
+export interface Memory {
+  id: string // uuid
+  ownerId?: string // 账号分区（同 Entry）：save 强制盖章 getCurrentOwner()
+  content: string // 用户原文
+  enabled: boolean // 停用不删除（参与 prompt 与否的开关）
+  createdAt: string // ISO
+  updatedAt: string // ISO
+}

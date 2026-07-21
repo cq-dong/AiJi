@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Aggregate, Category, Conversation, Draft, Entry, EntryAi, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, Category, Conversation, Draft, Entry, EntryAi, Memory, Reminder, Settings, Tag } from '@/domain/types'
 
 // IndexedDB schema (PRD §7.3). UI 层先用 mock 适配器，schema 已就位待接入。
 export class AiJiDB extends Dexie {
@@ -19,6 +19,9 @@ export class AiJiDB extends Dexie {
   // AI Chat · 单会话 MVP（conversations 表 id=1 单行，messages 内嵌数组）。
   // 多会话 schema 已就位（id 索引），v1.1 再铺 listConversations UI。
   conversations!: Table<Conversation, string>
+  // AI 记忆（2026-07-22）：用户明确记忆/偏好，classify 与 answerChat 注入 prompt。
+  // 账号分区同 6 张分区表（ownerId 索引）；v8 新表无存量，无 upgrade 回填。
+  memories!: Table<Memory, string>
 
   constructor() {
     super('aiji')
@@ -115,6 +118,21 @@ export class AiJiDB extends Dexie {
       await tx.table('aggregates').toCollection().modify({ ownerId: 'local' })
       await tx.table('reminders').toCollection().modify({ ownerId: 'local' })
       await tx.table('conversations').toCollection().modify({ ownerId: 'local' })
+    })
+    // v8: AI 记忆——新表 memories（keyPath id, ownerId/updatedAt 索引）。账号分区同 6 张分区表。
+    // .stores() 非增量——所有 store 逐字重声明（现有索引逐字保留，仅追加 memories）。
+    // 纯加表，无 keyPath 变更，新表无存量 → 无 upgrade 回调。
+    this.version(8).stores({
+      entries: 'id, createdAt, updatedAt, status, deletedAt, ownerId',
+      entryAi: 'id, entryId, version',
+      categories: 'slug, usageCount, ownerId',
+      tags: 'slug, usageCount, ownerId',
+      aggregates: 'id, scope.type, scope.range, stale, ownerId',
+      settings: '++id',
+      reminders: 'id, dueAt, status, entryId, ownerId',
+      drafts: 'id, updatedAt',
+      conversations: 'id, updatedAt, ownerId',
+      memories: 'id, ownerId, updatedAt',
     })
   }
 }

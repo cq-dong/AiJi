@@ -1,7 +1,7 @@
 // Port interfaces (PRD §7.3). PWA-agnostic; adapters implement these.
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, FeedbackItem, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, FeedbackItem, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
 import type { Account, AuthSession } from '@/domain/account'
 import type { Quota } from '@/domain/quota'
 import type { PlanTier } from '@/domain/plan'
@@ -62,6 +62,11 @@ export interface StoragePort {
   // ownerId==='local' 的行改盖为 accountId，未登录期间记的数据归属首次登录的网络账号。
   // 单用户手机语义；多用户共用设备不在本期。entryAi/drafts/settings 不参与。
   adoptLocal(accountId: string): Promise<void>
+  // AI 记忆（2026-07-22）：用户明确记忆/偏好。分区语义同 reminders——list 按 currentOwner
+  // 过滤、save 强制盖章、delete 先 get 验 owner。classify 与 answerChat 注入 prompt。
+  listMemories(): Promise<Memory[]>
+  saveMemory(m: Memory): Promise<void>
+  deleteMemory(id: string): Promise<void>
 }
 
 export interface CapturePort {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check, ChevronDown, ChevronRight, Download, Info, MapPin, MessageSquare, X } from 'lucide-react'
+import { Brain, Check, ChevronDown, ChevronRight, Download, Info, MapPin, MessageSquare, Plus, Trash2, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
@@ -751,6 +751,100 @@ function GeocodingSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
+// AI 记忆 sheet（2026-07-22）：用户明确记忆/偏好，classify 与 answerChat 注入 prompt。
+// 结构镜像 SttSheet：记忆列表（content + 开关 + 删除）+ 底部输入框 + 添加按钮。
+// 增/删/开关走 store action（落库 + 内存态），即时生效；prompt 注入由适配器拉 listMemories。
+function MemorySheet({ onClose }: { onClose: () => void }) {
+  const memories = useUiStore((s) => s.memories)
+  const saveMemory = useUiStore((s) => s.saveMemory)
+  const deleteMemory = useUiStore((s) => s.deleteMemory)
+  const toggleMemory = useUiStore((s) => s.toggleMemory)
+  const [draft, setDraft] = useState('')
+  const [adding, setAdding] = useState(false)
+
+  async function handleAdd() {
+    const trimmed = draft.trim()
+    if (!trimmed) return
+    setAdding(true)
+    try {
+      await saveMemory(trimmed)
+      setDraft('')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-bold text-ink">AI 记忆</p>
+          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-t3">记一条偏好或事实，AI 分类与问答会参考。如「和老婆的对话都归到家庭类」「我对花生过敏」</p>
+
+        <div className="mt-3 max-h-[320px] space-y-2 overflow-y-auto">
+          {memories.length === 0 && (
+            <div className="rounded-card border border-brd/80 bg-card px-3 py-4 text-center text-[12px] text-t3">
+              还没有记忆。在下方记一条吧。
+            </div>
+          )}
+          {memories.map((m) => (
+            <div key={m.id} className="flex items-start gap-2 rounded-card border border-brd/80 bg-card p-3">
+              <div className="min-w-0 flex-1">
+                <p className={cn('break-words text-[13px] leading-relaxed', m.enabled ? 'text-ink' : 'text-t3 line-through')}>{m.content}</p>
+              </div>
+              <div className="flex shrink-0 flex-col items-center gap-1.5">
+                <Toggle checked={m.enabled} onChange={() => void toggleMemory(m.id)} />
+                <button
+                  type="button"
+                  aria-label="删除"
+                  onClick={() => void deleteMemory(m.id)}
+                  className="flex size-7 items-center justify-center rounded-btn text-t3 transition duration-base ease-out cursor-pointer hover:text-catFail active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                >
+                  <Trash2 size={14} strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3">
+          <label className="text-[11px] text-t2">记一条</label>
+          <div className="mt-1 flex gap-2">
+            <input
+              className={inputCls}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="如「和老婆的对话都归到家庭类」"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !adding) void handleAdd()
+              }}
+            />
+            <Button
+              variant="primary"
+              size="sm"
+              className="h-[38px] shrink-0 rounded-btn"
+              disabled={adding || !draft.trim()}
+              onClick={() => void handleAdd()}
+            >
+              <Plus size={14} strokeWidth={2.2} />
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <Button variant="secondary" size="sm" className="h-[38px] w-full rounded-btn" onClick={onClose}>
+            完成
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // VLM sheet：含图条目分类的多模态端点（BYOK）。结构镜像 ByokSheet：
 // url 必须是完整 chat completions URL（适配器不补 /chat/completions）。
 function VlmSheet({ onClose }: { onClose: () => void }) {
@@ -1134,11 +1228,14 @@ export default function Settings() {
   const recordLocation = settings.recordLocation
   const entries = useUiStore((s) => s.entries)
   const hasEntries = entries.length > 0
+  const memories = useUiStore((s) => s.memories)
+  const enabledMemoryCount = memories.filter((m) => m.enabled).length
   const [editing, setEditing] = useState(false)
   const [editingStt, setEditingStt] = useState(false)
   const [editingVlm, setEditingVlm] = useState(false)
   const [editingAbout, setEditingAbout] = useState(false)
   const [editingGeo, setEditingGeo] = useState(false)
+  const [editingMemory, setEditingMemory] = useState(false)
   // D9: 导入示例数据状态。导入后 rehydrate 刷新 store；错误显红字提示。
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState<string | null>(null)
@@ -1298,6 +1395,16 @@ export default function Settings() {
       {/* 视觉 */}
       <VisionSection settings={settings} setSettings={setSettings} />
 
+      {/* AI 记忆（2026-07-22）：用户明确记忆/偏好，classify 与 answerChat 注入 prompt */}
+      <div className="mt-3">
+        <ChevronRow
+          label="AI 记忆"
+          value={enabledMemoryCount > 0 ? `${enabledMemoryCount} 条生效` : '未设置'}
+          icon={<Brain size={15} strokeWidth={2.2} />}
+          onClick={() => setEditingMemory(true)}
+        />
+      </div>
+
       {/* 导出与分享 */}
       <Card className="mt-3">
         <p className="text-[14px] font-bold text-ink">导出与分享</p>
@@ -1377,6 +1484,7 @@ export default function Settings() {
       {editingVlm && <VlmSheet onClose={() => setEditingVlm(false)} />}
       {editingAbout && <AboutSheet onClose={() => setEditingAbout(false)} />}
       {editingGeo && <GeocodingSheet onClose={() => setEditingGeo(false)} />}
+      {editingMemory && <MemorySheet onClose={() => setEditingMemory(false)} />}
       {zipConfirm && (
         <ExportConfirmSheet
           scopeLabel="全部条目"

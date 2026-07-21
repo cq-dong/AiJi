@@ -110,7 +110,7 @@ export function toLocalIso(iso: string): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}${offStr}`
 }
 
-export function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[], hasImages: boolean, locationAddress?: string): ChatMessage[] {
+export function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[], hasImages: boolean, locationAddress?: string, memories?: string[]): ChatMessage[] {
   const catList = categories.map((c) => `${c.slug}:${c.label}`).join(', ') || '（暂无）'
   const tagList = tags.map((t) => t.slug).join(', ') || '（暂无）'
   const mediaRule = hasImages
@@ -121,6 +121,13 @@ export function buildPrompt(content: string, createdAt: string, categories: Cate
     : ''
   const placeRule = locationAddress
     ? `\n${hasImages ? '7' : '6'}. 地点：条目附有记录地点「${locationAddress}」（来自定位反查，非用户手输）。填入 facets.place（用该地址，可精简到区/街道级，但保留可辨识性），用于「类别地图·地点」聚类。`
+    : ''
+  // AI 记忆注入（2026-07-22 §3）：有记忆时 system 追加一节，措辞针对分类/标签。
+  // 空数组/undefined → memoryBlock='' → system + '' + '\n\n' + example 与现状逐字节一致（回归安全）。
+  const memoryBlock = memories && memories.length > 0
+    ? '\n\n用户明确记忆与偏好（必须遵循，优先级高于你的默认判断）：\n' +
+      memories.map((c) => `- ${c}`).join('\n') +
+      '\n若记忆与本条目分类/标签相关（如「X 都归到 Y 类」），严格按记忆执行。'
     : ''
   const system = `你是「AiJi」(AI 记) 的笔记分类助手。给定一条用户的「记」条目内容 + 条目创建时间 + 现有类别库 + 现有标签库，输出严格 JSON。
 
@@ -153,7 +160,7 @@ ${content}
 
 输出 JSON。`
   return [
-    { role: 'system', content: system + '\n\n' + example },
+    { role: 'system', content: system + memoryBlock + '\n\n' + example },
     { role: 'user', content: user },
   ]
 }
@@ -162,6 +169,14 @@ ${content}
 // 会返 400。仅在 endpoint/model 指示 DeepSeek 时发送——port 契约称「OpenAI 兼容」才名副其实。
 function isDeepSeek(url: string, model: string): boolean {
   return /deepseek/i.test(url) || /deepseek/i.test(model)
+}
+
+// AI 记忆注入（2026-07-22 §3）：拉取当前 owner 的 enabled 记忆，按 updatedAt 倒序取前 20 条
+// content 文本数组（listMemories 已按 updatedAt 倒序）。空库/全停用 → 空数组（prompt 不注入，
+// 与无记忆时逐字节一致）。builtinLlm 复用此 helper，双路径注入一致。
+export async function loadEnabledMemoryContents(): Promise<string[]> {
+  const all = await di.storage.listMemories()
+  return all.filter((m) => m.enabled).slice(0, 20).map((m) => m.content)
 }
 
 function asStringArray(v: unknown): string[] | undefined {
@@ -363,7 +378,7 @@ export function buildIntentPrompt(question: string, nowIso: string) {
 // 设计取向（D35）：效果优先，不省 token。召回条目可能只是弱相关（兜底近期 top-K），
 // 让 LLM 综合判断相关性并诚实作答，而非硬模板「未找到」。只有确实无任何相关条目时才说明。
 // 铁律：citedEntryIds 必须是 cites 中真实存在的 id；绝不臆造引用或条目内容。
-export function buildAnswerPrompt(question: string, cites: ChatCite[], conversation: { role: 'user' | 'assistant'; content: string }[]) {
+export function buildAnswerPrompt(question: string, cites: ChatCite[], conversation: { role: 'user' | 'assistant'; content: string }[], memories?: string[]) {
   const citesBlock = cites.length === 0
     ? '（无召回条目）'
     : cites.map((c) => {
@@ -373,6 +388,13 @@ export function buildAnswerPrompt(question: string, cites: ChatCite[], conversat
         if (c.tags.length) parts.push(`标签=${c.tags.join(',')}`)
         return `- ${parts.join(' | ')}\n  原文摘录：${c.textExcerpt}`
       }).join('\n')
+  // AI 记忆注入（2026-07-22 §3）：措辞针对问答——「回答时参考…与记忆冲突时以记忆为准」。
+  // 空数组/undefined → memoryBlock='' → system + '' 与现状逐字节一致（回归安全）。
+  const memoryBlock = memories && memories.length > 0
+    ? '\n\n用户明确记忆与偏好（必须遵循，优先级高于你的默认判断）：\n' +
+      memories.map((c) => `- ${c}`).join('\n') +
+      '\n回答时参考这些用户明确记忆；与记忆冲突时以记忆为准。'
+    : ''
   const system = `你是「AiJi」(AI 记) 的智能问答助手，帮用户从他的「记」条目里找信息、做总结、聊内容。这是个对话窗口，回答要自然、有用、像在跟用户聊，不要死板。
 
 你的依据是下方「召回条目」（用户库内的笔记，含原文摘录/摘要/地点/标签/类别）。调用规范：
@@ -387,7 +409,7 @@ export function buildAnswerPrompt(question: string, cites: ChatCite[], conversat
 ${citesBlock}
 
 输出 schema（纯 JSON，无围栏）：
-{"answer":string,"citedEntryIds":string[]}`
+{"answer":string,"citedEntryIds":string[]}` + memoryBlock
   const msgs = [
     { role: 'system' as const, content: system },
     ...conversation,
@@ -479,6 +501,8 @@ export const openAiCompatLlm: LlmPort = {
     if (!content.trim() && !hasVideoParts) throw new Error('条目无文本/媒体可分类')
     const categories = await di.storage.listCategories()
     const tags = await di.storage.listTags()
+    // AI 记忆注入（2026-07-22 §3）：enabled 记忆 content 数组传入 buildPrompt。
+    const memories = await loadEnabledMemoryContents()
     // 地点：entry.location.address（reverse geocoded）喂给 LLM 填 facets.place，
     // 让「类别地图·地点」能聚类。无 address（离线/未反查）时不喂，LLM 仍可从正文提取。
     const locationAddress = entry.location?.address?.trim() || entry.location?.label?.trim() || undefined
@@ -489,7 +513,7 @@ export const openAiCompatLlm: LlmPort = {
       images = await collectEntryImages(entry, settings.videoFrameIntervalSec)
     }
     const hasImages = images.length > 0
-    const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, hasImages, locationAddress)
+    const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, hasImages, locationAddress, memories)
     if (hasImages) {
       const userMsg = messages[messages.length - 1]
       if (typeof userMsg.content === 'string') {
@@ -532,7 +556,7 @@ export const openAiCompatLlm: LlmPort = {
       }
       console.warn('[llm] vision failed, falling back to text-only', res.status, errText.slice(0, 200))
       // D21: 降级后无图，buildPrompt hasImages=false → 不请求 mediaDescription（LLM 也看不到图）。
-      const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, false, locationAddress)
+      const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, false, locationAddress, memories)
       res = await fetch(fUrl, {
         method: 'POST',
         headers: { Authorization: `Bearer ${fKey}`, 'Content-Type': 'application/json' },
@@ -718,12 +742,14 @@ export const openAiCompatLlm: LlmPort = {
     const url = settings.llmUrl
     const model = settings.llmModel || 'deepseek-v4-flash'
     if (!apiKey || !url) throw new Error('LLM BYOK 未配置（url/key 缺失）')
+    // AI 记忆注入（2026-07-22 §3）：enabled 记忆 content 数组传入 buildAnswerPrompt。
+    const memories = await loadEnabledMemoryContents()
     const res = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: buildAnswerPrompt(question, cites, conversation),
+        messages: buildAnswerPrompt(question, cites, conversation, memories),
         max_tokens: 8192,
         temperature: 0.4,
         // 不禁 thinking：deepseek-v4-flash 是推理模型，禁了 thinking 会把规则 3「无依据」触发得太宽松，

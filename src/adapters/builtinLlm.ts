@@ -21,7 +21,7 @@ import {
   buildAggregatePrompt, parseAggregateJson,
   buildIntentPrompt, parseIntentJson,
   buildAnswerPrompt, parseAnswerJson,
-  collectEntryImages, inferMediaType,
+  collectEntryImages, inferMediaType, loadEnabledMemoryContents,
   type VisionTextPart, type VisionImagePart,
 } from '@/adapters/openAiCompatLlm'
 
@@ -94,6 +94,8 @@ export const builtinLlm: LlmPort = {
     if (!content.trim() && !hasVideoParts) throw new Error('条目无文本/媒体可分类')
     const categories = await di.storage.listCategories()
     const tags = await di.storage.listTags()
+    // AI 记忆注入（2026-07-22 §3）：enabled 记忆 content 数组传入 buildPrompt。
+    const memories = await loadEnabledMemoryContents()
     // 地点：entry.location.address（reverse geocoded）喂给 LLM 填 facets.place，
     // 让「类别地图·地点」能聚类。无 address（离线/未反查）时不喂，LLM 仍可从正文提取。
     const locationAddress = entry.location?.address?.trim() || entry.location?.label?.trim() || undefined
@@ -104,7 +106,7 @@ export const builtinLlm: LlmPort = {
       images = await collectEntryImages(entry, settings.videoFrameIntervalSec)
     }
     const hasImages = images.length > 0
-    const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, hasImages, locationAddress)
+    const messages = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, hasImages, locationAddress, memories)
     if (hasImages) {
       const userMsg = messages[messages.length - 1]
       if (typeof userMsg.content === 'string') {
@@ -125,7 +127,7 @@ export const builtinLlm: LlmPort = {
       }
       console.warn('[builtinLlm] vlm failed, falling back to text-only /api/llm/chat', res.status, errText.slice(0, 200))
       // 降级后无图，buildPrompt hasImages=false → 不请求 mediaDescription。
-      const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, false, locationAddress)
+      const textMsgs = buildPrompt(content, toLocalIso(entry.createdAt), categories, tags, false, locationAddress, memories)
       res = await chatFetch(textMsgs, '/api/llm/chat')
     }
     const raw = await extractReply(res)
@@ -229,7 +231,9 @@ export const builtinLlm: LlmPort = {
 
   async answerChat({ question, cites, conversation }) {
     assertNetwork()
-    const messages = buildAnswerPrompt(question, cites, conversation)
+    // AI 记忆注入（2026-07-22 §3）：enabled 记忆 content 数组传入 buildAnswerPrompt。
+    const memories = await loadEnabledMemoryContents()
+    const messages = buildAnswerPrompt(question, cites, conversation, memories)
     const raw = await chat(messages)
     useQuotaStore.getState().consume('llm', 1)
     const parsed = parseAnswerJson(raw)
