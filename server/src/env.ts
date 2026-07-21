@@ -23,7 +23,7 @@ export const env = {
   dashscopeBase: process.env.DASHSCOPE_BASE ?? 'https://dashscope.aliyuncs.com',
   dashscopeModel: process.env.DASHSCOPE_MODEL ?? 'paraformer-realtime-v2',
   // VLM 多模态模型（qwen-vl 系列）；不强制校验存在，缺省回落。
-  vlmModel: process.env.VLM_MODEL ?? 'qwen-vl-max-latest',
+  vlmModel: process.env.VLM_MODEL ?? 'qwen-vl-max',
   corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173,https://localhost').split(',').map((s) => s.trim()).filter(Boolean),
   port: int('PORT', 8787),
   jwtTtl: int('JWT_TTL_SECONDS', 900),
