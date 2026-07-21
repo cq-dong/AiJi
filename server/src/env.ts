@@ -21,6 +21,7 @@ export const env = {
   deepseekModel: process.env.DEEPSEEK_MODEL ?? 'deepseek-chat',
   dashscopeKey: process.env.DASHSCOPE_KEY ?? '',
   dashscopeBase: process.env.DASHSCOPE_BASE ?? 'https://dashscope.aliyuncs.com',
+  dashscopeModel: process.env.DASHSCOPE_MODEL ?? 'paraformer-realtime-v2',
   corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173,https://localhost').split(',').map((s) => s.trim()).filter(Boolean),
   port: int('PORT', 8787),
   jwtTtl: int('JWT_TTL_SECONDS', 900),

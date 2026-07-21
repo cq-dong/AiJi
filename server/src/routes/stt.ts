@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../lib/http.js'
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { env } from '../env.js'
 import { consumeQuota } from '../lib/quota.js'
 import { errorJson } from '../lib/http.js'
@@ -11,18 +12,21 @@ const ffmpegPath: string | null = require('ffmpeg-static') as string | null
 
 const stt = new Hono<AppEnv>()
 
-// ffmpeg webm/opus → wav 16kHz mono PCM。DashScope 文件转写要求 wav/mp3/aac 等。
-// 同时拿到 wav 字节数 → 估算 duration（16kHz mono PCM16 = 32000 bytes/s）用于配额预扣。
-function transcodeToWav(input: Buffer): Promise<{ wav: Buffer; durationSec: number }> {
+const TARGET_RATE = 16000
+const WS_BASE = 'wss://dashscope.aliyuncs.com/api-ws/v1/inference'
+
+// ffmpeg webm/opus → 16kHz mono PCM s16le（DashScope paraformer-realtime-v2 要求 pcm 16k）。
+// 输出 raw PCM，字节数 / 2 = 采样数，/ 16000 = 秒，用于配额预扣。
+function transcodeToPcm(input: Buffer): Promise<{ pcm: Buffer; durationSec: number }> {
   return new Promise((resolve, reject) => {
     if (!ffmpegPath) return reject(new Error('ffmpeg 未安装'))
     const out: Buffer[] = []
     const err: Buffer[] = []
     const p = spawn(ffmpegPath, [
       '-i', 'pipe:0',
-      '-ar', '16000',
+      '-ar', String(TARGET_RATE),
       '-ac', '1',
-      '-f', 'wav',
+      '-f', 's16le',
       'pipe:1',
     ], { stdio: ['pipe', 'pipe', 'pipe'] })
     p.stdin.on('error', reject)
@@ -31,88 +35,94 @@ function transcodeToWav(input: Buffer): Promise<{ wav: Buffer; durationSec: numb
     p.on('error', reject)
     p.on('close', (code) => {
       if (code !== 0) return reject(new Error('ffmpeg 转码失败 code=' + code + ' ' + Buffer.concat(err).toString().slice(-200)))
-      const wav = Buffer.concat(out)
-      // PCM16 16kHz mono = 32000 bytes/s（不含 wav header，估算偏差<5%可接受）。
-      const durationSec = Math.max(1, Math.round(wav.length / 32000))
-      resolve({ wav, durationSec })
+      const pcm = Buffer.concat(out)
+      const samples = pcm.length / 2
+      const durationSec = Math.max(1, Math.round(samples / TARGET_RATE))
+      resolve({ pcm, durationSec })
     })
     p.stdin.end(input)
   })
 }
 
-// 上传文件到 DashScope 文件存储 → 返回 file_url。
-async function uploadFile(wav: Buffer): Promise<string> {
-  const form = new FormData()
-  form.append('file', new Blob([wav]), 'audio.wav')
-  form.append('model', 'paraformer-v2')
-  form.append('action', 'upload')
-  const res = await fetch(`${env.dashscopeBase}/api/v1/uploads`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.dashscopeKey}`,
-      'X-DashScope-Content-Format': 'multipart/form-data',
-    },
-    body: form,
-  })
-  if (!res.ok) throw new Error('uploads HTTP ' + res.status)
-  const data = await res.json() as { data?: { url?: string }; message?: string }
-  const url = data?.data?.url
-  if (!url) throw new Error('uploads 无 url: ' + (data?.message ?? ''))
-  return url
-}
-
-// 提交文件转写任务 → task_id。
-async function submitTranscription(fileUrl: string): Promise<string> {
-  const res = await fetch(`${env.dashscopeBase}/api/v1/services/audio/asr/transcription`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${env.dashscopeKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'paraformer-v2',
-      input: { file_urls: [fileUrl] },
-      parameters: { language_hints: ['zh', 'en'] },
-    }),
-  })
-  if (!res.ok) throw new Error('transcription HTTP ' + res.status)
-  const data = await res.json() as { output?: { task_id?: string }; message?: string }
-  const taskId = data?.output?.task_id
-  if (!taskId) throw new Error('transcription 无 task_id: ' + (data?.message ?? ''))
-  return taskId
-}
-
-// 轮询任务 → 成功返 transcription_url。
-async function pollTask(taskId: string, timeoutMs = 60_000): Promise<string> {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const res = await fetch(`${env.dashscopeBase}/api/v1/tasks/${taskId}`, {
-      headers: { Authorization: `Bearer ${env.dashscopeKey}` },
-    })
-    if (!res.ok) throw new Error('poll HTTP ' + res.status)
-    const data = await res.json() as { output?: { task_status?: string; transcription_url?: string } }
-    const status = data?.output?.task_status
-    if (status === 'SUCCEEDED') {
-      const url = data?.output?.transcription_url
-      if (!url) throw new Error('SUCCEEDED 但无 transcription_url')
-      return url
+// DashScope paraformer-realtime-v2 WS：连 → run-task → 分帧推 PCM → finish-task
+// → 收 result-generated(sentence_end) 拼 → task-finished resolve。Node 22 自带 WebSocket global。
+function streamAsr(pcm: Buffer, apiKey: string, model: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let ws: WebSocket
+    try {
+      ws = new WebSocket(`${WS_BASE}?api_key=${encodeURIComponent(apiKey)}`)
+    } catch (e) {
+      reject(new Error('STT WS 构造失败: ' + (e as Error).message))
+      return
     }
-    if (status === 'FAILED') throw new Error('转写任务失败')
-    await new Promise((r) => setTimeout(r, 1000))
-  }
-  throw new Error('转写超时')
+    ws.binaryType = 'arraybuffer'
+    const finals: string[] = []
+    let lastInterim = ''
+    const taskId = randomUUID()
+    let settled = false
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      try { ws.close() } catch { /* noop */ }
+      fn()
+    }
+    const timeoutMs = Math.min(120000, Math.max(30000, (pcm.length / 2 / TARGET_RATE) * 5000))
+    const timer = setTimeout(() => settle(() => reject(new Error('STT 超时'))), timeoutMs)
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({
+        header: { action: 'run-task', task_id: taskId, streaming: 'duplex' },
+        payload: {
+          task_group: 'audio',
+          task: 'asr',
+          function: 'recognition',
+          model,
+          parameters: {
+            format: 'pcm',
+            sample_rate: TARGET_RATE,
+            enable_punctuation_prediction: true,
+            disfluency_removal_enabled: false,
+            language_hints: ['zh', 'en'],
+          },
+          input: {},
+        },
+      }))
+      // 200ms 帧（3200 samples = 6400 bytes）
+      const chunkBytes = 6400
+      for (let i = 0; i < pcm.length; i += chunkBytes) {
+        ws.send(pcm.subarray(i, i + chunkBytes).buffer.slice(pcm.byteOffset + i, pcm.byteOffset + i + Math.min(chunkBytes, pcm.length - i)))
+      }
+      ws.send(JSON.stringify({ header: { action: 'finish-task', task_id: taskId }, payload: { input: {} } }))
+    }
+    ws.onmessage = (ev) => {
+      const data = ev.data
+      if (typeof data !== 'string') return
+      let msg: { header?: { event?: string; error_message?: string }; payload?: { output?: { sentence?: { text?: string; sentence_end?: boolean } } } }
+      try {
+        msg = JSON.parse(data)
+      } catch {
+        return
+      }
+      const event = msg.header?.event
+      if (event === 'result-generated') {
+        const s = msg.payload?.output?.sentence
+        if (!s) return
+        if (typeof s.text === 'string') lastInterim = s.text
+        if (s.sentence_end && typeof s.text === 'string') finals.push(s.text)
+      } else if (event === 'task-failed') {
+        settle(() => reject(new Error('STT task-failed: ' + (msg.header?.error_message ?? ''))))
+      } else if (event === 'task-finished') {
+        settle(() => resolve(finals.join('') || lastInterim))
+      }
+    }
+    ws.onerror = () => settle(() => reject(new Error('STT WS error（key/网络/端点）')))
+    ws.onclose = (ev: { code?: number }) => settle(() => reject(new Error('STT WS 提前关闭 code=' + (ev.code ?? 'unknown'))))
+  })
 }
 
-// fetch 结果 JSON → 拼 text。
-async function fetchTranscription(url: string): Promise<string> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('result HTTP ' + res.status)
-  const data = await res.json() as { transcripts?: { text?: string }[]; output?: { text?: string } }
-  const texts = (data?.transcripts ?? []).map((t) => t.text ?? '').filter(Boolean)
-  if (texts.length > 0) return texts.join('')
-  return data?.output?.text ?? ''
-}
-
-// POST /api/stt/transcribe — FormData{file}。duration 由 ffmpeg 转 wav 后按字节估算，
-// 前端 transcribe(ref) 签名不传 duration（无 entry 上下文）。
-// 预扣 quota(durationSec) → ffmpeg 转 wav → 上传 → 提交 → 轮询 → 返 {text}。
+// POST /api/stt/transcribe — FormData{file}。duration 由 ffmpeg 转 PCM 后按采样数估算。
+// 预扣 quota(durationSec) → ffmpeg → WS 推流 → 返 {text}。复用前端 paraformerStreamStt 的 WS 协议。
 stt.post('/transcribe', async (c) => {
   const userId = c.get('userId') as string
   const form = await c.req.formData().catch(() => null)
@@ -121,13 +131,14 @@ stt.post('/transcribe', async (c) => {
   if (!(file instanceof Blob)) return errorJson(c, 400, 'AUTH_400', 'file 缺失')
 
   const buf = Buffer.from(await file.arrayBuffer())
-  let wav: Buffer
+  let pcm: Buffer
   let durationSec: number
   try {
-    const r = await transcodeToWav(buf)
-    wav = r.wav
+    const r = await transcodeToPcm(buf)
+    pcm = r.pcm
     durationSec = r.durationSec
-  } catch {
+  } catch (e) {
+    console.error('[stt] transcode fail:', e instanceof Error ? e.message : e)
     return errorJson(c, 502, 'AUTH_502', '音频转码失败')
   }
 
@@ -137,12 +148,11 @@ stt.post('/transcribe', async (c) => {
 
   const rollback = () => consumeQuota(userId, 'stt', -durationSec)
   try {
-    const fileUrl = await uploadFile(wav)
-    const taskId = await submitTranscription(fileUrl)
-    const resultUrl = await pollTask(taskId)
-    const text = (await fetchTranscription(resultUrl)).trim()
+    const model = env.dashscopeModel || 'paraformer-realtime-v2'
+    const text = (await streamAsr(pcm, env.dashscopeKey, model)).trim()
     return c.json({ text })
-  } catch {
+  } catch (e) {
+    console.error('[stt] upstream fail:', e instanceof Error ? e.message : e)
     rollback()
     return errorJson(c, 502, 'AUTH_502', 'STT 转写失败')
   }
