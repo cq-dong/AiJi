@@ -11,14 +11,12 @@ node_modules
 dist
 dist-ssr
 *.local
-
 # Secrets / local env (BYOK keys — never commit). *.local above covers
 # .env.local; these lines add belt-and-suspenders for plain .env + variants.
 .env
 .env.*
 !.env.example
 !.env.production
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -29,26 +27,22 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
 # Vite cache
 .vite/
-
+video/
 # Session memory buffer
 .remember/
-
 # E2E acceptance screenshots (regenerable artifacts)
 .e2e_shots/
 # Verification/acceptance screenshots dropped in repo root by review subagents
 /*.png
-
 # Claude Code session + browser automation artifacts (throwaway, not for repo)
 .claude/
 .playwright-mcp/
-
 # Throwaway STT/LLM probe scripts + test audio (exploration only, no keys)
 scripts/probe-*.mjs
 public/asr-test.wav
-
 # Backend (server/) — sqlite data + build output
 server/data/
 server/dist/
+# Contest demo video workspace (generated, not part of the app)
