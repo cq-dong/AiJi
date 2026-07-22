@@ -65,8 +65,9 @@ export async function saveBlob(blob: Blob, suggestedName: string): Promise<SaveR
       }
     } catch (e) {
       // 用户取消分享面板——不算失败也不算成功，返回 none 让 UI 静默处理。
+      // 哨兵 'CANCELLED' 是协议值非文案（i18n：不做本地化，UI 按 === 比较拦截）。
       if (e instanceof DOMException && e.name === 'AbortError') {
-        return { ok: false, method: 'none', error: '已取消' }
+        return { ok: false, method: 'none', error: 'CANCELLED' }
       }
       // 其他错误 → 降级到 filesystem/download
     }
