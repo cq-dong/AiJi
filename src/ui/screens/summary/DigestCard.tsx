@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { Aggregate, Category, EntryAi } from '@/domain/types'
 import { Button, Card, Chip, Skeleton, Spinner, cn } from '@/ui/components'
+import { useT } from '@/app/i18n/useT'
+import type { I18nKey } from '@/app/i18n'
 import {
   aggregateChips,
   formatCreated,
@@ -19,7 +21,14 @@ interface DigestCardProps {
   empty?: boolean // 该期间无条目 → 紧凑空态
 }
 
-const DETAIL_LABELS = ['', '极简', '简洁', '标准', '详细', '详尽'] as const
+// 详细度档位 i18n key（1~5）。档位数字 → key；超界回落「标准」(3)。
+const DETAIL_LABEL_KEYS: Partial<Record<number, I18nKey>> = {
+  1: 'summary.detailLevel.1',
+  2: 'summary.detailLevel.2',
+  3: 'summary.detailLevel.3',
+  4: 'summary.detailLevel.4',
+  5: 'summary.detailLevel.5',
+}
 
 export function DigestCard({
   aggregate,
@@ -32,6 +41,7 @@ export function DigestCard({
   empty = false,
 }: DigestCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const t = useT()
   const scopeInfo = scopeDisplay(aggregate)
   const cardLabel = label ?? scopeInfo.label
   const cardRange = rangeLabel ?? scopeInfo.range
@@ -49,7 +59,7 @@ export function DigestCard({
           <span className="text-[15px] font-bold text-pri">{cardLabel}</span>
           {!empty && (
             <span className="rounded-chip border border-pri/10 bg-priS/80 px-2 py-0.5 text-[10px] font-semibold text-pri/80">
-              {DETAIL_LABELS[detailLevel] ?? '标准'}
+              {t(DETAIL_LABEL_KEYS[detailLevel] ?? 'summary.detailLevel.3')}
             </span>
           )}
         </div>
@@ -57,13 +67,13 @@ export function DigestCard({
       </div>
 
       {empty ? (
-        <p className="mt-2 text-[13px] text-t3">暂无内容</p>
+        <p className="mt-2 text-[13px] text-t3">{t('summary.empty')}</p>
       ) : recalculating ? (
         <div className="mt-3 flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Spinner size={14} />
             <span className="text-[11px] font-medium text-pri">
-              正在重新生成{cardLabel}摘要…
+              {t('summary.recalculating', { label: cardLabel })}
             </span>
           </div>
           <Skeleton className="h-2 w-full" rounded="rounded-[4px]" />
@@ -80,7 +90,7 @@ export function DigestCard({
                 {aggregate.summary}
               </p>
             ) : (
-              <p className="mt-2 text-[13px] text-t3">暂无摘要内容。</p>
+              <p className="mt-2 text-[13px] text-t3">{t('summary.noSummary')}</p>
             )}
             {expanded && highlights.length > 0 && (
               <ul className="mt-2 flex flex-col gap-1">
@@ -115,17 +125,17 @@ export function DigestCard({
               >
                 <path d="M2 3.5L5 6.5L8 3.5" stroke="currentColor" strokeWidth="1.4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              {expanded ? '收起' : '展开'}
+              {expanded ? t('summary.collapse') : t('summary.expand')}
             </button>
           )}
 
           <div className="mt-2 flex items-center gap-2">
             <span className="text-[11px] tabular-nums text-t3">
-              {aggregate.entryIds.length} 条 · 挂链
+              {t('summary.entryCount', { count: aggregate.entryIds.length })}
             </span>
             {aggregate.stale && (
               <Chip tone="pending" className="text-[10px]">
-                已过期
+                {t('summary.stale')}
               </Chip>
             )}
           </div>
@@ -142,8 +152,10 @@ export function DigestCard({
 
           <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-brd/50 pt-2.5">
             <span className="text-[11px] tabular-nums text-t3">
-              生成于 {formatCreated(aggregate.createdAt)} ·{' '}
-              {friendlyModel(aggregate.modelUsed)}
+              {t('summary.generatedAt', {
+                time: formatCreated(aggregate.createdAt),
+                model: friendlyModel(aggregate.modelUsed),
+              })}
             </span>
             {onRegen && (
               <Button
@@ -152,7 +164,7 @@ export function DigestCard({
                 className="h-11 px-2 text-[11px]"
                 onClick={onRegen}
               >
-                重新生成
+                {t('summary.regenerate')}
               </Button>
             )}
           </div>
