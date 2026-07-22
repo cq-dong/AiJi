@@ -1,2 +1,65 @@
-// chat 屏文案。key 前缀 chat.
-export const chat = {} as const
+// chat 屏 + login 屏文案。key 前缀 chat. / login.（login 的 key 也放本文件，
+// zh/login.ts 保持空壳不动。）
+// chat.aria.* 是无障碍标签（屏幕阅读器读）；chat.trace.* 是思维链面板；
+// chat.loading.* 是三段加载态；chat.placeholder* 是输入框占位。
+// 「已记住：…」确认消息由 store 生成（chat.memoryConfirm，见 common.ts），不在此。
+// login.aria.* 同理；login.error* 是客户端校验；login.errorAuth409Hint 是 AUTH_409 展示提示。
+export const chat = {
+  // ── chat 屏 ──
+  'chat.title': '问 AI',
+  'chat.aria.back': '返回',
+  'chat.aria.clear': '清空会话',
+  'chat.aria.send': '发送',
+  'chat.aria.stopVoice': '停止语音',
+  'chat.aria.startVoice': '语音输入',
+  'chat.citeDeleted': '已删除',
+  'chat.entryFallback': '条目',
+  'chat.seeCite': '（见 {label}）',
+  'chat.traceToggle': '思考过程',
+  'chat.trace.intent': '理解问题',
+  'chat.trace.keywordsLabel': '关键词：',
+  'chat.trace.keywordsNone': '（无，按时间范围检索）',
+  'chat.trace.scopeLabel': '时间：',
+  'chat.trace.scopeDay': '日',
+  'chat.trace.scopeWeek': '周',
+  'chat.trace.scopeMonth': '月',
+  'chat.trace.categoriesLabel': '类别：',
+  'chat.trace.recalled': '检索库中（{count} 条相关）',
+  'chat.trace.organize': '组织回答',
+  'chat.trace.organizeHint': '基于上述条目综合生成回答。',
+  'chat.loading.intent': '理解问题…',
+  'chat.loading.recall': '检索库中…',
+  'chat.loading.answer': '组织回答…',
+  'chat.emptyTitle': '问库里的内容',
+  'chat.emptyHint': '试试「我上个月关于跑步的想法」「桂花拿铁那条」「这周做了什么」',
+  'chat.clearConfirm': '清空当前会话？',
+  'chat.privacy': '问答仅本地检索，问题与片段将上送 LLM 作答 · AI 不会改动你的条目',
+  'chat.offlineHint': '离线中，连上网再问',
+  'chat.micDenied': '麦克风被拒，去系统设置开权限后重试',
+  'chat.placeholderListening': '正在听…',
+  'chat.placeholder': '问点什么…',
+  'chat.placeholderOffline': '离线中',
+
+  // ── login 屏 ──
+  'login.brandGlyph': '记',
+  'login.subtitle': '随手记，AI 帮你整理，数据留在本地',
+  'login.guestTitle': '游客注册',
+  'login.guestHint': '无需登录，数据存本地；后续可在设置里自配 Key 或升级网络账号',
+  'login.nicknamePlaceholder': '昵称（可空）',
+  'login.aria.nickname': '昵称',
+  'login.guestCta': '开始记',
+  'login.tabRegister': '注册',
+  'login.tabLogin': '登录',
+  'login.emailPlaceholder': '邮箱',
+  'login.aria.email': '邮箱',
+  'login.passwordPlaceholder': '密码（至少 8 位）',
+  'login.aria.password': '密码',
+  'login.confirmPasswordPlaceholder': '确认密码',
+  'login.aria.confirmPassword': '确认密码',
+  'login.errorEmail': '邮箱格式无效',
+  'login.errorPasswordShort': '密码至少 8 位',
+  'login.errorPasswordMismatch': '两次密码不一致',
+  'login.errorAuth409Hint': '该邮箱已注册，请直接登录',
+  'login.footerNote': '数据始终本地优先；账号只是身份与权益凭证',
+  'login.disclaimer': 'AiJi · AI 记 — 开源址 github.com/cq-dong/AiJi · 仅供学习交流 · AI 生成内容（分类/摘要/问答）可能不准确，重要决策请自行核实 · 使用本应用视为接受此声明',
+} as const
