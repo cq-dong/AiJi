@@ -6,6 +6,9 @@ import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
 import { Button, Card, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { useT } from '@/app/i18n/useT'
+import { t } from '@/app/i18n'
+import { getCurrentLang } from '@/app/currentLang'
 import { di } from '@/app/di'
 import { exportZip } from '@/adapters/zipExport'
 import { canShareFiles, saveBlob, type SaveResult } from '@/adapters/fileShare'
@@ -26,7 +29,7 @@ function SelectDropdown({
   value,
   options,
   onChange,
-  placeholder = '选择…',
+  placeholder = t('settings.selectPlaceholder'),
 }: {
   value: string
   options: { value: string; label: string }[]
@@ -142,9 +145,9 @@ const VLM_MODEL_PRESETS = [
 // STT 双模式：stream=DashScope WS paraformer；whisper=OpenAI 兼容 REST。
 const STT_MODES = ['stream', 'whisper'] as const
 type SttMode = (typeof STT_MODES)[number]
-const STT_MODE_LABELS: Record<SttMode, string> = {
-  stream: '流式 (DashScope WS)',
-  whisper: 'Whisper (REST)',
+// 标签/帮助文案随当前语言变 → 用函数（t() 读 currentLang），不用模块级常量（会在 import 时冻结）。
+function sttModeLabel(m: SttMode): string {
+  return m === 'stream' ? t('settings.sttModeStream') : t('settings.sttModeWhisper')
 }
 const STT_URL_PLACEHOLDERS: Record<SttMode, string> = {
   stream: 'wss://…/api-ws/v1/inference',
@@ -155,9 +158,8 @@ const STT_URL_DEFAULTS: Partial<Record<SttMode, string>> = {
   stream: BUILTIN_STT_URL_STREAM || 'wss://dashscope.aliyuncs.com/api-ws/v1/inference',
   whisper: BUILTIN_STT_URL_WHISPER || '',
 }
-const STT_URL_HELP: Record<SttMode, string> = {
-  stream: 'DashScope WS 公共端点（已默认填充，可改）',
-  whisper: 'OpenAI 兼容 REST base，如 Aliyun PI 的 /compatible-mode/v1',
+function sttUrlHelp(m: SttMode): string {
+  return m === 'stream' ? t('settings.sttUrlHelpStream') : t('settings.sttUrlHelpWhisper')
 }
 const STT_MODEL_PLACEHOLDERS: Record<SttMode, string> = {
   stream: BUILTIN_STT_MODEL_STREAM || 'paraformer-realtime-v2',
@@ -167,22 +169,30 @@ const STT_MODEL_DEFAULTS: Record<SttMode, string> = STT_MODEL_PLACEHOLDERS
 
 // 导出 Markdown：读 store 快照拼一份 Markdown，触发浏览器下载。
 // 只读现成字段（entries / aiByEntry / categories / tags），不调 di.storage。
+// 结构文案（标题/生成时间/类别/标签/摘要/无标题/无正文）随当前语言；条目正文/类别标签是用户数据，不翻译。
 function buildExportMarkdown(): string {
   const { entries, aiByEntry, categories, tags } = useUiStore.getState()
   const catLabel = (slug: string) => categories.find((c) => c.slug === slug)?.label ?? slug
-  const tagLabel = (slug: string) => tags.find((t) => t.slug === slug)?.label ?? slug
+  const tagLabel = (slug: string) => tags.find((tg) => tg.slug === slug)?.label ?? slug
+  const tagSep = getCurrentLang() === 'zh' ? '、' : ', '
+  const dateLocale = getCurrentLang() === 'zh' ? 'zh-CN' : 'en-US'
   const sorted = [...entries].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
   const lines: string[] = []
-  lines.push('# AiJi 导出')
+  lines.push(`# ${t('settings.exportShareTitle')}`)
   lines.push('')
-  lines.push(`> 生成时间：${new Date().toLocaleString('zh-CN')} · 共 ${entries.length} 条`)
+  lines.push(
+    t('settings.mdHeader', {
+      time: new Date().toLocaleString(dateLocale),
+      count: entries.length,
+    }),
+  )
   lines.push('')
   for (const e of sorted) {
     const ai = aiByEntry[e.id]
     const firstText = e.parts.find((p) => p.type === 'text')?.content
     const firstTranscript = e.parts.find((p) => p.type !== 'text')?.transcript
     const fallbackTitle = (firstText ?? firstTranscript ?? '').slice(0, 16)
-    const title = ai?.titleSuggestion || fallbackTitle || '（无标题）'
+    const title = ai?.titleSuggestion || fallbackTitle || t('settings.mdNoTitle')
     lines.push(`## ${title}`)
     lines.push('')
     lines.push(`_${e.createdAt}_`)
@@ -192,13 +202,14 @@ function buildExportMarkdown(): string {
       if (p.type === 'text') bodyLines.push(p.content)
       else if (p.transcript) bodyLines.push(p.transcript)
     }
-    lines.push(bodyLines.join('\n\n') || '（无正文）')
+    lines.push(bodyLines.join('\n\n') || t('settings.mdNoBody'))
     lines.push('')
     if (ai) {
       const bits: string[] = []
-      if (ai.category) bits.push(`类别：${catLabel(ai.category)}`)
-      if (ai.tags.length) bits.push(`标签：${ai.tags.map(tagLabel).join('、')}`)
-      if (ai.summary) bits.push(`摘要：${ai.summary}`)
+      if (ai.category) bits.push(`${t('settings.mdCategory')}${catLabel(ai.category)}`)
+      if (ai.tags.length)
+        bits.push(`${t('settings.mdTags')}${ai.tags.map(tagLabel).join(tagSep)}`)
+      if (ai.summary) bits.push(`${t('settings.mdSummary')}${ai.summary}`)
       if (bits.length) {
         lines.push(`> ${bits.join(' · ')}`)
         lines.push('')
@@ -228,12 +239,12 @@ async function handleShare(): Promise<void> {
   const md = buildExportMarkdown()
   try {
     if (typeof navigator.share === 'function') {
-      await navigator.share({ title: 'AiJi 导出', text: md })
+      await navigator.share({ title: t('settings.exportShareTitle'), text: md })
       return
     }
     if (typeof navigator.clipboard?.writeText === 'function') {
       await navigator.clipboard.writeText(md)
-      alert('已复制到剪贴板')
+      alert(t('settings.copiedToClipboard'))
     }
   } catch (err) {
     // 用户取消分享面板，静默处理。
@@ -243,27 +254,32 @@ async function handleShare(): Promise<void> {
 }
 
 // 提醒与待办已提升为独立 tab（/reminders），settings 不再持有入口或 sheet。
-const THEMES: { key: Theme; label: string }[] = [
-  { key: 'light', label: '亮色' },
-  { key: 'dark', label: '暗色' },
-  { key: 'system', label: '跟随系统' },
-]
+const THEMES: Theme[] = ['light', 'dark', 'system']
+function themeLabel(key: Theme): string {
+  return key === 'light'
+    ? t('settings.themeLight')
+    : key === 'dark'
+      ? t('settings.themeDark')
+      : t('settings.themeSystem')
+}
 
 // D10: 把 SaveResult 翻译成人类可读的反馈文案。method 决定主语态（分享/保存/下载），
 // path 仅 filesystem 方式有值（content/file URI）。失败时返回 error 原文。
 function formatSaveFeedback(result: SaveResult): string {
   if (!result.ok) {
-    return result.error ? `导出失败：${result.error}` : '导出失败'
+    return result.error
+      ? t('settings.exportFailedWith', { error: result.error })
+      : t('settings.exportFailed')
   }
-  if (result.method === 'share') return '已分享'
+  if (result.method === 'share') return t('settings.shared')
   if (result.method === 'filesystem') {
     const p = result.path ?? ''
     // file:// 长 URI 截尾显示目录段；空时退回通用文案。
     const tail = p ? p.replace(/^file:\/\//, '').replace(/^content:\/\//, '') : ''
-    return tail ? `已保存到 ${tail}` : '已保存到 文档/AiJi/'
+    return tail ? t('settings.savedTo', { path: tail }) : t('settings.savedToDefault')
   }
-  if (result.method === 'download') return '已下载到浏览器下载目录'
-  return '已导出'
+  if (result.method === 'download') return t('settings.downloadedToDir')
+  return t('settings.exported')
 }
 
 // 统计媒体数（用于确认对话框预估）。仅按 parts 类型粗判，不读 OPFS（避免预热大 blob）。
@@ -291,48 +307,49 @@ function ExportConfirmSheet({
   onClose: () => void
   onConfirm: () => void
 }) {
+  const t = useT()
   const isNative = Capacitor.isNativePlatform()
   const locationHint = canShareFiles()
-    ? '系统分享面板（可选保存到任意位置）'
+    ? t('settings.locShareSheet')
     : isNative
-      ? '文档/AiJi/（文件管理器可见）'
-      : '浏览器下载目录'
+      ? t('settings.locDocuments')
+      : t('settings.locDownloads')
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">导出确认</p>
-          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <p className="text-[17px] font-bold text-ink">{t('settings.exportConfirmTitle')}</p>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <X size={18} strokeWidth={2} />
           </button>
         </div>
 
         <div className="mt-3 space-y-2">
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">导出范围</span>
+            <span className="text-[13px] text-t2">{t('settings.exportScope')}</span>
             <span className="text-[13px] font-medium text-ink">{scopeLabel}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">条目数</span>
-            <span className="text-[13px] font-medium text-ink">{entryCount} 条</span>
+            <span className="text-[13px] text-t2">{t('settings.entryCount')}</span>
+            <span className="text-[13px] font-medium text-ink">{t('common.itemsCount', { count: entryCount })}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">媒体数</span>
-            <span className="text-[13px] font-medium text-ink">{mediaCount} 个</span>
+            <span className="text-[13px] text-t2">{t('settings.mediaCount')}</span>
+            <span className="text-[13px] font-medium text-ink">{t('settings.mediaCountValue', { count: mediaCount })}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">文件名</span>
+            <span className="text-[13px] text-t2">{t('settings.fileName')}</span>
             <span className="text-[12px] font-medium text-ink">{filename}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">保存位置</span>
+            <span className="text-[13px] text-t2">{t('settings.saveLocation')}</span>
             <span className="text-[12px] font-medium text-t2">{locationHint}</span>
           </div>
         </div>
 
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             variant="primary"
@@ -340,7 +357,7 @@ function ExportConfirmSheet({
             className="h-[38px] flex-1 rounded-btn"
             onClick={onConfirm}
           >
-            确认导出
+            {t('settings.confirmExport')}
           </Button>
         </div>
       </div>
@@ -405,9 +422,10 @@ function ChevronRow({
 // 使用反馈入口：跳 /feedback（裸路由，多建议 + 可选图片，提交建 GitHub Issue）。
 function FeedbackRow() {
   const navigate = useNavigate()
+  const t = useT()
   return (
     <ChevronRow
-      label="使用反馈"
+      label={t('settings.feedback')}
       icon={<MessageSquare size={15} strokeWidth={2.2} />}
       onClick={() => navigate('/feedback')}
     />
@@ -427,13 +445,14 @@ function ModelRow({
 }) {
   // Key 状态点：绿点=已配置 Key，灰点=未配置。settings.*KeyRef 是"Key 已存"的引用，
   // 真实值在 SecretStorePort；这里只反映 ref 是否存在，让用户一眼看到 Key 配置情况。
+  const t = useT()
   return (
     <button type="button" onClick={onClick} className="flex w-full items-center justify-between text-left transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
       <span className="text-[13px] font-medium text-ink">{label}</span>
       <span className="flex items-center gap-2">
         <span className="flex items-center gap-1">
           <span className={cn('h-1.5 w-1.5 rounded-full', hasKey ? 'bg-catProject' : 'bg-t3')} />
-          <span className="text-[11px] text-t3">{hasKey ? '已配置' : '未配置'}</span>
+          <span className="text-[11px] text-t3">{hasKey ? t('settings.keyConfigured') : t('settings.keyNotConfigured')}</span>
         </span>
         <span className="max-w-[120px] truncate text-[11px] text-t3">{value}</span>
         <ChevronRight size={18} className="text-t2" />
@@ -447,6 +466,7 @@ type PingResult = { ok: boolean; latencyMs?: number; error?: string }
 function ByokSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
   const setLlmConfig = useUiStore((s) => s.setLlmConfig)
+  const t = useT()
   const [url, setUrl] = useState(settings.llmUrl ?? '')
   const initialModel = settings.llmModel ?? ''
   const initialSelect = LLM_MODEL_PRESETS.some((p) => p === initialModel)
@@ -492,16 +512,16 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">文本 / 分类模型</p>
-          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <p className="text-[17px] font-bold text-ink">{t('settings.llmModelTitle')}</p>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <X size={18} strokeWidth={2} />
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-t3">BYOK · URL + 模型 + Key 本地存，不进源码</p>
+        <p className="mt-1 text-[11px] text-t3">{t('settings.byokHelpLlm')}</p>
 
         <div className="mt-3 space-y-3">
           <div>
-            <label className="text-[11px] text-t2">API URL（OpenAI 兼容 chat）</label>
+            <label className="text-[11px] text-t2">{t('settings.llmUrlLabel')}</label>
             <input
               className={inputCls}
               value={url}
@@ -510,35 +530,35 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <label className="text-[11px] text-t2">模型</label>
+            <label className="text-[11px] text-t2">{t('settings.modelLabel')}</label>
             <SelectDropdown
               value={modelSelect}
               options={[
                 ...LLM_MODEL_PRESETS.map((p) => ({ value: p, label: p })),
-                { value: CUSTOM_SENTINEL, label: '自定义…' },
+                { value: CUSTOM_SENTINEL, label: t('settings.customOption') },
               ]}
               onChange={(v) => setModelSelect(v)}
-              placeholder="选择模型"
+              placeholder={t('settings.selectModelPlaceholder')}
             />
             {modelSelect === CUSTOM_SENTINEL && (
               <input
                 className={cn(inputCls, 'mt-2')}
                 value={modelCustom}
                 onChange={(e) => setModelCustom(e.target.value)}
-                placeholder="模型名"
+                placeholder={t('settings.modelNamePlaceholder')}
               />
             )}
           </div>
           <div>
             <label className="text-[11px] text-t2">
-              API Key{hasKey ? '（已设置，留空不变）' : ''}
+              {t('settings.apiKeyLabel')}{hasKey ? t('settings.apiKeySetHint') : ''}
             </label>
             <input
               className={inputCls}
               type="password"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder={hasKey ? '••••••（留空保持不变）' : 'sk-…'}
+              placeholder={hasKey ? t('settings.apiKeyKeepPlaceholder') : 'sk-…'}
             />
           </div>
         </div>
@@ -556,7 +576,7 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
                 : 'border border-brd bg-card text-t2',
             )}
           >
-            {testing ? '测试中…' : '测试连通'}
+            {testing ? t('settings.testing') : t('settings.testConnection')}
           </button>
           {testResult && (
             <p
@@ -567,14 +587,14 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
             >
               {testResult.ok
                 ? `✓ +${testResult.latencyMs ?? '?'}ms`
-                : `✗ ${testResult.error ?? '未知错误'}`}
+                : `✗ ${testResult.error ?? t('settings.unknownError')}`}
             </p>
           )}
         </div>
 
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             variant="primary"
@@ -585,7 +605,7 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
               onClose()
             }}
           >
-            保存
+            {t('common.save')}
           </Button>
         </div>
       </div>
@@ -597,6 +617,7 @@ function SttSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
   const setSettings = useUiStore((s) => s.setSettings)
   const setSttConfig = useUiStore((s) => s.setSttConfig)
+  const t = useT()
   const mode = settings.sttMode
   const [url, setUrl] = useState(settings.sttUrl ?? STT_URL_DEFAULTS[mode] ?? '')
   const [model, setModel] = useState(settings.sttModel ?? '')
@@ -607,17 +628,17 @@ function SttSheet({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">音频转写模型</p>
-          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <p className="text-[17px] font-bold text-ink">{t('settings.sttModelTitle')}</p>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <X size={18} strokeWidth={2} />
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-t3">BYOK · DashScope paraformer（WS 流式）或 OpenAI 兼容 REST · Key 本地存</p>
+        <p className="mt-1 text-[11px] text-t3">{t('settings.byokHelpStt')}</p>
 
         <div className="mt-3 space-y-3">
           {/* 模式切换：stream / whisper。立即落 settings.sttMode。 */}
           <div>
-            <label className="text-[11px] text-t2">转写模式</label>
+            <label className="text-[11px] text-t2">{t('settings.sttModeLabel')}</label>
             <div className="mt-2 flex gap-2">
               {STT_MODES.map((m) => {
                 const active = m === mode
@@ -631,7 +652,7 @@ function SttSheet({ onClose }: { onClose: () => void }) {
                       active ? 'bg-pri text-white' : 'border border-brd bg-card text-t2',
                     )}
                   >
-                    {STT_MODE_LABELS[m]}
+                    {sttModeLabel(m)}
                   </button>
                 )
               })}
@@ -640,18 +661,18 @@ function SttSheet({ onClose }: { onClose: () => void }) {
 
           {/* URL：单字段，含义随 mode 变。 */}
           <div>
-            <label className="text-[11px] text-t2">端点 URL</label>
+            <label className="text-[11px] text-t2">{t('settings.endpointUrlLabel')}</label>
             <input
               className={inputCls}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder={STT_URL_PLACEHOLDERS[mode]}
             />
-            <p className="mt-1 text-[11px] text-t3">{STT_URL_HELP[mode]}</p>
+            <p className="mt-1 text-[11px] text-t3">{sttUrlHelp(mode)}</p>
           </div>
 
           <div>
-            <label className="text-[11px] text-t2">模型</label>
+            <label className="text-[11px] text-t2">{t('settings.modelLabel')}</label>
             <input
               className={inputCls}
               value={model}
@@ -661,21 +682,21 @@ function SttSheet({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <label className="text-[11px] text-t2">
-              API Key{hasKey ? '（已设置，留空不变）' : ''}
+              {t('settings.apiKeyLabel')}{hasKey ? t('settings.apiKeySetHint') : ''}
             </label>
             <input
               className={inputCls}
               type="password"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder={hasKey ? '••••••（留空保持不变）' : 'sk-…'}
+              placeholder={hasKey ? t('settings.apiKeyKeepPlaceholder') : 'sk-…'}
             />
           </div>
         </div>
 
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             variant="primary"
@@ -687,7 +708,7 @@ function SttSheet({ onClose }: { onClose: () => void }) {
               onClose()
             }}
           >
-            保存
+            {t('common.save')}
           </Button>
         </div>
       </div>
@@ -700,6 +721,7 @@ function SttSheet({ onClose }: { onClose: () => void }) {
 function GeocodingSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
   const setGeocodingConfig = useUiStore((s) => s.setGeocodingConfig)
+  const t = useT()
   const [key, setKey] = useState('')
   const hasKey = settings.geocodingKeyRef === 'geocoding:key'
 
@@ -707,32 +729,32 @@ function GeocodingSheet({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">地点编码</p>
-          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <p className="text-[17px] font-bold text-ink">{t('settings.geocodingTitle')}</p>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <X size={18} strokeWidth={2} />
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-t3">登录网络账号后由服务端内置 Key 反查 · 自配 Key 优先 · 未配回落 OSM（常超时）</p>
+        <p className="mt-1 text-[11px] text-t3">{t('settings.geocodingHelp')}</p>
 
         <div className="mt-3 space-y-3">
           <div>
             <label className="text-[11px] text-t2">
-              高德 Key{hasKey ? '（已设置，留空不变）' : ''}
+              {t('settings.geocodingKeyLabel')}{hasKey ? t('settings.apiKeySetHint') : ''}
             </label>
             <input
               className={inputCls}
               type="password"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder={hasKey ? '••••••（留空保持不变）' : '在高德开放平台申请的 Web 服务 Key'}
+              placeholder={hasKey ? t('settings.apiKeyKeepPlaceholder') : t('settings.geocodingKeyPlaceholder')}
             />
-            <p className="mt-1 text-[11px] text-t3">控制台 → 应用管理 → 创建「Web 服务」类型 Key。</p>
+            <p className="mt-1 text-[11px] text-t3">{t('settings.geocodingKeyHelp')}</p>
           </div>
         </div>
 
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             variant="primary"
@@ -743,7 +765,7 @@ function GeocodingSheet({ onClose }: { onClose: () => void }) {
               onClose()
             }}
           >
-            保存
+            {t('common.save')}
           </Button>
         </div>
       </div>
@@ -759,6 +781,7 @@ function MemorySheet({ onClose }: { onClose: () => void }) {
   const saveMemory = useUiStore((s) => s.saveMemory)
   const deleteMemory = useUiStore((s) => s.deleteMemory)
   const toggleMemory = useUiStore((s) => s.toggleMemory)
+  const t = useT()
   const [draft, setDraft] = useState('')
   const [adding, setAdding] = useState(false)
 
@@ -778,17 +801,17 @@ function MemorySheet({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">AI 记忆</p>
-          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <p className="text-[17px] font-bold text-ink">{t('settings.memoryTitle')}</p>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <X size={18} strokeWidth={2} />
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-t3">记一条偏好或事实，AI 分类与问答会参考。如「和老婆的对话都归到家庭类」「我对花生过敏」</p>
+        <p className="mt-1 text-[11px] text-t3">{t('settings.memoryHelp')}</p>
 
         <div className="mt-3 max-h-[320px] space-y-2 overflow-y-auto">
           {memories.length === 0 && (
             <div className="rounded-card border border-brd/80 bg-card px-3 py-4 text-center text-[12px] text-t3">
-              还没有记忆。在下方记一条吧。
+              {t('settings.memoryEmpty')}
             </div>
           )}
           {memories.map((m) => (
@@ -800,7 +823,7 @@ function MemorySheet({ onClose }: { onClose: () => void }) {
                 <Toggle checked={m.enabled} onChange={() => void toggleMemory(m.id)} />
                 <button
                   type="button"
-                  aria-label="删除"
+                  aria-label={t('common.delete')}
                   onClick={() => void deleteMemory(m.id)}
                   className="flex size-7 items-center justify-center rounded-btn text-t3 transition duration-base ease-out cursor-pointer hover:text-catFail active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 >
@@ -812,13 +835,13 @@ function MemorySheet({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="mt-3">
-          <label className="text-[11px] text-t2">记一条</label>
+          <label className="text-[11px] text-t2">{t('settings.memoryAddLabel')}</label>
           <div className="mt-1 flex gap-2">
             <input
               className={inputCls}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="如「和老婆的对话都归到家庭类」"
+              placeholder={t('settings.memoryPlaceholder')}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !adding) void handleAdd()
               }}
@@ -837,7 +860,7 @@ function MemorySheet({ onClose }: { onClose: () => void }) {
 
         <div className="mt-4">
           <Button variant="secondary" size="sm" className="h-[38px] w-full rounded-btn" onClick={onClose}>
-            完成
+            {t('common.done')}
           </Button>
         </div>
       </div>
@@ -850,6 +873,7 @@ function MemorySheet({ onClose }: { onClose: () => void }) {
 function VlmSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
   const setVlmConfig = useUiStore((s) => s.setVlmConfig)
+  const t = useT()
   const [url, setUrl] = useState(settings.vlmUrl ?? BUILTIN_VLM_URL ?? '')
   const initialModel = settings.vlmModel ?? BUILTIN_VLM_MODEL ?? ''
   const initialSelect = VLM_MODEL_PRESETS.some((p) => p === initialModel)
@@ -892,54 +916,54 @@ function VlmSheet({ onClose }: { onClose: () => void }) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">视觉分类 VLM</p>
-          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <p className="text-[17px] font-bold text-ink">{t('settings.vlmModelTitle')}</p>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <X size={18} strokeWidth={2} />
           </button>
         </div>
-        <p className="mt-1 text-[11px] text-t3">BYOK · 含图条目的多模态分类端点 · 未配则回落主 LLM</p>
+        <p className="mt-1 text-[11px] text-t3">{t('settings.byokHelpVlm')}</p>
 
         <div className="mt-3 space-y-3">
           <div>
-            <label className="text-[11px] text-t2">API URL（完整 chat completions）</label>
+            <label className="text-[11px] text-t2">{t('settings.vlmUrlLabel')}</label>
             <input
               className={inputCls}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://…/v1/chat/completions"
             />
-            <p className="mt-1 text-[11px] text-t3">完整 chat completions URL（适配器不补 /chat/completions）。Aliyun PI 例：…/compatible-mode/v1/chat/completions</p>
+            <p className="mt-1 text-[11px] text-t3">{t('settings.vlmUrlHelp')}</p>
           </div>
           <div>
-            <label className="text-[11px] text-t2">模型</label>
+            <label className="text-[11px] text-t2">{t('settings.modelLabel')}</label>
             <SelectDropdown
               value={modelSelect}
               options={[
                 ...VLM_MODEL_PRESETS.map((p) => ({ value: p, label: p })),
-                { value: CUSTOM_SENTINEL, label: '自定义…' },
+                { value: CUSTOM_SENTINEL, label: t('settings.customOption') },
               ]}
               onChange={(v) => setModelSelect(v)}
-              placeholder="选择模型"
+              placeholder={t('settings.selectModelPlaceholder')}
             />
             {modelSelect === CUSTOM_SENTINEL && (
               <input
                 className={cn(inputCls, 'mt-2')}
                 value={modelCustom}
                 onChange={(e) => setModelCustom(e.target.value)}
-                placeholder="模型名"
+                placeholder={t('settings.modelNamePlaceholder')}
               />
             )}
           </div>
           <div>
             <label className="text-[11px] text-t2">
-              API Key{hasKey ? '（已设置，留空不变）' : ''}
+              {t('settings.apiKeyLabel')}{hasKey ? t('settings.apiKeySetHint') : ''}
             </label>
             <input
               className={inputCls}
               type="password"
               value={key}
               onChange={(e) => setKey(e.target.value)}
-              placeholder={hasKey ? '••••••（留空保持不变）' : 'sk-…'}
+              placeholder={hasKey ? t('settings.apiKeyKeepPlaceholder') : 'sk-…'}
             />
           </div>
         </div>
@@ -957,7 +981,7 @@ function VlmSheet({ onClose }: { onClose: () => void }) {
                 : 'border border-brd bg-card text-t2',
             )}
           >
-            {testing ? '测试中…' : '测试连通'}
+            {testing ? t('settings.testing') : t('settings.testConnection')}
           </button>
           {testResult && (
             <p
@@ -968,14 +992,14 @@ function VlmSheet({ onClose }: { onClose: () => void }) {
             >
               {testResult.ok
                 ? `✓ +${testResult.latencyMs ?? '?'}ms`
-                : `✗ ${testResult.error ?? '未知错误'}`}
+                : `✗ ${testResult.error ?? t('settings.unknownError')}`}
             </p>
           )}
         </div>
 
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             variant="primary"
@@ -986,7 +1010,7 @@ function VlmSheet({ onClose }: { onClose: () => void }) {
               onClose()
             }}
           >
-            保存
+            {t('common.save')}
           </Button>
         </div>
       </div>
@@ -1005,6 +1029,7 @@ type CheckState =
 
 function AboutSheet({ onClose }: { onClose: () => void }) {
   const isNative = Capacitor.isNativePlatform()
+  const t = useT()
   const [state, setState] = useState<CheckState>({ status: 'idle' })
   const [installing, setInstalling] = useState(false)
   const [installErr, setInstallErr] = useState<string | null>(null)
@@ -1048,34 +1073,34 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
   const percentClamped = hasProgress ? Math.max(0, Math.min(100, progress!.percent)) : 0
 
   const info = state.status === 'ok' ? state.info : null
-  const latestLabel = info ? (info.latest === '—' ? '尚未发布' : `v${info.latest}`) : '—'
+  const latestLabel = info ? (info.latest === '—' ? t('settings.notReleased') : `v${info.latest}`) : '—'
   const hasUpdate = info?.hasUpdate ?? false
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">关于 AiJi</p>
-          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <p className="text-[17px] font-bold text-ink">{t('settings.aboutTitle')}</p>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <X size={18} strokeWidth={2} />
           </button>
         </div>
 
         <div className="mt-3 space-y-2">
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">当前版本</span>
+            <span className="text-[13px] text-t2">{t('settings.currentVersion')}</span>
             <span className="text-[13px] font-medium text-ink">v{__APP_VERSION__}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">最新版本</span>
+            <span className="text-[13px] text-t2">{t('settings.latestVersion')}</span>
             <span className={cn('text-[13px] font-medium', hasUpdate ? 'text-catFail' : 'text-ink')}>
               {latestLabel}
-              {hasUpdate && ' · 有更新'}
+              {hasUpdate && ` · ${t('settings.hasUpdate')}`}
             </span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">运行环境</span>
-            <span className="text-[13px] text-t3">{isNative ? 'Android 原生壳' : 'PWA（浏览器）'}</span>
+            <span className="text-[13px] text-t2">{t('settings.runtimeEnv')}</span>
+            <span className="text-[13px] text-t3">{isNative ? t('settings.envNative') : t('settings.envPwa')}</span>
           </div>
         </div>
 
@@ -1091,7 +1116,7 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
                 : 'border border-brd bg-card text-t2',
             )}
           >
-            {state.status === 'checking' ? '检查中…' : '检查更新'}
+            {state.status === 'checking' ? t('settings.checking') : t('settings.checkUpdate')}
           </button>
         </div>
 
@@ -1100,7 +1125,7 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
         )}
         {info && info.releaseNotes && (
           <div className="mt-3 max-h-[160px] overflow-y-auto rounded-card border border-brd bg-card p-3">
-            <p className="mb-1 text-[11px] text-t3">更新日志</p>
+            <p className="mb-1 text-[11px] text-t3">{t('settings.releaseNotes')}</p>
             <div className="prose prose-sm max-w-none text-[12px] leading-relaxed text-t2">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {info.releaseNotes}
@@ -1120,12 +1145,12 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
             >
               <Download size={14} strokeWidth={2} />
               {downloaded
-                ? '下载完成，等待安装…'
+                ? t('settings.downloadDoneWaiting')
                 : installing
-                  ? '下载中…'
+                  ? t('settings.downloading')
                   : isNative
-                    ? '下载并安装更新'
-                    : '前往 GitHub 下载'}
+                    ? t('settings.downloadAndInstall')
+                    : t('settings.gotoGithubDownload')}
             </Button>
 
             {/* 下载进度条：仅 Android 原生 + 正在下载时显示。
@@ -1136,7 +1161,10 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
                   <>
                     <div className="mb-1.5 flex items-center justify-between text-[11px] text-t2">
                       <span>
-                        已下载 {formatMB(progress!.received)} / {formatMB(progress!.total)} MB
+                        {t('settings.downloadedMb', {
+                          received: formatMB(progress!.received),
+                          total: formatMB(progress!.total),
+                        })}
                       </span>
                       <span className="font-medium text-pri">{progress!.percent}%</span>
                     </div>
@@ -1150,7 +1178,7 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
                 ) : (
                   <div className="flex items-center gap-2 text-[11px] text-t2">
                     <span className="inline-block size-2 animate-pulse rounded-full bg-pri" />
-                    <span>下载中… 已下载 {formatMB(progress!.received)} MB</span>
+                    <span>{t('settings.downloadingMb', { received: formatMB(progress!.received) })}</span>
                   </div>
                 )}
               </div>
@@ -1161,7 +1189,7 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
             )}
             {isNative && (
               <p className="mt-2 text-[11px] text-t3">
-                下载完成后系统会弹出安装提示，请允许「安装未知应用」。
+                {t('settings.installHint')}
               </p>
             )}
           </div>
@@ -1179,19 +1207,20 @@ function VisionSection({
   setSettings: (patch: Partial<SettingsType>) => void
 }) {
   const [frameInput, setFrameInput] = useState(String(settings.videoFrameIntervalSec))
+  const t = useT()
   // hydrate 后 settings.videoFrameIntervalSec 才是真实值（mount 时还是 seed 默认）。
   // 同步防显错（10 vs 60）+ 防 onBlur 用 stale 值静默回退已存值。
   useEffect(() => setFrameInput(String(settings.videoFrameIntervalSec)), [settings.videoFrameIntervalSec])
   return (
     <Card className="mt-3">
-      <p className="text-[14px] font-bold text-ink">视觉</p>
-      <p className="mt-1 text-[11px] text-t3">视频/图片理解与抽帧间隔</p>
+      <p className="text-[14px] font-bold text-ink">{t('settings.visionTitle')}</p>
+      <p className="mt-1 text-[11px] text-t3">{t('settings.visionHelp')}</p>
 
       <div className="mt-3 flex items-center justify-between">
         <div className="pr-3">
-          <p className="text-[13px] font-medium text-ink">视觉理解（classify 附图/视频帧）</p>
+          <p className="text-[13px] font-medium text-ink">{t('settings.visionUnderstanding')}</p>
           <p className="mt-0.5 text-[11px] text-t3">
-            关闭后 classify 仅用文本；model 不支持图像时自动降级纯文本。
+            {t('settings.visionHelpDetail')}
           </p>
         </div>
         <Toggle
@@ -1201,7 +1230,7 @@ function VisionSection({
       </div>
 
       <div className={cn('mt-3', !settings.videoVisionEnabled && 'opacity-40')}>
-        <label className="text-[11px] text-t2">视频抽帧间隔（秒）</label>
+        <label className="text-[11px] text-t2">{t('settings.videoFrameIntervalLabel')}</label>
         <input
           type="number"
           min={1}
@@ -1221,9 +1250,56 @@ function VisionSection({
   )
 }
 
+// 语言切换 sheet（仿 MemorySheet 的底部弹层 + KeySourceSheet 的二选一行）。
+// 点击 → setSettings({ language })，store 内同步 setCurrentLang，所有 useT 订阅者即时重渲。
+function LanguageSheet({ onClose }: { onClose: () => void }) {
+  const setSettings = useUiStore((s) => s.setSettings)
+  const lang = useUiStore((s) => s.settings.language) ?? 'zh'
+  const t = useT()
+  const options: { value: 'zh' | 'en'; label: string }[] = [
+    { value: 'zh', label: t('settings.language.zh') },
+    { value: 'en', label: t('settings.language.en') },
+  ]
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
+      <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <p className="text-[17px] font-bold text-ink">{t('settings.language')}</p>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+            <X size={18} strokeWidth={2} />
+          </button>
+        </div>
+        <div className="mt-3 space-y-2">
+          {options.map((o) => {
+            const active = o.value === lang
+            return (
+              <button
+                key={o.value}
+                type="button"
+                onClick={() => {
+                  setSettings({ language: o.value })
+                  onClose()
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-btn border px-4 py-3 text-left text-[13px] transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                  active ? 'border-pri bg-priS text-pri' : 'border-brd bg-card text-ink',
+                )}
+              >
+                <span>{o.label}</span>
+                {active && <Check size={16} strokeWidth={2} className="text-pri" />}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Settings() {
   const settings = useUiStore((s) => s.settings)
   const setSettings = useUiStore((s) => s.setSettings)
+  const t = useT()
   const theme = settings.theme
   const recordLocation = settings.recordLocation
   const entries = useUiStore((s) => s.entries)
@@ -1236,6 +1312,7 @@ export default function Settings() {
   const [editingAbout, setEditingAbout] = useState(false)
   const [editingGeo, setEditingGeo] = useState(false)
   const [editingMemory, setEditingMemory] = useState(false)
+  const [editingLanguage, setEditingLanguage] = useState(false)
   // D9: 导入示例数据状态。导入后 rehydrate 刷新 store；错误显红字提示。
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState<string | null>(null)
@@ -1258,12 +1335,12 @@ export default function Settings() {
     try {
       const result = await exportZip()
       // 用户取消（method=none, ok=false, error='已取消'）——静默，不弹 toast。
-      if (!result.ok && result.method === 'none' && result.error === '已取消') {
+      if (!result.ok && result.method === 'none' && result.error === 'CANCELLED') {
         return
       }
       setZipToast({ msg: formatSaveFeedback(result), ok: result.ok })
     } catch (e) {
-      setZipToast({ msg: `导出失败：${e instanceof Error ? e.message : String(e)}`, ok: false })
+      setZipToast({ msg: t('settings.exportFailedWith', { error: e instanceof Error ? e.message : String(e) }), ok: false })
     } finally {
       setZipExporting(false)
     }
@@ -1274,12 +1351,12 @@ export default function Settings() {
     setMdExporting(true)
     try {
       const result = await downloadMarkdown(buildExportMarkdown())
-      if (!result.ok && result.method === 'none' && result.error === '已取消') {
+      if (!result.ok && result.method === 'none' && result.error === 'CANCELLED') {
         return
       }
       setMdToast({ msg: formatSaveFeedback(result), ok: result.ok })
     } catch (e) {
-      setMdToast({ msg: `导出失败：${e instanceof Error ? e.message : String(e)}`, ok: false })
+      setMdToast({ msg: t('settings.exportFailedWith', { error: e instanceof Error ? e.message : String(e) }), ok: false })
     } finally {
       setMdExporting(false)
     }
@@ -1292,10 +1369,10 @@ export default function Settings() {
       await importSampleData()
       await useUiStore.getState().rehydrate()
       setImportOk(true)
-      setImportMsg('已导入示例数据')
+      setImportMsg(t('settings.sampleImported'))
     } catch (e) {
       setImportOk(false)
-      setImportMsg(e instanceof Error ? e.message : '导入失败')
+      setImportMsg(e instanceof Error ? e.message : t('settings.importFailed'))
     } finally {
       setImporting(false)
     }
@@ -1303,23 +1380,23 @@ export default function Settings() {
 
   return (
     <div className="px-4 pb-4 pt-4">
-      <h1 className="text-[24px] font-bold text-ink">个人中心</h1>
+      <h1 className="text-[24px] font-bold text-ink">{t('settings.title')}</h1>
 
       {/* 账号 */}
       <AccountSection />
 
       {/* 外观 */}
       <Card className="mt-4">
-        <p className="text-[14px] font-bold text-ink">外观</p>
-        <p className="mt-1 text-[11px] text-t3">主题（亮/暗切换）</p>
+        <p className="text-[14px] font-bold text-ink">{t('settings.appearance')}</p>
+        <p className="mt-1 text-[11px] text-t3">{t('settings.themeHelp')}</p>
         <div className="mt-3 grid grid-cols-3 gap-1 rounded-[14px] border border-brd/60 bg-page p-1 shadow-inner">
-          {THEMES.map((t) => {
-            const active = t.key === theme
+          {THEMES.map((th) => {
+            const active = th === theme
             return (
               <button
-                key={t.key}
+                key={th}
                 type="button"
-                onClick={() => setSettings({ theme: t.key })}
+                onClick={() => setSettings({ theme: th })}
                 className={cn(
                   'h-10 cursor-pointer rounded-[10px] text-[12px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
                   active
@@ -1327,12 +1404,21 @@ export default function Settings() {
                     : 'font-medium text-t3 hover:text-t2 active:scale-95',
                 )}
               >
-                {t.label}
+                {themeLabel(th)}
               </button>
             )
           })}
         </div>
       </Card>
+
+      {/* 语言 */}
+      <div className="mt-3">
+        <ChevronRow
+          label={t('settings.language')}
+          value={settings.language === 'en' ? t('settings.language.en') : t('settings.language.zh')}
+          onClick={() => setEditingLanguage(true)}
+        />
+      </div>
 
       {/* 记录地点 */}
       <div className="mt-3 flex items-center justify-between rounded-card border border-brd/80 bg-card p-4 shadow-card">
@@ -1341,9 +1427,9 @@ export default function Settings() {
             <MapPin size={15} strokeWidth={2.2} />
           </span>
           <div>
-            <p className="text-[14px] font-medium text-ink">记录地点</p>
+            <p className="text-[14px] font-medium text-ink">{t('settings.recordLocation')}</p>
             <p className="mt-0.5 text-[11px] text-t3">
-              默认关闭，开启后给条目加位置
+              {t('settings.recordLocationHelp')}
             </p>
           </div>
         </div>
@@ -1353,42 +1439,42 @@ export default function Settings() {
           用户自配 Key 优先。 */}
       <div className="mt-2">
         <ChevronRow
-          label="地点编码 Key"
-          value={settings.geocodingKeyRef ? '高德 · 已配置' : '内置（随账号）'}
+          label={t('settings.geocodingKey')}
+          value={settings.geocodingKeyRef ? t('settings.geocodingValueConfigured') : t('settings.geocodingValueBuiltin')}
           onClick={() => setEditingGeo(true)}
         />
       </div>
 
       {/* AI 模型 */}
       <Card className="mt-3">
-        <p className="text-[14px] font-bold text-ink">AI 模型</p>
+        <p className="text-[14px] font-bold text-ink">{t('settings.aiModels')}</p>
         <p className="mt-1 text-[11px] text-t3">
-          BYOK · 各模型独立配置 URL + Key
+          {t('settings.aiModelsHelp')}
         </p>
         <div className="mt-3">
           <ModelRow
-            label="文本 / 分类模型"
+            label={t('settings.llmModelTitle')}
             value={settings.llmModel || settings.llmProvider}
             hasKey={settings.apiKeyRef === 'llm:key'}
             onClick={() => setEditing(true)}
           />
           <div className="my-3 h-px bg-brd" />
           <ModelRow
-            label="音频转写模型"
+            label={t('settings.sttModelTitle')}
             value={settings.sttModel || settings.sttProvider}
             hasKey={settings.sttKeyRef === 'stt:key'}
             onClick={() => setEditingStt(true)}
           />
           <div className="my-3 h-px bg-brd" />
           <ModelRow
-            label="视觉分类 VLM"
+            label={t('settings.vlmModelTitle')}
             value={settings.vlmModel || settings.vlmProvider}
             hasKey={settings.vlmKeyRef === 'vlm:key'}
             onClick={() => setEditingVlm(true)}
           />
         </div>
         <p className="mt-3 text-[11px] text-t3">
-          未配置时，含图条目回落主 LLM 分类（主 LLM 不支持图像则自动降级纯文本）。
+          {t('settings.vlmFallbackHelp')}
         </p>
       </Card>
 
@@ -1398,8 +1484,8 @@ export default function Settings() {
       {/* AI 记忆（2026-07-22）：用户明确记忆/偏好，classify 与 answerChat 注入 prompt */}
       <div className="mt-3">
         <ChevronRow
-          label="AI 记忆"
-          value={enabledMemoryCount > 0 ? `${enabledMemoryCount} 条生效` : '未设置'}
+          label={t('settings.memoryTitle')}
+          value={enabledMemoryCount > 0 ? t('settings.memoryActiveCount', { count: enabledMemoryCount }) : t('settings.memoryNotSet')}
           icon={<Brain size={15} strokeWidth={2.2} />}
           onClick={() => setEditingMemory(true)}
         />
@@ -1407,9 +1493,9 @@ export default function Settings() {
 
       {/* 导出与分享 */}
       <Card className="mt-3">
-        <p className="text-[14px] font-bold text-ink">导出与分享</p>
+        <p className="text-[14px] font-bold text-ink">{t('settings.exportShare')}</p>
         {!hasEntries && (
-          <p className="mt-2 text-[11px] text-t3">暂无条目可导出</p>
+          <p className="mt-2 text-[11px] text-t3">{t('settings.noEntriesToExport')}</p>
         )}
         <div className="mt-3 flex gap-2">
           <Button
@@ -1419,7 +1505,7 @@ export default function Settings() {
             disabled={!hasEntries || mdExporting}
             onClick={() => void handleMarkdownExport()}
           >
-            {mdExporting ? '导出中…' : '导出 Markdown'}
+            {mdExporting ? t('settings.exporting') : t('settings.exportMarkdown')}
           </Button>
           <Button
             variant="secondary"
@@ -1428,10 +1514,10 @@ export default function Settings() {
             disabled={!hasEntries || zipExporting}
             onClick={() => setZipConfirm(true)}
           >
-            {zipExporting ? '导出中…' : '导出 .zip'}
+            {zipExporting ? t('settings.exporting') : t('settings.exportZip')}
           </Button>
         </div>
-        <p className="mt-3 text-[11px] text-t3">分享</p>
+        <p className="mt-3 text-[11px] text-t3">{t('common.share')}</p>
         <div className="mt-2">
           <Button
             size="sm"
@@ -1439,14 +1525,14 @@ export default function Settings() {
             disabled={!hasEntries || !canShare}
             onClick={() => void handleShare()}
           >
-            分享
+            {t('common.share')}
           </Button>
         </div>
 
         {/* D9: 示例数据导入——空库时可主动导入 12 条原型记录了解 App。 */}
         <div className="mt-4 border-t border-brd pt-3">
-          <p className="text-[11px] text-t3">示例数据</p>
-          <p className="mt-0.5 text-[11px] text-t3">导入 12 条原型记录了解 App 功能</p>
+          <p className="text-[11px] text-t3">{t('settings.sampleData')}</p>
+          <p className="mt-0.5 text-[11px] text-t3">{t('settings.sampleDataHelp')}</p>
           <Button
             variant="secondary"
             size="sm"
@@ -1454,7 +1540,7 @@ export default function Settings() {
             disabled={importing}
             onClick={() => void handleImportSample()}
           >
-            {importing ? '导入中…' : '导入示例数据'}
+            {importing ? t('settings.importing') : t('settings.importSample')}
           </Button>
           {importMsg && (
             <p className={cn('mt-2 text-[11px]', importOk ? 'text-catProject' : 'text-catFail')}>
@@ -1472,7 +1558,7 @@ export default function Settings() {
       {/* 关于 */}
       <div className="mt-3">
         <ChevronRow
-          label="关于 AiJi"
+          label={t('settings.aboutTitle')}
           value={`v${__APP_VERSION__}`}
           icon={<Info size={15} strokeWidth={2.2} />}
           onClick={() => setEditingAbout(true)}
@@ -1485,9 +1571,10 @@ export default function Settings() {
       {editingAbout && <AboutSheet onClose={() => setEditingAbout(false)} />}
       {editingGeo && <GeocodingSheet onClose={() => setEditingGeo(false)} />}
       {editingMemory && <MemorySheet onClose={() => setEditingMemory(false)} />}
+      {editingLanguage && <LanguageSheet onClose={() => setEditingLanguage(false)} />}
       {zipConfirm && (
         <ExportConfirmSheet
-          scopeLabel="全部条目"
+          scopeLabel={t('settings.scopeAll')}
           filename="aiji-export.zip"
           entryCount={entries.length}
           mediaCount={zipMediaCount}

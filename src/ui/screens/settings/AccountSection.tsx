@@ -5,6 +5,8 @@ import { Button, Card, Sheet, cn } from '@/ui/components'
 import { useAccountStore } from '@/app/accountStore'
 import { useUiStore } from '@/app/store'
 import { useQuotaStore } from '@/app/quotaStore'
+import { useT } from '@/app/i18n/useT'
+import { localizeError } from '@/app/i18n/errorText'
 import { PlansSheet } from './PlansSheet'
 import { QuotaSheet } from './QuotaSheet'
 
@@ -59,13 +61,14 @@ function KeySourceSheet({
   current: 'byok' | 'builtin'
 }) {
   const setKeySource = useUiStore((s) => s.setKeySource)
+  const t = useT()
   if (!open) return null
   const options: { value: 'byok' | 'builtin'; label: string }[] = [
-    { value: 'builtin', label: '内置 Key（免费额度）' },
-    { value: 'byok', label: '自己的 Key' },
+    { value: 'builtin', label: t('settings.keySourceBuiltin') },
+    { value: 'byok', label: t('settings.keySourceByok') },
   ]
   return (
-    <Sheet title="Key 来源" onClose={onClose}>
+    <Sheet title={t('settings.keySource')} onClose={onClose}>
       <div className="space-y-2 py-2">
         {options.map((o) => {
           const active = o.value === current
@@ -106,6 +109,7 @@ function NicknameSheet({
   initial: string
   onClose: () => void
 }) {
+  const t = useT()
   const [value, setValue] = useState(initial)
   return (
     <div
@@ -117,11 +121,11 @@ function NicknameSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">修改昵称</p>
+          <p className="text-[17px] font-bold text-ink">{t('settings.editNickname')}</p>
           <button
             type="button"
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={t('common.close')}
             className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
           >
             <X size={18} strokeWidth={2} />
@@ -132,8 +136,8 @@ function NicknameSheet({
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="昵称"
-          aria-label="昵称"
+          placeholder={t('settings.nicknamePlaceholder')}
+          aria-label={t('settings.nicknamePlaceholder')}
           className="mt-3 h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         />
         <div className="mt-4 flex gap-2">
@@ -143,7 +147,7 @@ function NicknameSheet({
             className="h-[38px] flex-1 rounded-btn"
             onClick={onClose}
           >
-            取消
+            {t('common.cancel')}
           </Button>
           <Button
             variant="primary"
@@ -154,7 +158,7 @@ function NicknameSheet({
               onClose()
             }}
           >
-            保存
+            {t('common.save')}
           </Button>
         </div>
       </div>
@@ -163,7 +167,7 @@ function NicknameSheet({
 }
 
 // 游客升级为网络账号：绑邮箱+密码，account.id 不变（单池）。
-// bindNetwork 抛 'AUTH_<CODE>:<中文>'；AUTH_409 = 邮箱已注册。成功后 onClose + toast。
+// bindNetwork 抛 'AUTH_<CODE>:<中文>'；成功后 onClose + toast。
 // Sheet 原语无 open prop，调用方条件渲染 → 内部 `if (!open) return null`（hooks 前置）。
 function BindNetworkSheet({
   open,
@@ -175,6 +179,7 @@ function BindNetworkSheet({
   onSuccess: () => void
 }) {
   const bindNetwork = useAccountStore((s) => s.bindNetwork)
+  const t = useT()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -186,15 +191,15 @@ function BindNetworkSheet({
   async function onSubmit() {
     setError(null)
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setError('邮箱格式无效')
+      setError(t('settings.errEmailInvalid'))
       return
     }
     if (password.length < 8) {
-      setError('密码至少 8 位')
+      setError(t('settings.errPasswordShort'))
       return
     }
     if (password !== confirm) {
-      setError('两次密码不一致')
+      setError(t('settings.errPasswordMismatch'))
       return
     }
     setBusy(true)
@@ -202,38 +207,38 @@ function BindNetworkSheet({
       await bindNetwork(email, password)
       onSuccess()
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      setError(msg.startsWith('AUTH_409') ? '该邮箱已注册' : msg.replace(/^AUTH_\d+:/, ''))
+      // AUTH_409/401/400/429 等错误码经 localizeError 映射到当前语言文案；未命中回落原文。
+      setError(localizeError(e))
     } finally {
       setBusy(false)
     }
   }
 
   return (
-    <Sheet title="升级为网络账号" onClose={onClose}>
+    <Sheet title={t('settings.upgradeToNetwork')} onClose={onClose}>
       <div className="space-y-2 py-1">
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="邮箱"
-          aria-label="邮箱"
+          placeholder={t('settings.emailLabel')}
+          aria-label={t('settings.emailLabel')}
           className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         />
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="密码（至少 8 位）"
-          aria-label="密码"
+          placeholder={t('settings.passwordPlaceholder')}
+          aria-label={t('settings.passwordLabel')}
           className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         />
         <input
           type="password"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          placeholder="确认密码"
-          aria-label="确认密码"
+          placeholder={t('settings.confirmPasswordLabel')}
+          aria-label={t('settings.confirmPasswordLabel')}
           className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         />
         {error && <p className="text-[12px] text-catFail">{error}</p>}
@@ -244,7 +249,7 @@ function BindNetworkSheet({
           disabled={busy}
           onClick={() => void onSubmit()}
         >
-          {busy ? '升级中…' : '升级'}
+          {busy ? t('settings.upgrading') : t('settings.upgrade')}
         </Button>
       </div>
     </Sheet>
@@ -257,6 +262,7 @@ export function AccountSection() {
   const sessionStale = useAccountStore((s) => s.sessionStale)
   const settings = useUiStore((s) => s.settings)
   const quota = useQuotaStore((s) => s.quota)
+  const t = useT()
   const [keySourceOpen, setKeySourceOpen] = useState(false)
   const [quotaOpen, setQuotaOpen] = useState(false)
   const [nickOpen, setNickOpen] = useState(false)
@@ -268,34 +274,37 @@ export function AccountSection() {
   // 本地瞬时 toast：2.5s 自动消失。AppShell 无 toast 系统，故局部实现。
   useEffect(() => {
     if (!toast) return
-    const t = setTimeout(() => setToast(null), 2500)
-    return () => clearTimeout(t)
+    const tTimer = setTimeout(() => setToast(null), 2500)
+    return () => clearTimeout(tTimer)
   }, [toast])
 
   if (!account) return null
 
-  const typeLabel = account.type === 'guest' ? '游客' : '网络'
+  const typeLabel = account.type === 'guest' ? t('settings.accTypeGuest') : t('settings.accTypeNetwork')
   const planLabel =
-    account.plan === 'guest' ? '游客' : account.plan === 'free' ? '免费' : '付费'
-  const initial = account.nickname.trim().charAt(0) || '我'
+    account.plan === 'guest'
+      ? t('settings.accTypeGuest')
+      : account.plan === 'free'
+        ? t('settings.planFree')
+        : t('settings.planPaid')
+  const initial = account.nickname.trim().charAt(0) || t('settings.avatarFallback')
 
   // keySource 未定义（旧数据）按 byok 处理。游客下 builtin 由 setKeySource 守卫拦截，UI 也禁用。
   const keySource: 'byok' | 'builtin' = settings.keySource === 'builtin' ? 'builtin' : 'byok'
   const isGuest = account.type === 'guest'
-  const keySourceLabel =
-    keySource === 'builtin' ? '内置 Key（免费额度）' : '自己的 Key'
+  const keySourceLabel = keySource === 'builtin' ? t('settings.keySourceBuiltin') : t('settings.keySourceByok')
   const showQuotaRow = keySource === 'builtin'
 
   // 升级行：guest 隐藏（需先 bindNetwork，T15c）；free 显「升级付费」；paid 显到期日期。
   const showUpgradeRow = account.plan !== 'guest'
+  const paidPlanName =
+    account.paidPlanId === 'yearly' ? t('settings.planYearly') : t('settings.planMonthly')
   const upgradeLabel =
     account.plan === 'paid'
-      ? `当前：${account.paidPlanId === 'yearly' ? '年度会员' : '月度会员'}${
-          account.paidExpiresAt
-            ? ` 至 ${account.paidExpiresAt.slice(0, 10)}`
-            : ''
-        }`
-      : '升级付费'
+      ? account.paidExpiresAt
+        ? t('settings.currentPlanUntil', { plan: paidPlanName, date: account.paidExpiresAt.slice(0, 10) })
+        : t('settings.currentPlan', { plan: paidPlanName })
+      : t('settings.upgradePaid')
 
   async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -317,13 +326,13 @@ export function AccountSection() {
         <button
           type="button"
           onClick={() => fileRef.current?.click()}
-          aria-label="更换头像"
+          aria-label={t('settings.changeAvatar')}
           className="relative size-16 shrink-0 overflow-hidden rounded-full bg-priS shadow-sm ring-2 ring-pri/10 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           {account.avatar ? (
             <img
               src={account.avatar}
-              alt="头像"
+              alt={t('settings.avatar')}
               className="h-full w-full object-cover"
             />
           ) : (
@@ -363,7 +372,7 @@ export function AccountSection() {
         <button
           type="button"
           onClick={() => setNickOpen(true)}
-          aria-label="编辑昵称"
+          aria-label={t('settings.editNickname')}
           className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           <User size={18} strokeWidth={2} />
@@ -387,7 +396,7 @@ export function AccountSection() {
         <span className="flex flex-col">
           <span className="text-[13px] text-ink">{keySourceLabel}</span>
           {isGuest && (
-            <span className="mt-0.5 text-[11px] text-t3">需先升级为网络账号</span>
+            <span className="mt-0.5 text-[11px] text-t3">{t('settings.requireNetwork')}</span>
           )}
         </span>
         {!isGuest && <ChevronRight size={18} className="text-t2" />}
@@ -402,7 +411,7 @@ export function AccountSection() {
             'mt-1 flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
           )}
         >
-          <span className="text-[13px] text-ink">升级为网络账号</span>
+          <span className="text-[13px] text-ink">{t('settings.upgradeToNetwork')}</span>
           <ChevronRight size={18} className="text-t2" />
         </button>
       )}
@@ -419,14 +428,18 @@ export function AccountSection() {
         >
           <span className="text-[13px] text-ink">
             {quota === null ? (
-              '加载中…'
+              t('common.loading')
             ) : (
               <>
-                今日 LLM {quota.llmUsed}/{quota.llmLimit < 0 ? '∞' : quota.llmLimit} 次，
-                STT {quota.sttUsedSec}/{quota.sttLimitSec < 0 ? '∞' : quota.sttLimitSec} 秒
+                {t('settings.quotaSummary', {
+                  llmUsed: quota.llmUsed,
+                  llmLimit: quota.llmLimit < 0 ? '∞' : quota.llmLimit,
+                  sttUsedSec: quota.sttUsedSec,
+                  sttLimitSec: quota.sttLimitSec < 0 ? '∞' : quota.sttLimitSec,
+                })}
                 {sessionStale && (
                   <span className="text-catPending">
-                    {' '}· 登录状态可能已过期，重新登录
+                    {' '}· {t('settings.sessionStaleHint')}
                   </span>
                 )}
               </>
@@ -458,7 +471,7 @@ export function AccountSection() {
         }}
         className="mt-2 w-full text-center text-[13px] text-catFail transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card rounded-btn py-1"
       >
-        退出登录
+        {t('settings.logout')}
       </button>
 
       <KeySourceSheet
@@ -473,7 +486,7 @@ export function AccountSection() {
         onClose={() => setBindOpen(false)}
         onSuccess={() => {
           setBindOpen(false)
-          setToast('已升级为网络账号')
+          setToast(t('settings.upgradedToNetwork'))
         }}
       />
       {nickOpen && (
