@@ -3,22 +3,24 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Bookmark, Trash2 } from 'lucide-react'
 import { Button, Card, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { useT } from '@/app/i18n/useT'
 import type { Draft } from '@/domain/types'
 import { draftPreview, draftTitle, relTime } from './helpers'
 
 // 裸路由顶栏：返回 ‹ + 页标题（24/Bold）。返回至 /categories（草稿入口挂在类别页）。
 function TopBar({ onBack }: { onBack: () => void }) {
+  const t = useT()
   return (
     <div className="flex items-center gap-1">
       <button
         type="button"
         onClick={onBack}
-        aria-label="返回"
+        aria-label={t('common.back')}
         className="flex size-11 cursor-pointer items-center justify-center rounded-btn text-t2 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
       >
         <ArrowLeft size={22} strokeWidth={2} />
       </button>
-      <h1 className="text-[24px] font-bold leading-tight text-ink">草稿</h1>
+      <h1 className="text-[24px] font-bold leading-tight text-ink">{t('drafts.title')}</h1>
     </div>
   )
 }
@@ -34,6 +36,7 @@ function DraftRow({
   onResume: (id: string) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }) {
+  const t = useT()
   const [resuming, setResuming] = useState(false)
   const title = draftTitle(draft)
   const preview = draftPreview(draft)
@@ -48,7 +51,7 @@ function DraftRow({
   }
 
   const handleDelete = () => {
-    if (window.confirm('删除该草稿？删除后不可恢复。')) void onDelete(draft.id)
+    if (window.confirm(t('drafts.deleteConfirm'))) void onDelete(draft.id)
   }
 
   return (
@@ -65,13 +68,13 @@ function DraftRow({
             <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-t2">{preview}</p>
           )}
           <p className="mt-1.5 text-[11px] text-t3">
-            {draft.parts.length} 段 · {relTime(draft.updatedAt)}
+            {t('drafts.partsCount', { n: draft.parts.length })} · {relTime(draft.updatedAt)}
           </p>
         </button>
         <button
           type="button"
           onClick={handleDelete}
-          aria-label="删除草稿"
+          aria-label={t('drafts.deleteAria')}
           className="flex size-11 cursor-pointer items-center justify-center text-t3 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card active:text-catFail"
         >
           <Trash2 size={16} />
@@ -83,6 +86,7 @@ function DraftRow({
 
 export default function Drafts() {
   const navigate = useNavigate()
+  const t = useT()
   const drafts = useUiStore((s) => s.drafts)
   const loadDraft = useUiStore((s) => s.loadDraft)
   const deleteDraft = useUiStore((s) => s.deleteDraft)
@@ -104,18 +108,18 @@ export default function Drafts() {
       {drafts.length === 0 ? (
         <EmptyState
           icon={<Bookmark size={40} strokeWidth={1.5} />}
-          title="没有草稿"
-          subtitle="采集时点「存草稿」可暂停，稍后从这里继续"
+          title={t('drafts.emptyTitle')}
+          subtitle={t('drafts.emptySubtitle')}
           action={
             <Button size="sm" onClick={() => navigate('/capture')}>
-              记一笔
+              {t('drafts.newEntry')}
             </Button>
           }
         />
       ) : (
         <>
           <p className="mt-1 px-1 text-[12px] text-t3">
-            共 {drafts.length} 份草稿 · 点击继续记录
+            {t('drafts.countHint', { count: drafts.length })}
           </p>
           <div className="mt-3 space-y-2">
             {drafts.map((d) => (

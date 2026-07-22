@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { useT } from '@/app/i18n/useT'
 import { SearchBar } from './SearchBar'
 import { SearchResultCard } from './SearchResultCard'
 import {
@@ -29,11 +30,12 @@ function DocIcon() {
 }
 
 function EmptySearch({ onPick, suggestions }: { onPick: (s: string) => void; suggestions: string[] }) {
+  const t = useT()
   return (
     <div className="mt-2 animate-fade-in-up">
-      <p className="text-[13px] font-semibold text-ink">最近搜索</p>
-      <p className="mt-3 text-[12px] text-t3">还没有搜索记录</p>
-      <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.06em] text-t3">试试</p>
+      <p className="text-[13px] font-semibold text-ink">{t('search.recentTitle')}</p>
+      <p className="mt-3 text-[12px] text-t3">{t('search.recentEmpty')}</p>
+      <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.06em] text-t3">{t('search.tryLabel')}</p>
       <div className="mt-2.5 flex flex-wrap gap-2">
         {suggestions.map((s) => (
           <button
@@ -58,6 +60,7 @@ interface ChipRowProps {
 }
 
 function ChipRow({ label, chips, active, onPick }: ChipRowProps) {
+  const t = useT()
   return (
     <div className="flex items-center gap-2">
       <span className="shrink-0 text-[11px] font-medium text-t3">{label}</span>
@@ -72,7 +75,7 @@ function ChipRow({ label, chips, active, onPick }: ChipRowProps) {
               : 'border-brd/80 bg-card text-t2 shadow-sm hover:border-t3/40',
           )}
         >
-          全部
+          {t('search.filter.all')}
         </button>
         {chips.map((c) => (
           <button
@@ -96,6 +99,7 @@ function ChipRow({ label, chips, active, onPick }: ChipRowProps) {
 
 export default function Search() {
   const navigate = useNavigate()
+  const t = useT()
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<SearchFilters>(EMPTY_FILTERS)
 
@@ -153,6 +157,12 @@ export default function Search() {
   }
   const clearFilters = () => setFilters(EMPTY_FILTERS)
 
+  // Modality / date chip labels are i18n keys on the static arrays; resolve them
+  // here each render so they follow the active language (helpers can't, they
+  // run before the store hydrates and `t` would freeze the first-seen language).
+  const modalityChips = MODALITY_CHIPS.map((c) => ({ slug: c.slug, label: t(c.label) }))
+  const dateChips = QUICK_DATE_CHIPS.map((c) => ({ slug: c.slug, label: t(c.label) }))
+
   return (
     <div className="px-4 pb-6 pt-4">
       <SearchBar value={query} onChange={setQuery} />
@@ -160,37 +170,44 @@ export default function Search() {
       {hasQuery && (
         <div className="mt-3 flex flex-col gap-2">
           <ChipRow
-            label="类别"
+            label={t('search.filter.category')}
             chips={catChips}
             active={filters.category}
             onPick={setFilter('category')}
           />
-          <ChipRow label="标签" chips={tagChips} active={filters.tag} onPick={setFilter('tag')} />
           <ChipRow
-            label="侧面"
+            label={t('search.filter.tag')}
+            chips={tagChips}
+            active={filters.tag}
+            onPick={setFilter('tag')}
+          />
+          <ChipRow
+            label={t('search.filter.mood')}
             chips={moodChips}
             active={filters.mood}
             onPick={setFilter('mood')}
           />
           <ChipRow
-            label="模态"
-            chips={MODALITY_CHIPS}
+            label={t('search.filter.modality')}
+            chips={modalityChips}
             active={filters.modality}
             onPick={setFilter('modality')}
           />
           <ChipRow
-            label="日期"
-            chips={QUICK_DATE_CHIPS}
+            label={t('search.filter.date')}
+            chips={dateChips}
             active={filters.date}
             onPick={pickQuickDate}
           />
           <div className="flex items-center gap-2">
-            <span className="shrink-0 text-[11px] font-medium text-t3">自定义</span>
+            <span className="shrink-0 text-[11px] font-medium text-t3">
+              {t('search.filter.custom')}
+            </span>
             <input
               type="date"
               value={filters.dateFrom}
               onChange={(e) => setCustomFrom(e.target.value)}
-              aria-label="起始日期"
+              aria-label={t('search.filter.dateFromAria')}
               className="h-9 min-w-0 flex-1 cursor-text rounded-btn border border-brd bg-card px-2 text-[12px] text-ink transition duration-base ease-out focus:border-pri/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             />
             <span className="shrink-0 text-t3">–</span>
@@ -198,7 +215,7 @@ export default function Search() {
               type="date"
               value={filters.dateTo}
               onChange={(e) => setCustomTo(e.target.value)}
-              aria-label="结束日期"
+              aria-label={t('search.filter.dateToAria')}
               className="h-9 min-w-0 flex-1 cursor-text rounded-btn border border-brd bg-card px-2 text-[12px] text-ink transition duration-base ease-out focus:border-pri/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             />
           </div>
@@ -208,7 +225,7 @@ export default function Search() {
               onClick={clearFilters}
               className="self-start min-h-11 cursor-pointer px-2 text-[11px] font-medium text-pri transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
             >
-              清除筛选
+              {t('search.clearFilters')}
             </button>
           )}
         </div>
@@ -220,8 +237,8 @@ export default function Search() {
         {hasQuery && results.length === 0 && (
           <EmptyState
             icon={<DocIcon />}
-            title="没有匹配的条目"
-            subtitle={`没有匹配「${query.trim()}」的条目，试试别的关键词或换个筛选条件`}
+            title={t('search.emptyTitle')}
+            subtitle={t('search.emptySubtitle', { query: query.trim() })}
           />
         )}
 

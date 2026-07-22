@@ -1,3 +1,4 @@
+import { useT } from '@/app/i18n/useT'
 import type { Category, Entry, EntryAi } from '@/domain/types'
 import { Card, Chip } from '@/ui/components'
 import { accentTone, formatRelativeTime, modality, previewText } from './helpers'
@@ -11,6 +12,9 @@ interface SearchResultCardProps {
 }
 
 export function SearchResultCard({ entry, ai, category, now, onClick }: SearchResultCardProps) {
+  // 订阅语言切换：本卡片的翻译文案走 helpers（formatRelativeTime/modality）里的模块级 t()，
+  // 组件本身不直接调 t，但需在语言变更时重渲以重算这些 helper 输出。
+  useT()
   const title = ai?.titleSuggestion
   return (
     <Card

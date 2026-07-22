@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
+import { useT } from '@/app/i18n/useT'
 import { cn } from '@/ui/components'
 
 interface SearchBarProps {
@@ -17,6 +18,7 @@ function SearchIcon({ className }: { className?: string }) {
 }
 
 export function SearchBar({ value, onChange }: SearchBarProps) {
+  const t = useT()
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => {
     ref.current?.focus()
@@ -35,13 +37,13 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="搜索条目、转写、标签…"
+        placeholder={t('search.placeholder')}
         className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-t3"
       />
       {value && (
         <button
           type="button"
-          aria-label="清除"
+          aria-label={t('search.clearAria')}
           onClick={() => onChange('')}
           className="-mr-2 flex size-8 shrink-0 items-center justify-center rounded-full bg-page text-t3 transition-all duration-base ease-out hover:text-t2 active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
