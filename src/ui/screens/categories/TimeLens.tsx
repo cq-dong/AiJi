@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import type { Category, Entry, EntryAi } from '@/domain/types'
 import { EmptyState } from '@/ui/components'
+import { useT } from '@/app/i18n/useT'
 import { dateKey, groupLabel, todayKeyFrom } from './helpers'
 import { EntryRow } from './EntryRow'
 
@@ -13,6 +14,7 @@ interface TimeLensProps {
 // 时间 view: timeline grouped by date, newest first. Each section lists entries
 // (preview, time, category chip resolved from categories + aiByEntry).
 export function TimeLens({ entries, aiByEntry, categories }: TimeLensProps) {
+  const t = useT()
   const catMap = useMemo(() => new Map(categories.map((c) => [c.slug, c])), [categories])
   const todayKey = useMemo(() => todayKeyFrom(entries), [entries])
 
@@ -35,7 +37,7 @@ export function TimeLens({ entries, aiByEntry, categories }: TimeLensProps) {
 
   if (entries.length === 0) {
     return (
-      <EmptyState title="还没有记下任何东西" subtitle="记几条，这里会按时间排列" />
+      <EmptyState title={t('categories.time.empty.title')} subtitle={t('categories.time.empty.subtitle')} />
     )
   }
 

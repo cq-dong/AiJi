@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { Category } from '@/domain/types'
 import { Card, cn } from '@/ui/components'
+import { useT } from '@/app/i18n/useT'
 
 interface CategoryCardProps {
   category: Category
@@ -25,6 +26,7 @@ const MOVE_TOLERANCE_PX = 10
 // Tap → drill into category (onClick); long-press → edit sheet (onLongPress).
 export function CategoryCard({ category, snippet, liveCount, onClick, onLongPress }: CategoryCardProps) {
   const dot = category.accent ? DOT[category.accent] : 'bg-catIdea'
+  const t = useT()
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startPosRef = useRef<{ x: number; y: number } | null>(null)
   const suppressClickRef = useRef(false)
@@ -85,7 +87,7 @@ export function CategoryCard({ category, snippet, liveCount, onClick, onLongPres
         <span className="text-[15px] font-bold text-ink">{category.label}</span>
       </div>
       <p className="text-[12px] font-medium text-t3">
-        <span className="text-[13px] font-semibold tabular-nums text-t2">{liveCount}</span> 条
+        <span className="text-[13px] font-semibold tabular-nums text-t2">{liveCount}</span> {t('categories.counts.itemsSuffix')}
       </p>
       <p className="text-[12px] leading-snug text-t2 line-clamp-2">{snippet || '——'}</p>
     </Card>

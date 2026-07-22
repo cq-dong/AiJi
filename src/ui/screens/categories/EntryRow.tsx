@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import type { Category, Entry, EntryAi } from '@/domain/types'
 import { Card, Chip, cn } from '@/ui/components'
+import { useT } from '@/app/i18n/useT'
 import { firstText, modalityLabel, timeLabel } from './helpers'
 
 type Accent = Category['accent']
@@ -29,7 +30,8 @@ interface EntryRowProps {
 
 export function EntryRow({ entry, ai, category }: EntryRowProps) {
   const navigate = useNavigate()
-  const title = ai?.titleSuggestion || firstText(entry.parts) || '未命名'
+  const t = useT()
+  const title = ai?.titleSuggestion || firstText(entry.parts) || t('categories.entry.untitled')
   const preview = firstText(entry.parts)
   const bar = category?.accent ? BAR[category.accent] : 'bg-t3'
   const tone = category?.accent ? CHIP_TONE[category.accent] : 'default'

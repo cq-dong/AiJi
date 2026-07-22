@@ -1,4 +1,18 @@
 import type { EntryPart } from '@/domain/types'
+import { t } from '@/app/i18n'
+import type { I18nKey } from '@/app/i18n'
+
+// 6 lens 维度 → i18n key（ViewSwitcher / CategoryDetail 分组 / FacetLens 共用）。
+// 类别名/标签名是用户数据不入字典；这 6 个是固定 facet 维度枚举，入字典。
+export type LensKind = 'category' | 'time' | 'mood' | 'project' | 'person' | 'place'
+export const LENS_KEYS: Record<LensKind, I18nKey> = {
+  category: 'categories.lens.category',
+  time: 'categories.lens.time',
+  mood: 'categories.lens.mood',
+  project: 'categories.lens.project',
+  person: 'categories.lens.person',
+  place: 'categories.lens.place',
+}
 
 // Local date helpers — self-contained, NOT imported from screens/home/.
 // ISO → local date key 'YYYY-MM-DD' (handles +08:00 and Z formats via new Date).
@@ -26,7 +40,16 @@ export function todayKeyFrom(entries: ReadonlyArray<{ createdAt: string }>): str
   return localDateKey(maxIso)
 }
 
-const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const
+// getDay() → 0=Sunday … 6=Saturday；对齐 categories.date.weekday.* 的 sun..sat 顺序。
+const WEEKDAY_KEYS: I18nKey[] = [
+  'categories.date.weekday.sun',
+  'categories.date.weekday.mon',
+  'categories.date.weekday.tue',
+  'categories.date.weekday.wed',
+  'categories.date.weekday.thu',
+  'categories.date.weekday.fri',
+  'categories.date.weekday.sat',
+]
 
 function parseYmd(key: string): [number, number, number] {
   const [y, m, d] = key.split('-').map(Number)
@@ -36,12 +59,12 @@ function parseYmd(key: string): [number, number, number] {
 function weekdayLabel(key: string): string {
   const [y, m, d] = parseYmd(key)
   const wd = new Date(y, m, d).getDay()
-  return WEEKDAYS[wd] ?? '周?'
+  return t(WEEKDAY_KEYS[wd] ?? 'categories.date.weekday.unknown')
 }
 
 function monthDayLabel(key: string): string {
   const [, m, d] = parseYmd(key)
-  return `${m + 1}月${d}日`
+  return t('categories.date.monthDay', { m: m + 1, d })
 }
 
 function dayDiff(aKey: string, bKey: string): number {
@@ -56,9 +79,9 @@ function dayDiff(aKey: string, bKey: string): number {
 export function groupLabel(iso: string, todayKey: string): string {
   const key = localDateKey(iso)
   const diff = dayDiff(key, todayKey)
-  if (diff === 0) return '今天'
-  if (diff === -1) return '昨天'
-  if (diff === 1) return '明天'
+  if (diff === 0) return t('date.today')
+  if (diff === -1) return t('date.yesterday')
+  if (diff === 1) return t('categories.date.tomorrow')
   return `${monthDayLabel(key)} ${weekdayLabel(key)}`
 }
 
@@ -71,12 +94,12 @@ export function timeLabel(iso: string): string {
 }
 
 export function modalityLabel(parts: EntryPart[]): string {
-  if (parts.length > 1) return '多模态'
+  if (parts.length > 1) return t('categories.modality.multi')
   const p = parts[0]
-  if (!p) return '文本'
-  if (p.type === 'audio') return '语音'
-  if (p.type === 'video') return '视频'
-  return '文本'
+  if (!p) return t('categories.modality.text')
+  if (p.type === 'audio') return t('categories.modality.audio')
+  if (p.type === 'video') return t('categories.modality.video')
+  return t('categories.modality.text')
 }
 
 // First readable text (transcript or content) for preview / title fallback.

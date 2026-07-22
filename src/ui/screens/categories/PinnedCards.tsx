@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { PenLine, Trash2 } from 'lucide-react'
+import { useT } from '@/app/i18n/useT'
 
 // Pinned special cards (倒序 = at top of 类别 view), above the category grid.
 // 草稿 → /drafts, 回收站 → /trash. Distinctive bg-priS styling.
@@ -10,6 +11,7 @@ interface PinnedCardsProps {
 
 export function PinnedCards({ draftCount, trashCount }: PinnedCardsProps) {
   const navigate = useNavigate()
+  const t = useT()
   return (
     <div className="grid grid-cols-2 gap-3">
       <button
@@ -21,8 +23,8 @@ export function PinnedCards({ draftCount, trashCount }: PinnedCardsProps) {
           <PenLine size={16} strokeWidth={2} aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="text-[14px] font-semibold text-ink">草稿</p>
-          <p className="text-[11px] text-t3">{draftCount} 条未完成</p>
+          <p className="text-[14px] font-semibold text-ink">{t('categories.pinned.drafts')}</p>
+          <p className="text-[11px] text-t3">{t('categories.pinned.draftsHint', { count: draftCount })}</p>
         </div>
       </button>
       <button
@@ -34,8 +36,8 @@ export function PinnedCards({ draftCount, trashCount }: PinnedCardsProps) {
           <Trash2 size={16} strokeWidth={2} aria-hidden="true" />
         </span>
         <div className="min-w-0">
-          <p className="text-[14px] font-semibold text-ink">回收站</p>
-          <p className="text-[11px] text-t3">{trashCount} 条已删</p>
+          <p className="text-[14px] font-semibold text-ink">{t('categories.pinned.trash')}</p>
+          <p className="text-[11px] text-t3">{t('categories.pinned.trashHint', { count: trashCount })}</p>
         </div>
       </button>
     </div>
