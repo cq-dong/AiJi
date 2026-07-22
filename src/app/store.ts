@@ -858,7 +858,7 @@ export const useUiStore = create<UiState>((set, get) => ({
 
     // 离线拒绝：追加 error 消息，UI 显禁用提示，不调 LLM。
     if (!online) {
-      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: '离线中，连上网再问。', createdAt: now, error: true }
+      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: t('chat.errOffline'), createdAt: now, error: true }
       const conv = appendMessage(ensureConversation(conversation), errMsg)
       set({ conversation: conv, chatLoading: 'idle' })
       void di.storage.saveConversation(conv)
@@ -914,7 +914,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       set({ chatLoading: 'answer' })
       const answer: ChatAnswer =
         cites.length === 0
-          ? { answer: '库里还没记过相关内容。可以换个问法，或告诉我大致的时间、关键词。', citedEntryIds: [] }
+          ? { answer: t('chat.errNoCites'), citedEntryIds: [] }
           : await di.llm.answerChat({ question: trimmed, cites, conversation: chatHistory(conversation, CHAT_HISTORY_WINDOW) })
 
       // 缓存（entries 签名不变即复用）。
@@ -959,7 +959,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       // D37: content 带真实失败原因（非笼统「稍后重试」），trace.error 存原文便于排查。
       console.error('[store] sendMessage failed', e)
       const reason = e instanceof Error ? e.message : String(e)
-      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: `问答出了点问题：${reason}`, createdAt: new Date().toISOString(), error: true, trace: { error: reason } }
+      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: t('chat.errGeneric', { reason }), createdAt: new Date().toISOString(), error: true, trace: { error: reason } }
       conv = appendMessage(conv, errMsg)
       set({ conversation: conv, chatLoading: 'idle' })
       void di.storage.saveConversation(conv)
