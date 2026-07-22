@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { X } from 'lucide-react'
+import { useT } from '@/app/i18n/useT'
 
 // 底部 sheet：编辑 AI 面板 / 手动编辑 parts 共用。fixed 覆盖整视口（含 statusbar，
 // iOS sheet 惯例），backdrop 点击 = 关闭 + 毛玻璃虚化背景。内容超高可滚。
@@ -14,11 +15,12 @@ export function Sheet({
   children: ReactNode
   footer?: ReactNode
 }) {
+  const t = useT()
   return (
     <div className="fixed inset-0 z-50 flex flex-col justify-end" role="dialog" aria-modal="true">
       <button
         type="button"
-        aria-label="关闭"
+        aria-label={t('common.close')}
         tabIndex={-1}
         onClick={onClose}
         className="absolute inset-0 bg-black/45 backdrop-blur-[2px] animate-fade-in"
@@ -30,7 +32,7 @@ export function Sheet({
           <button
             type="button"
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={t('common.close')}
             className="-mr-1 flex size-11 items-center justify-center rounded-full bg-page text-t2 transition duration-base ease-out hover:bg-brd active:scale-[0.97] cursor-pointer focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
           >
             <X size={17} strokeWidth={2.2} />

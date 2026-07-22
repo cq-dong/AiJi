@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Mic } from 'lucide-react'
 import { Button, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { useT } from '@/app/i18n/useT'
 import type { Entry } from '@/domain/types'
 import { dateKey, groupLabel, todayKeyFrom, topDateLabel } from './helpers'
 import { HomeHeader } from './HomeHeader'
@@ -11,6 +12,7 @@ import { TimelineCard } from './TimelineCard'
 
 export default function Home() {
   const navigate = useNavigate()
+  const t = useT()
   const online = useUiStore((s) => s.online)
   const entries = useUiStore((s) => s.entries)
   const justSaved = useUiStore((s) => s.justSaved)
@@ -72,11 +74,11 @@ export default function Home() {
                 <Mic size={36} className="text-pri" />
               </div>
             }
-            title="还没有记下任何东西"
-            subtitle="点下方的麦克风，记一笔"
+            title={t('home.empty.title')}
+            subtitle={t('home.empty.subtitle')}
             action={
               <Button size="lg" onClick={() => navigate('/capture')}>
-                记一笔
+                {t('home.empty.action')}
               </Button>
             }
           />

@@ -4,7 +4,11 @@ import { Check } from 'lucide-react'
 import type { Entry, EntryAi } from '@/domain/types'
 import { Chip, cn } from '@/ui/components'
 import { di } from '@/app/di'
+import { useT } from '@/app/i18n/useT'
+import type { I18nKey } from '@/app/i18n'
 import { firstText, firstThumbRef, modalityLabel, timeLabel } from './helpers'
+
+type TFn = (key: I18nKey, params?: Record<string, string | number>) => string
 
 type Accent = 'catIdea' | 'catProject' | 'catPending' | 'catFail' | undefined
 
@@ -81,7 +85,8 @@ function MediaThumb({ mediaRef }: { mediaRef: string }) {
 
 function ReadyCard({ entry, ai, catLabel, catAccent, index = 99 }: CardProps) {
   const navigate = useNavigate()
-  const title = ai?.titleSuggestion || firstText(entry.parts) || '未命名'
+  const t = useT()
+  const title = ai?.titleSuggestion || firstText(entry.parts) || t('home.card.untitled')
   const preview = firstText(entry.parts)
   const bar = catAccent ? BAR[catAccent] : 'from-t3/50 to-t3/20'
   const tone = catAccent ? CHIP_TONE[catAccent] : 'default'
@@ -129,9 +134,10 @@ function ReadyCard({ entry, ai, catLabel, catAccent, index = 99 }: CardProps) {
 
 function ProcessingCard({ entry, catAccent, index = 99 }: CardProps) {
   const navigate = useNavigate()
-  const title = firstText(entry.parts) || '未命名'
+  const t = useT()
+  const title = firstText(entry.parts) || t('home.card.untitled')
   const bar = catAccent ? BAR[catAccent] : 'from-catPending to-catPending/40'
-  const { leftText, rightLabel, rightClass } = statusMeta(entry.status)
+  const { leftText, rightLabel, rightClass } = statusMeta(entry.status, t)
   const thumbRef = firstThumbRef(entry.parts)
   return (
     <article
@@ -166,7 +172,7 @@ function ProcessingCard({ entry, catAccent, index = 99 }: CardProps) {
   )
 }
 
-function statusMeta(status: Entry['status']): {
+function statusMeta(status: Entry['status'], t: TFn): {
   leftText: string
   rightLabel: string
   rightClass: string
@@ -174,21 +180,21 @@ function statusMeta(status: Entry['status']): {
   switch (status) {
     case 'failed':
       return {
-        leftText: '已转写 · 分类失败',
-        rightLabel: '处理失败',
+        leftText: t('home.card.status.failed.left'),
+        rightLabel: t('home.card.status.failed.right'),
         rightClass: 'text-catFail',
       }
     case 'offline-pending':
       return {
-        leftText: '已保存 · 待联网补跑',
-        rightLabel: '离线·待补跑',
+        leftText: t('home.card.status.offline.left'),
+        rightLabel: t('home.card.status.offline.right'),
         rightClass: 'text-t2',
       }
     case 'processing':
     default:
       return {
-        leftText: 'AI 正在分类 · 已转写',
-        rightLabel: '处理中',
+        leftText: t('home.card.status.processing.left'),
+        rightLabel: t('home.card.status.processing.right'),
         rightClass: 'text-catPending',
       }
   }

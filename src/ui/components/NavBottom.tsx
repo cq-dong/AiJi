@@ -1,16 +1,19 @@
 import { NavLink } from 'react-router-dom'
 import { Bell, LayoutGrid, ListTree, NotebookPen, Settings } from 'lucide-react'
+import { useT } from '@/app/i18n/useT'
+import type { I18nKey } from '@/app/i18n'
 import { cn } from './cn'
 
 const TABS = [
-  { to: '/', label: '时间线', Icon: ListTree, end: true },
-  { to: '/categories', label: '类别', Icon: LayoutGrid, end: false },
-  { to: '/summary', label: '摘要', Icon: NotebookPen, end: false },
-  { to: '/reminders', label: '提醒', Icon: Bell, end: false },
-  { to: '/settings', label: '设置', Icon: Settings, end: false },
-] as const
+  { to: '/', key: 'nav.home' as const, Icon: ListTree, end: true },
+  { to: '/categories', key: 'nav.categories' as const, Icon: LayoutGrid, end: false },
+  { to: '/summary', key: 'nav.summary' as const, Icon: NotebookPen, end: false },
+  { to: '/reminders', key: 'nav.reminders' as const, Icon: Bell, end: false },
+  { to: '/settings', key: 'nav.settings' as const, Icon: Settings, end: false },
+]
 
 export function NavBottom() {
+  const t = useT()
   return (
     <nav
       className="absolute inset-x-0 bottom-0 z-20 border-t border-brd/70 bg-card/85 shadow-[0_-8px_24px_-8px_rgb(var(--aji-shadow)/0.08)] backdrop-blur-xl"
@@ -23,7 +26,7 @@ export function NavBottom() {
       }}
     >
       <div className="grid grid-cols-5">
-        {TABS.map(({ to, label, Icon, end }) => (
+        {TABS.map(({ to, key, Icon, end }) => (
           <NavLink
             key={to}
             to={to}
@@ -53,7 +56,7 @@ export function NavBottom() {
                     isActive ? 'font-semibold text-pri' : 'font-medium text-t3',
                   )}
                 >
-                  {label}
+                  {t(key as I18nKey)}
                 </span>
               </>
             )}

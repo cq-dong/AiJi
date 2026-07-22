@@ -16,7 +16,7 @@ export const common = {
   'common.itemsCount': '{count} items',
   'common.zhOnly': '仅中文',
   'chat.memoryConfirm': 'Got it, saved: {content} (manage in Settings → AI Memory)',
-  'nav.home': 'Journal',
+  'nav.home': 'Timeline',
   'nav.categories': 'Categories',
   'nav.summary': 'Summary',
   'nav.search': 'Search',
