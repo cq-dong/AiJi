@@ -1,8 +1,17 @@
 import type { LlmPort } from '@/ports'
 import type { Aggregate, AggregateScopeType, Category, ChatCite, ChatQuery, Entry, EntryAi, Facets, MediaType, Tag } from '@/domain/types'
 import { di } from '@/app/di'
+import { getCurrentLang } from '@/app/currentLang'
 import { compressImage, extractFrame, pickFrameTimes } from '@/adapters/visionMedia'
 import { BUILTIN_VLM_URL, BUILTIN_VLM_MODEL } from '@/adapters/builtinDefaults'
+
+// 提示词双语（i18n AI 输出侧，2026-07-22）：builder 内部读 getCurrentLang() 决定 zh/en
+// 系统提示文案，签名不变（下游 builtinLlm/store 零改动）。双语范围 = 系统提示指令文本 +
+// few-shot 示例；memory block / cites block / items block / user message 是数据注入
+// （用户内容/记忆原文不翻译），且 builtinLlm.test.ts 断言 items 标签「图片=N张」、
+// aiMemory.test.ts 断言 memory block 中文字样——这两块保持中文，en 模式下系统提示为
+// 英文指令 + 中文数据块（数据可读，LLM 据英文约束输出英文）。每份系统提示末尾追加输出
+// 语言约束行（zh: 简体中文 / en: English），强制自然语言输出跟界面语言。
 
 // LlmPort PWA 适配：OpenAI 兼容 chat completions（BYOK）。任意 OpenAI 兼容 endpoint 均可——
 // DeepSeek / Kimi / 通义 / Moonshot / OpenAI / Azure / OpenRouter / vLLM / Ollama / Aliyun PI
@@ -111,25 +120,46 @@ export function toLocalIso(iso: string): string {
 }
 
 export function buildPrompt(content: string, createdAt: string, categories: Category[], tags: Tag[], hasImages: boolean, locationAddress?: string, memories?: string[]): ChatMessage[] {
+  const en = getCurrentLang() === 'en'
   const catList = categories.map((c) => `${c.slug}:${c.label}`).join(', ') || '（暂无）'
   const tagList = tags.map((t) => t.slug).join(', ') || '（暂无）'
-  const mediaRule = hasImages
-    ? `\n6. mediaDescription：本条目附有图片/视频帧（image_url），你需在分类/摘要之外，用 1-3 句中文描述图像内容。照片填 mediaDescription.images（描述画面主体/场景/可见物体）；视频帧填 mediaDescription.videos（描述视频内容/动作/场景）。若只附照片则 videos 省略；若只附视频帧则 images 省略；若图像内容无法辨识则整个 mediaDescription 省略。此字段是用户可见的「图片/视频理解」原文，会附在聚合摘要末尾，务必写完整的中文描述句，以「。」结尾。`
-    : ''
   const mediaSchema = hasImages
     ? ',"mediaDescription"?:{"images"?:string,"videos"?:string}'
     : ''
+  const mediaRule = hasImages
+    ? en
+      ? `\n6. mediaDescription: This entry has attached images/video frames (image_url). Beyond classification/summary, describe the image content in 1-3 English sentences. Fill mediaDescription.images for photos (describe the subject/scene/visible objects); fill mediaDescription.videos for video frames (describe the content/action/scene). If only photos are attached, omit videos; if only video frames, omit images; if the image content is unrecognizable, omit mediaDescription entirely. This field is the user-visible "image/video understanding" raw text, appended to the end of aggregate summaries — write complete English descriptive sentences ending with ".".`
+      : `\n6. mediaDescription：本条目附有图片/视频帧（image_url），你需在分类/摘要之外，用 1-3 句中文描述图像内容。照片填 mediaDescription.images（描述画面主体/场景/可见物体）；视频帧填 mediaDescription.videos（描述视频内容/动作/场景）。若只附照片则 videos 省略；若只附视频帧则 images 省略；若图像内容无法辨识则整个 mediaDescription 省略。此字段是用户可见的「图片/视频理解」原文，会附在聚合摘要末尾，务必写完整的中文描述句，以「。」结尾。`
+    : ''
   const placeRule = locationAddress
-    ? `\n${hasImages ? '7' : '6'}. 地点：条目附有记录地点「${locationAddress}」（来自定位反查，非用户手输）。填入 facets.place（用该地址，可精简到区/街道级，但保留可辨识性），用于「类别地图·地点」聚类。`
+    ? en
+      ? `\n${hasImages ? '7' : '6'}. Place: The entry has a recorded location "${locationAddress}" (from reverse geocoding, not user-typed). Fill facets.place (use that address, may simplify to district/street level but keep recognizability), used for "category map · place" clustering.`
+      : `\n${hasImages ? '7' : '6'}. 地点：条目附有记录地点「${locationAddress}」（来自定位反查，非用户手输）。填入 facets.place（用该地址，可精简到区/街道级，但保留可辨识性），用于「类别地图·地点」聚类。`
     : ''
   // AI 记忆注入（2026-07-22 §3）：有记忆时 system 追加一节，措辞针对分类/标签。
   // 空数组/undefined → memoryBlock='' → system + '' + '\n\n' + example 与现状逐字节一致（回归安全）。
+  // memoryBlock 保持中文（aiMemory.test.ts 在默认 en 模式断言其中文字样，且该测试不在本改动可碰清单）。
   const memoryBlock = memories && memories.length > 0
     ? '\n\n用户明确记忆与偏好（必须遵循，优先级高于你的默认判断）：\n' +
       memories.map((c) => `- ${c}`).join('\n') +
       '\n若记忆与本条目分类/标签相关（如「X 都归到 Y 类」），严格按记忆执行。'
     : ''
-  const system = `你是「AiJi」(AI 记) 的笔记分类助手。给定一条用户的「记」条目内容 + 条目创建时间 + 现有类别库 + 现有标签库，输出严格 JSON。
+  const system = en
+    ? `You are the note-classification assistant for "AiJi" (AI 记). Given a user's "记" entry content + the entry creation time + the existing category library + the existing tag library, output strict JSON.
+
+Rules:
+1. Categories emerge from content — prefer reusing existing category slugs; if none fit, create a new slug (kebab-case, lowercase English or pinyin with hyphens) + an English label. Never hardcode a fixed set of categories.
+2. Tags work the same way: reuse or create new, 2-5 tags, deduplicated.
+3. Mood is only an optional facet — if the content clearly carries emotion, fill facets.mood (one word); never treat mood as a primary axis or a required field.
+4. titleSuggestion: one sentence ≤16 chars; summary: one-sentence overview.
+5. Time-based reminder intent: if the body contains a clear reminder/todo time intent (e.g. "remind me to give design feedback tomorrow at 3pm", "remember to tackle STT on Friday", "submit the weekly report next Monday at 9am"), parse the absolute time and fill reminderSuggestion: dueAt is an absolute ISO 8601 timestamp (with timezone offset), resolving relative expressions against the entry creation time ("tomorrow" = the day after createdAt, "next Monday" = the upcoming Monday, etc.); label is a ≤12-char short summary the user can edit later. Suggestion only — do not schedule anything, do not create any Reminder. When no clear time-reminder intent is present, this field MUST be omitted; never fabricate times.${mediaRule}${placeRule}
+
+Output JSON schema:
+{"categorySlug":string,"categoryLabel"?:string,"tags":string[],"facets":{"mood"?:string,"person"?:string[],"place"?:string,"project"?:string,"event"?:string},"titleSuggestion"?:string,"summary"?:string,"reminderSuggestion"?:{"dueAt":string,"label":string}${mediaSchema}}
+
+Output JSON only — no markdown fences, no explanation.
+IMPORTANT: Write ALL natural-language output (category names, tags, summaries, answers) in English.`
+    : `你是「AiJi」(AI 记) 的笔记分类助手。给定一条用户的「记」条目内容 + 条目创建时间 + 现有类别库 + 现有标签库，输出严格 JSON。
 
 铁律：
 1. 类别由内容涌现——优先复用现有类别 slug；若都不贴切，创造一个新 slug（kebab-case，英文或拼音小写连字符）+ 中文 label。绝不硬编码固定类别集。
@@ -141,8 +171,20 @@ export function buildPrompt(content: string, createdAt: string, categories: Cate
 输出 JSON schema：
 {"categorySlug":string,"categoryLabel"?:string,"tags":string[],"facets":{"mood"?:string,"person"?:string[],"place"?:string,"project"?:string,"event"?:string},"titleSuggestion"?:string,"summary"?:string,"reminderSuggestion"?:{"dueAt":string,"label":string}${mediaSchema}}
 
-只输出 JSON，不要 markdown 围栏、不要解释。`
-  const example = `示例1（无提醒意图，reminderSuggestion 省略）：
+只输出 JSON，不要 markdown 围栏、不要解释。
+重要：所有自然语言输出（分类名、标签、摘要、回答）用简体中文。`
+  const example = en
+    ? `Example 1 (no reminder intent, reminderSuggestion omitted):
+Content: "Abstract CapturePort into an interface, PWA and Capacitor each implement one, UI layer untouched."
+Existing categories: idea:Idea, project:Project progress, life:Life snippet
+Output: {"categorySlug":"project","tags":["aiji","design"],"facets":{"project":"AiJi"},"titleSuggestion":"CapturePort interface","summary":"Abstract CapturePort as interface, PWA/Capacitor each implement"}
+
+Example 2 (with reminder intent, relative time resolved to absolute ISO):
+Content: "Remind me to give design feedback tomorrow at 3pm."
+Entry creation time: 2026-07-16T09:30:00+08:00
+Existing categories: idea:Idea, project:Project progress, life:Life snippet
+Output: {"categorySlug":"project","tags":["design","reminder"],"facets":{"project":"design"},"titleSuggestion":"Give design feedback","summary":"Give design feedback tomorrow at 3pm","reminderSuggestion":{"dueAt":"2026-07-17T15:00:00+08:00","label":"design feedback"}}`
+    : `示例1（无提醒意图，reminderSuggestion 省略）：
 内容："把 CapturePort 抽成接口，PWA 和 Capacitor 各实现一个，UI 层不动。"
 现有类别：idea:想法, project:项目进展, life:生活片段
 输出：{"categorySlug":"project","tags":["aiji","design"],"facets":{"project":"AiJi"},"titleSuggestion":"CapturePort 接口化","summary":"抽 CapturePort 为接口，PWA/Capacitor 各实现"}
@@ -247,15 +289,19 @@ export function buildAggregatePrompt(
   scope: AggregateScopeType,
   detailLevel: number,
 ) {
-  const scopeLabel = scope === 'day' ? '日' : scope === 'week' ? '周' : '月'
+  const en = getCurrentLang() === 'en'
+  // user message（数据注入）保持中文 scopeLabel（与 items 块「图片=N张」一致，builtinLlm.test.ts 断言）；
+  // en 系统提示用英文 scope 词。两变量分流，免 user message 出现「时段：day」混搭。
+  const scopeLabelZh = scope === 'day' ? '日' : scope === 'week' ? '周' : '月'
+  const scopeLabelEn = scope === 'day' ? 'day' : scope === 'week' ? 'week' : 'month'
   // Wave 3: verbosity levels 1-5 (idx 0 = L1). Default 3 (standard).
   // summary 以结构化 sentences 数组强约束句数（LLM 对"恰好 N 个数组元素"服从度远高于"N 句话"软指令）。
   const LEVELS = [
-    { count: 1, highlights: '0 条（输出空数组 []）', tone: '极简：1 句，≤30 字' },
-    { count: 2, highlights: '1-2 条', tone: '简洁：2 句' },
-    { count: 3, highlights: '2-3 条', tone: '标准：3 句' },
-    { count: 5, highlights: '3-5 条', tone: '详细：5 句' },
-    { count: 7, highlights: '5-7 条', tone: '详尽：7 句，含跨条目脉络与时间线索' },
+    { count: 1, highlightsZh: '0 条（输出空数组 []）', toneZh: '极简：1 句，≤30 字', highlightsEn: '0 items (output empty array [])', toneEn: 'minimal: 1 sentence, ≤30 chars' },
+    { count: 2, highlightsZh: '1-2 条', toneZh: '简洁：2 句', highlightsEn: '1-2 items', toneEn: 'concise: 2 sentences' },
+    { count: 3, highlightsZh: '2-3 条', toneZh: '标准：3 句', highlightsEn: '2-3 items', toneEn: 'standard: 3 sentences' },
+    { count: 5, highlightsZh: '3-5 条', toneZh: '详细：5 句', highlightsEn: '3-5 items', toneEn: 'detailed: 5 sentences' },
+    { count: 7, highlightsZh: '5-7 条', toneZh: '详尽：7 句，含跨条目脉络与时间线索', highlightsEn: '5-7 items', toneEn: 'thorough: 7 sentences, with cross-entry threads and time cues' },
   ] as const
   const lvl = LEVELS[Math.min(4, Math.max(0, (detailLevel ?? 3) - 1))]
   const n = lvl.count
@@ -263,19 +309,40 @@ export function buildAggregatePrompt(
   const hasImages = entries.some((e) => e.imageCount > 0)
   const hasVideos = entries.some((e) => e.videoCount > 0)
   const mediaRule = (hasImages || hasVideos)
-    ? `\n6. 媒体备注：本时段条目含图片/视频（见每条的「图片 N 张」「视频 M 段」及「图片理解」「视频理解」原文）。sentences 最后一个元素必须是媒体备注句，格式严格为「图片内容：<把各条目图片理解综合成连贯中文描述>；视频内容：<把各条目视频理解综合成连贯中文描述>」——综合而非罗列，可适当提炼但保留关键画面信息。${hasImages ? '本时段有图片 → 必须含「图片内容：」段。' : '本时段无图片 → 不要写「图片内容：」段。'}${hasVideos ? '本时段有视频 → 必须含「视频内容：」段。' : '本时段无视频 → 不要写「视频内容：」段。'}该媒体备注句计入上述 ${n} 句总数（即其余提炼句为 ${n - 1} 句）。`
+    ? en
+      ? `\n6. Media note: This period's entries contain images/videos (see each entry's "图片 N 张" / "视频 M 段" and "图片理解" / "视频理解" raw text). The last element of sentences MUST be a media-note sentence, strictly formatted as "图片内容: <synthesize each entry's image understanding into a coherent English description>; 视频内容: <synthesize each entry's video understanding into a coherent English description>" — synthesize, do not list; you may distill but keep key visual information. ${hasImages ? 'This period has images → MUST include the "图片内容:" segment. ' : 'This period has no images → do NOT write the "图片内容:" segment. '}${hasVideos ? 'This period has videos → MUST include the "视频内容:" segment. ' : 'This period has no videos → do NOT write the "视频内容:" segment. '}This media-note sentence counts toward the ${n} total (i.e. the other distillation sentences are ${n - 1}).`
+      : `\n6. 媒体备注：本时段条目含图片/视频（见每条的「图片 N 张」「视频 M 段」及「图片理解」「视频理解」原文）。sentences 最后一个元素必须是媒体备注句，格式严格为「图片内容：<把各条目图片理解综合成连贯中文描述>；视频内容：<把各条目视频理解综合成连贯中文描述>」——综合而非罗列，可适当提炼但保留关键画面信息。${hasImages ? '本时段有图片 → 必须含「图片内容：」段。' : '本时段无图片 → 不要写「图片内容：」段。'}${hasVideos ? '本时段有视频 → 必须含「视频内容：」段。' : '本时段无视频 → 不要写「视频内容：」段。'}该媒体备注句计入上述 ${n} 句总数（即其余提炼句为 ${n - 1} 句）。`
     : ''
-  const system = `你是「AiJi」(AI 记) 的聚合摘要助手。给定一个${scopeLabel}内用户的若干条「记」条目（每条含原文与 AI 单条摘要），输出该${scopeLabel}的聚合摘要。
+  const system = en
+    ? `You are the aggregate-summary assistant for "AiJi" (AI 记). Given several of the user's "记" entries within a ${scopeLabelEn} (each with its raw text and AI single-entry summary), output the aggregate summary for this ${scopeLabelEn}.
+
+Rules:
+1. Output JSON: {"sentences":string[], "highlights":string[]}.
+2. The sentences array **MUST contain exactly ${n} elements** (${lvl.toneEn}). Each element is one complete English sentence ending with "."; do not merge, split, or add/remove sentences.
+3. highlights: ${lvl.highlightsEn} key highlights of the period (each ≤16 chars), reflecting the most important content/ideas/progress.
+4. Do not list each entry; distill cross-entry commonalities and threads.
+5. Mood is only an optional facet, not a primary axis.${mediaRule}
+
+Output JSON only — no markdown fences, no explanation.
+IMPORTANT: Write ALL natural-language output (category names, tags, summaries, answers) in English.`
+    : `你是「AiJi」(AI 记) 的聚合摘要助手。给定一个${scopeLabelZh}内用户的若干条「记」条目（每条含原文与 AI 单条摘要），输出该${scopeLabelZh}的聚合摘要。
 
 铁律：
 1. 输出 JSON：{"sentences":string[], "highlights":string[]}。
-2. sentences 数组**必须恰好包含 ${n} 个元素**（${lvl.tone}）。每个元素是一句完整中文，以「。」结尾，不得合并、不得拆分、不得多一句或少一句。
-3. highlights 为 ${lvl.highlights} 该时段关键亮点（每条 ≤16 字），反映最重要的内容/想法/进展。
+2. sentences 数组**必须恰好包含 ${n} 个元素**（${lvl.toneZh}）。每个元素是一句完整中文，以「。」结尾，不得合并、不得拆分、不得多一句或少一句。
+3. highlights 为 ${lvl.highlightsZh} 该时段关键亮点（每条 ≤16 字），反映最重要的内容/想法/进展。
 4. 不要罗列每条条目，要提炼跨条目共性与脉络。
 5. 情绪只是可选侧面，不当主轴。${mediaRule}
 
-只输出 JSON，不要 markdown 围栏、不要解释。`
-  const example = `示例（sentences 恰好 3 句的范式——你的句数须依上面的 ${n} 而定，不照搬示例句数）：
+只输出 JSON，不要 markdown 围栏、不要解释。
+重要：所有自然语言输出（分类名、标签、摘要、回答）用简体中文。`
+  const example = en
+    ? `Example (sentences has exactly 3 — your count must follow the ${n} above, do not copy the example's count):
+Entry 1: text="Abstract CapturePort into an interface, PWA and Capacitor each implement one." summary="Abstract CapturePort as interface, PWA/Capacitor each implement"
+Entry 2: text="On the subway I thought: if only jotting something down could also turn into a reminder." summary="Wish recording could also generate a reminder"
+Entry 3: text="Read an article on second brain — the core is don't organize, just capture." summary="Capture only, don't organize; leave organizing to the backend"
+Output: {"sentences":["This week centered on the AiJi project: abstracting ports and emergent classification took shape.","Interleaved reading notes (second brain: capture only, don't organize) with a subway insight (recording becomes a reminder).","Overall: focused and engineering-leaning."],"highlights":["CapturePort interface","Recording becomes reminder","Second brain reading"]}`
+    : `示例（sentences 恰好 3 句的范式——你的句数须依上面的 ${n} 而定，不照搬示例句数）：
 条目1：原文="把 CapturePort 抽成接口，PWA 和 Capacitor 各实现一个。" 摘要="抽 CapturePort 为接口，PWA/Capacitor 各实现"
 条目2：原文="地铁里想到如果记一条东西能顺便变成提醒就好了。" 摘要="希望记录时能顺带生成提醒"
 条目3：原文="读到一篇讲 second brain 的文章，核心是不要整理只要捕获。" 摘要="只捕获不整理，整理交给后端"
@@ -292,7 +359,7 @@ export function buildAggregatePrompt(
     })
     .join('\n')
 
-  const user = `时段：${scopeLabel}
+  const user = `时段：${scopeLabelZh}
 条目数：${entries.length}
 要求：sentences 数组恰好 ${n} 个元素。
 ${items}
@@ -332,7 +399,25 @@ export function parseAggregateJson(raw: string): AggregateResult {
 // 为锚解析相对时间。ISO 周号由 LLM 给（可能偏差 1 号，但 localRecall 是结构化∪keyword
 // 召回，时间过滤错只收窄、不全丢——keyword 兜底）。无时间意图 scope=null。
 export function buildIntentPrompt(question: string, nowIso: string) {
-  const system = `你是「AiJi」(AI 记) 的检索意图解析器。给定用户问句 + 当前本地时间，输出严格 JSON，供本地检索用。
+  const en = getCurrentLang() === 'en'
+  const system = en
+    ? `You are the retrieval-intent parser for "AiJi" (AI 记). Given a user question + the current local time, output strict JSON for local retrieval.
+
+Rules:
+1. scope: if the question contains a time intent (today/yesterday/this week/last week/last month/last N days/a specific date), parse it into an absolute time range. type is day|week|month, range uses ISO format: day=YYYY-MM-DD, week=YYYY-Www (ISO week number, Monday as the first day), month=YYYY-MM. Anchor to "the current time": today=the current day, yesterday=the previous day, this week=the current week, last week=the previous week, last month=the previous month. When there is no time intent, scope=null.
+2. keywords: extract **all concrete entities/topic words** for local retrieval matching. These include:
+   - Place names (Shanghai, Beijing, Wangjing, a café, "downstairs") — these often live in an entry's location.address or facets.place and are key retrieval signals; always keep them.
+   - People, project names, item names, activity names (running, osmanthus latte, CapturePort, design draft).
+   - Topic words (shopping, meeting, working out).
+   You MUST drop pure function words (the/of/about/what/how/that/this/wrote down/stuff etc.). But keep entity nouns even if short. Better to keep too many entity words than to miss a place/person name. 1-8 items, lowercase.
+3. categorySlugs: if the question clearly points to a category (e.g. "ideas", "projects"), give the slug; if unsure, omit this field. Never fabricate.
+4. Output JSON only — no markdown fences, no explanation.
+
+Output schema:
+{"scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[]}
+
+IMPORTANT: Write ALL natural-language output (category names, tags, summaries, answers) in English.`
+    : `你是「AiJi」(AI 记) 的检索意图解析器。给定用户问句 + 当前本地时间，输出严格 JSON，供本地检索用。
 
 铁律：
 1. scope：若问句含时间意图（今天/昨天/本周/上周/上个月/最近X天/具体日期），解析为绝对时间范围。type 为 day|week|month，range 用 ISO 格式：day=YYYY-MM-DD、week=YYYY-Www（ISO 周号，周一为首日）、month=YYYY-MM。以「当前时间」为锚：今天=当日、昨天=前一日、本周=当前周、上周=前一周、上个月=前一月。无时间意图时 scope=null。
@@ -345,8 +430,30 @@ export function buildIntentPrompt(question: string, nowIso: string) {
 4. 只输出 JSON，不要 markdown 围栏、不要解释。
 
 输出 schema：
-{"scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[]}`
-  const example = `示例1（时间+具体词，去泛词「想法」）：
+{"scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[]}
+
+重要：所有自然语言输出（分类名、标签、摘要、回答）用简体中文。`
+  const example = en
+    ? `Example 1 (time + concrete word; drop the generic word "ideas"):
+Question: "my running ideas from last month"
+Current time: 2026-07-17T10:30:00+08:00
+Output: {"scope":{"type":"month","range":"2026-06"},"keywords":["running"]}
+
+Example 2 (place entity must be preserved):
+Question: "what did I write in Shanghai"
+Current time: 2026-07-17T10:30:00+08:00
+Output: {"scope":null,"keywords":["shanghai"]}
+
+Example 3 (item + place entity):
+Question: "the osmanthus latte one"
+Current time: 2026-07-17T10:30:00+08:00
+Output: {"scope":null,"keywords":["osmanthus latte"]}
+
+Example 4 (this week, broad question keeps few topic words):
+Question: "what did I do this week"
+Current time: 2026-07-17T10:30:00+08:00 (2026-W29)
+Output: {"scope":{"type":"week","range":"2026-W29"},"keywords":[]}`
+    : `示例1（时间+具体词，去泛词「想法」）：
 问句："我上个月关于跑步的想法"
 当前时间：2026-07-17T10:30:00+08:00
 输出：{"scope":{"type":"month","range":"2026-06"},"keywords":["跑步"]}
@@ -379,6 +486,9 @@ export function buildIntentPrompt(question: string, nowIso: string) {
 // 让 LLM 综合判断相关性并诚实作答，而非硬模板「未找到」。只有确实无任何相关条目时才说明。
 // 铁律：citedEntryIds 必须是 cites 中真实存在的 id；绝不臆造引用或条目内容。
 export function buildAnswerPrompt(question: string, cites: ChatCite[], conversation: { role: 'user' | 'assistant'; content: string }[], memories?: string[]) {
+  const en = getCurrentLang() === 'en'
+  // citesBlock 是召回数据注入（id/类别/摘要/地点/标签/原文摘录），保持中文标签——
+  // 数据值（c.summary/c.textExcerpt 等）原样拼入不翻译，与 memoryBlock 同属「数据块」。
   const citesBlock = cites.length === 0
     ? '（无召回条目）'
     : cites.map((c) => {
@@ -390,12 +500,31 @@ export function buildAnswerPrompt(question: string, cites: ChatCite[], conversat
       }).join('\n')
   // AI 记忆注入（2026-07-22 §3）：措辞针对问答——「回答时参考…与记忆冲突时以记忆为准」。
   // 空数组/undefined → memoryBlock='' → system + '' 与现状逐字节一致（回归安全）。
+  // memoryBlock 保持中文（aiMemory.test.ts 在默认 en 模式断言其中文字样，不在本改动可碰清单）。
   const memoryBlock = memories && memories.length > 0
     ? '\n\n用户明确记忆与偏好（必须遵循，优先级高于你的默认判断）：\n' +
       memories.map((c) => `- ${c}`).join('\n') +
       '\n回答时参考这些用户明确记忆；与记忆冲突时以记忆为准。'
     : ''
-  const system = `你是「AiJi」(AI 记) 的智能问答助手，帮用户从他的「记」条目里找信息、做总结、聊内容。这是个对话窗口，回答要自然、有用、像在跟用户聊，不要死板。
+  const system = en
+    ? `You are the smart Q&A assistant for "AiJi" (AI 记), helping the user find information, summarize, and chat about content from their "记" entries. This is a conversation window — answer naturally, usefully, like talking with the user; don't be stiff.
+
+Your basis is the "recalled entries" below (the user's in-app notes, with raw-text excerpts/summaries/places/tags/categories). Usage rules:
+1. Prefer information from the recalled entries. You may synthesize across entries (e.g. "this week you were mainly busy with X and Y", "about Shanghai, you wrote…").
+2. Recalled entries may include weakly related or fallback recent entries — judge relevance before using. Use relevant ones as your basis; ignore irrelevant ones.
+3. When citing an entry, mark it with "(see <id>)", where id MUST come from the entry id set below. citedEntryIds lists the entry ids you actually relied on.
+4. If the recalled entries are genuinely unrelated to the question (e.g. you ask about Shanghai but all entries are about Beijing), honestly say "I couldn't find anything relevant — try rephrasing or tell me roughly when", citedEntryId=[]. Do not force-fit or fabricate.
+5. Do not invent specific content not present in the entries (names/numbers/event details). You may summarize and infer tone, but factual content must be backed by an entry.
+6. Answer naturally and fluently; use bullets or paragraphs as needed. Be detailed when it matters — don't sacrifice usefulness to save tokens.
+
+Recalled entries:
+${citesBlock}
+
+Output schema (pure JSON, no fences):
+{"answer":string,"citedEntryIds":string[]}
+
+IMPORTANT: Write ALL natural-language output (category names, tags, summaries, answers) in English.`
+    : `你是「AiJi」(AI 记) 的智能问答助手，帮用户从他的「记」条目里找信息、做总结、聊内容。这是个对话窗口，回答要自然、有用、像在跟用户聊，不要死板。
 
 你的依据是下方「召回条目」（用户库内的笔记，含原文摘录/摘要/地点/标签/类别）。调用规范：
 1. 优先用召回条目里的信息作答。可以综合多条条目归纳（如「这周你主要在忙 X 和 Y」「关于上海，你记了…」）。
@@ -409,9 +538,11 @@ export function buildAnswerPrompt(question: string, cites: ChatCite[], conversat
 ${citesBlock}
 
 输出 schema（纯 JSON，无围栏）：
-{"answer":string,"citedEntryIds":string[]}` + memoryBlock
+{"answer":string,"citedEntryIds":string[]}
+
+重要：所有自然语言输出（分类名、标签、摘要、回答）用简体中文。`
   const msgs = [
-    { role: 'system' as const, content: system },
+    { role: 'system' as const, content: system + memoryBlock },
     ...conversation,
     { role: 'user' as const, content: question },
   ]
@@ -482,14 +613,39 @@ export function parseAnswerJson(raw: string): { answer: string; citedEntryIds: s
 // store.sendMessage 在用户说「记住 X」类意图时调用。输出一句精炼中文记忆原文；无可记内容输出 NULL。
 // builtinLlm 复用此 helper（双路径 prompt 一致）。
 export function buildExtractMemoryPrompt(text: string): ChatMessage[] {
-  const system = `你是「AiJi」(AI 记) 的记忆提取器。给定用户的一句话，判断其中是否含有需要长期记住的事实、偏好或归类指令，并提炼成一句精炼的中文记忆原文。
+  const en = getCurrentLang() === 'en'
+  const system = en
+    ? `You are the memory extractor for "AiJi" (AI 记). Given a single sentence from the user, determine whether it contains a fact, preference, or classification instruction worth remembering long-term, and distill it into one concise English memory sentence.
+
+Rules:
+1. Only extract content worth remembering long-term: personal facts (e.g. "I am allergic to peanuts"), preferences (e.g. "diary entries all go to the life category"), classification instructions (e.g. "conversations with my wife all go to the family category"), habits (e.g. "I get up at 7am every day").
+2. Distill into one complete English sentence, preserving key information and dropping filler/modal words themselves ("help", "please", "remember", "from now on", "don't forget" etc. do not enter the memory text).
+3. If the user is just asking, chatting, or querying (e.g. "what did I do last month", "what is this"), with nothing worth remembering, output NULL (three uppercase letters).
+4. Output only the memory text or NULL — no markdown fences, no explanation, no quotes.
+
+IMPORTANT: Write ALL natural-language output (category names, tags, summaries, answers) in English.`
+    : `你是「AiJi」(AI 记) 的记忆提取器。给定用户的一句话，判断其中是否含有需要长期记住的事实、偏好或归类指令，并提炼成一句精炼的中文记忆原文。
 
 铁律：
 1. 只提取需要长期记住的内容：个人事实（如「我对花生过敏」）、偏好（如「日记都归到 life 类」）、归类指令（如「和老婆的对话都归到家庭类」）、习惯（如「我每天早上 7 点起」）。
 2. 提炼成一句完整中文，保留关键信息，去掉口语衬词与指令性词汇本身（「帮我」「请」「记住」「以后」「别忘了」等不进记忆原文）。
 3. 若用户只是普通提问、闲聊、查询（如「上个月做了什么」「这是什么」），无可记内容，输出 NULL（三个大写字母）。
-4. 只输出记忆原文或 NULL，不要 markdown 围栏、不要解释、不要引号。`
-  const example = `示例1（含归类指令，提炼后去衬词）：
+4. 只输出记忆原文或 NULL，不要 markdown 围栏、不要解释、不要引号。
+
+重要：所有自然语言输出（分类名、标签、摘要、回答）用简体中文。`
+  const example = en
+    ? `Example 1 (classification instruction; filler words dropped after distillation):
+User: "help me remember that from now on all entries about luosifen go to the food category"
+Output: All entries about luosifen go to the food category
+
+Example 2 (fact):
+User: "don't forget I'm allergic to peanuts"
+Output: I am allergic to peanuts
+
+Example 3 (ordinary question, nothing to remember):
+User: "my running ideas from last month"
+Output: NULL`
+    : `示例1（含归类指令，提炼后去衬词）：
 用户："帮我记住以后所有关于螺蛳粉的条目都归到 food 类"
 输出：螺蛳粉相关条目都归到 food 类
 
@@ -526,10 +682,11 @@ export function parseMemoryReply(raw: string): string | null {
 
 // D29: 清洗 answer 正文里的内联引用「（见 <id>）」。LLM 常臆造短别名（如 e3）或错配 id，
 // UI 拿非法 id 找不到条目 → 误显「已删除」（实未删）。validIds 外的引用段整段去掉（含前导
-// 空白/标点），合法 id 保留交 UI 渲染。匹配全角括号（见…）与半角括号 (见…) 两种。
+// 空白/标点），合法 id 保留交 UI 渲染。匹配全角括号（见…）与半角括号 (见…) 两种；
+// i18n：en 提示词让 LLM 用 "(see <id>)"，同样纳入清洗（大小写不敏感）。
 function sanitizeInlineCites(answer: string, validIds: Set<string>): string {
   // 同时匹配前导空白，剔掉非法引用后不留多余空格。合法引用原样保留。
-  const re = /([ \t　]*[（(]\s*见\s+([a-zA-Z0-9_-]+)\s*[）)])/g
+  const re = /([ \t　]*[（(]\s*(?:见|see)\s+([a-zA-Z0-9_-]+)\s*[）)])/gi
   return answer.replace(re, (full, _m, id: string) => (validIds.has(id) ? full : ''))
 }
 

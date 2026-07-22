@@ -1,8 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
+import { setCurrentLang } from '@/app/currentLang'
 import { buildExtractMemoryPrompt, parseMemoryReply } from '@/adapters/openAiCompatLlm'
 
 // buildExtractMemoryPrompt / parseMemoryReply 是纯函数（无 I/O），直接测。
 // 镜像 aiMemory.test.ts 的 buildPrompt/buildAnswerPrompt 纯函数测法。
+// 提示词双语化后默认 en（jsdom navigator.language=en-US）；本文件断言 zh 契约字样，
+// 故 beforeEach 锁 zh（最小适配，不改变断言语义）。
+
+beforeEach(() => setCurrentLang('zh'))
 
 describe('buildExtractMemoryPrompt', () => {
   it('system 含记忆提取器身份 + NULL 输出约定 + 事实/偏好/归类指令三类', () => {
