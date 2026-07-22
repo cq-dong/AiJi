@@ -3,6 +3,8 @@ import { MapPin } from 'lucide-react'
 import type { EntryPart, GeoPoint } from '@/domain/types'
 import { Card } from '@/ui/components'
 import { di } from '@/app/di'
+import { t } from '@/app/i18n'
+import { useT } from '@/app/i18n/useT'
 import { formatDateTime, formatDuration, partTypeLabel } from './helpers'
 
 const BAR_HEIGHTS = [4, 11, 6, 13, 8, 15, 10, 5, 12, 7, 14, 9, 4, 11, 6, 13, 8, 15, 10, 5, 12, 7, 14, 9]
@@ -10,6 +12,7 @@ const BAR_HEIGHTS = [4, 11, 6, 13, 8, 15, 10, 5, 12, 7, 14, 9, 4, 11, 6, 13, 8, 
 // 点击图片 → 显示边框 + 右下角拖拽手柄；拖手柄沿对角线自由缩放（30%~160%）。
 // 外层 overflow-x-auto：放大超过容器宽时可横向滚动看全图，缩小则居中无留白。
 function ImageZoomable({ src }: { src: string }) {
+  const t = useT()
   const [pct, setPct] = useState(100)
   const [active, setActive] = useState(false)
   const dragRef = useRef<{ x: number; start: number } | null>(null)
@@ -47,7 +50,7 @@ function ImageZoomable({ src }: { src: string }) {
             <div className="pointer-events-none absolute inset-0 rounded-[12px] ring-2 ring-pri" />
             <div
               role="slider"
-              aria-label="缩放图片"
+              aria-label={t('detail.aria.zoomImage')}
               aria-valuenow={Math.round(pct)}
               aria-valuemin={30}
               aria-valuemax={160}
@@ -93,6 +96,7 @@ function Waveform() {
 
 export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durationSec: number }) {
   // Fetch the persisted blob from OPFS (A2). Seed parts have no blob → static/disabled.
+  const t = useT()
   const [status, setStatus] = useState<'loading' | 'ready' | 'none'>('loading')
   const [url, setUrl] = useState<string | null>(null)
   const [playing, setPlaying] = useState(false)
@@ -130,7 +134,7 @@ export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durat
         <span className="flex size-3 items-center justify-center opacity-40">
           <PlayTriangle className="size-[10px]" />
         </span>
-        <span className="text-[11px] font-medium">音频不可用（样例）</span>
+        <span className="text-[11px] font-medium">{t('detail.audioUnavailable')}</span>
         <span className="ml-auto text-[11px] font-medium tabular-nums">{formatDuration(durationSec)}</span>
       </div>
     )
@@ -145,7 +149,7 @@ export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durat
           type="button"
           onClick={toggle}
           disabled={disabled}
-          aria-label={playing ? '暂停' : '播放'}
+          aria-label={playing ? t('detail.aria.pause') : t('detail.aria.play')}
           className="absolute left-1/2 top-1/2 size-11 -translate-x-1/2 -translate-y-1/2 cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:cursor-not-allowed"
         />
       </div>
@@ -161,6 +165,7 @@ export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durat
 export function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durationSec: number }) {
   // 取真实媒体 blob：durationSec===0 → 图片（<img>）；>0 → 视频（<video controls>）。
   // seed parts 无 blob → 显式「视频/图片不可用（样例）」静默态，与音频不可用一致。
+  const t = useT()
   const [status, setStatus] = useState<'loading' | 'ready' | 'none'>('loading')
   const [url, setUrl] = useState<string | null>(null)
 
@@ -185,7 +190,7 @@ export function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durati
     return (
       <div className="flex aspect-video w-full items-center justify-center rounded-[12px] bg-page text-t3">
         <span className="text-[11px] font-medium">
-          {durationSec === 0 ? '图片不可用（样例）' : '视频不可用（样例）'}
+          {durationSec === 0 ? t('detail.imageUnavailable') : t('detail.videoUnavailable')}
         </span>
       </div>
     )
@@ -214,16 +219,16 @@ export function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durati
 function mediaTypeLabel(part: EntryPart): string {
   if (part.mediaType) {
     switch (part.mediaType) {
-      case 'text': return '文本'
-      case 'image': return '图片'
-      case 'video': return '视频'
-      case 'audio': return '语音'
+      case 'text': return t('detail.partType.text')
+      case 'image': return t('detail.partType.image')
+      case 'video': return t('detail.partType.video')
+      case 'audio': return t('detail.partType.audio')
     }
   }
-  if (part.type === 'text') return '文本'
-  if (part.type === 'audio') return '语音'
+  if (part.type === 'text') return t('detail.partType.text')
+  if (part.type === 'audio') return t('detail.partType.audio')
   // VideoPart with durationSec=0 is a photo; >0 is a video.
-  if (part.type === 'video') return part.durationSec === 0 ? '图片' : '视频'
+  if (part.type === 'video') return part.durationSec === 0 ? t('detail.partType.image') : t('detail.partType.video')
   return ''
 }
 
@@ -252,11 +257,12 @@ function MediaTypeBadge({ part }: { part: EntryPart }) {
 // alongside the parts list. Displays `address` (reverse-geocoded) → `label`
 // (LLM/user-curated) → formatted lat/lng as last resort.
 export function LocationBadge({ location }: { location?: GeoPoint }) {
+  const t = useT()
   if (!location) {
     return (
       <p className="flex items-center gap-1 text-[11px] text-t3">
         <MapPin size={12} strokeWidth={2} />
-        地点：未记录（设置中可开启）
+        {t('detail.locationNone')}
       </p>
     )
   }
