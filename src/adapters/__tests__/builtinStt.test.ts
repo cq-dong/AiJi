@@ -26,7 +26,10 @@ vi.mock('@/app/quotaStore', () => ({
 }))
 
 const okText = (text: string) => (globalThis.fetch = vi.fn(async () =>
-  new Response(text, { status: 200 })
+  new Response(JSON.stringify({ text }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })
 ) as never)
 
 beforeEach(async () => {
@@ -41,6 +44,26 @@ beforeEach(async () => {
 })
 
 describe('builtinStt', () => {
+  it('server returns JSON {text} → returns extracted text（服务端契约回归）', async () => {
+    // 服务端 stt.ts 契约是 c.json({text})；regression：此前按纯文本 res.text() 读，
+    // 条目正文变成 '{"text":"..."}' 字面量。
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ text: '你好世界' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    ) as never
+    const out = await builtinStt.transcribe('ref1')
+    expect(out).toBe('你好世界')
+  })
+  it('200 但非 JSON/缺 text → throws 响应格式异常（防守卫被移除）', async () => {
+    globalThis.fetch = vi.fn(async () => new Response('not json', { status: 200 })) as never
+    await expect(builtinStt.transcribe('ref1')).rejects.toThrow('响应格式异常')
+    globalThis.fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ text: 123 }), { status: 200 })
+    ) as never
+    await expect(builtinStt.transcribe('ref1')).rejects.toThrow('响应格式异常')
+  })
   it('transcribe succeeds → returns text', async () => {
     okText('transcribed text')
     const out = await builtinStt.transcribe('ref1')
@@ -63,7 +86,10 @@ describe('builtinStt', () => {
     globalThis.fetch = vi.fn(async () => {
       calls++
       if (calls === 1) return new Response('', { status: 401 })
-      return new Response('retried text', { status: 200 })
+      return new Response(JSON.stringify({ text: 'retried text' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }) as never
     const out = await builtinStt.transcribe('ref1')
     expect(calls).toBe(2)

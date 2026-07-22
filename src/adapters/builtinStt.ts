@@ -53,6 +53,9 @@ export const builtinStt: SttPort = {
     // 乐观递增：前端不知实际时长，按保守 5 秒计（后端按 wav 字节估的真实 duration 扣权威值，
     // 下次 quotaStore.refresh 修正显示）。
     useQuotaStore.getState().consume('stt', 5)
-    return (await res.text()).trim()
+    // 服务端契约 c.json({text})——必须按 JSON 解析；按纯文本读会把 '{"text":"..."}' 写进条目正文。
+    const data = (await res.json().catch(() => null)) as { text?: string } | null
+    if (!data || typeof data.text !== 'string') throw new Error('builtinStt 响应格式异常')
+    return data.text.trim()
   },
 }
