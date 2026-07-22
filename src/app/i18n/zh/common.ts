@@ -16,6 +16,7 @@ export const common = {
   'common.disable': '关闭',
   'common.itemsCount': '{count} 条',
   'common.zhOnly': '仅中文',
+  'chat.memoryConfirm': '已记住：{content}（可在 设置→AI 记忆 管理）',
   'nav.home': '记',
   'nav.categories': '分类',
   'nav.summary': '总结',

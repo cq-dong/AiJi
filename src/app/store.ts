@@ -9,6 +9,7 @@ import * as summaryCache from '@/adapters/summaryCache'
 import { di } from './di'
 import { useAccountStore, registerStoreRehydrate } from './accountStore'
 import { setCurrentLang, detectLang } from '@/app/currentLang'
+import { t } from '@/app/i18n'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：D9 后首屏空状态（不再
 // seed 兜底），hydrate() 异步从 Dexie 载入真实条目替换；finishSave 同时落库 + 入队分类。
@@ -925,7 +926,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         const confirmMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: `已记住：${memoryContent}（可在 设置→AI 记忆 管理）`,
+          content: t('chat.memoryConfirm', { content: memoryContent }),
           createdAt: new Date().toISOString(),
         }
         const cur = get().conversation ?? ensureConversation(null)

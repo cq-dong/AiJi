@@ -35,9 +35,12 @@ vi.mock('@/ui/screens/chat/helpers', () => ({
 }))
 
 import { useUiStore } from '@/app/store'
+import { setCurrentLang } from '@/app/currentLang'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // 断言中文确认文案，固定 zh（jsdom navigator.language=en-US，detect 会得 en）。
+  setCurrentLang('zh')
   mocks.parseChatIntent.mockResolvedValue({ scope: null, keywords: [], categorySlugs: undefined } as ChatQuery)
   mocks.answerChat.mockResolvedValue({ answer: '好的', citedEntryIds: [] } as ChatAnswer)
   mocks.extractMemory.mockResolvedValue(null)
