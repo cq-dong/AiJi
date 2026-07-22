@@ -87,7 +87,8 @@ cd server && npm run test       # vitest run
 - **部署**（腾讯云 106.54.26.195，平铺 `/opt/aiji`，pm2 `aiji-api`）：**严禁远端
   `npm ci`**（会挂且先删 node_modules）→ 本机 `cd server && npm run build` →
   `sshpass rsync -az dist/ root@106.54.26.195:/opt/aiji/dist/` → `pm2 restart aiji-api`。
-  详见 CLAUDE.md §12。
+  动过服务器 node_modules 后必验 ffmpeg-static 二进制（权限 + `-version` 可打印），
+  坑与重下命令见 CLAUDE.md §12。
 
 ## 6. i18n 体系（CLAUDE.md 未覆盖）
 
