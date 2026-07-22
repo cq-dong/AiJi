@@ -5,6 +5,7 @@ import { localSession } from '@/app/session'
 import { di } from '@/app/di'
 import { SessionExpiredError } from '@/ports'
 import { setCurrentOwner } from '@/app/currentOwner'
+import { t } from '@/app/i18n'
 
 // adoptLocal 包装：收养失败不让 login/register reject——登录本身已成功（session 已落），
 // 数据收养是 best-effort 后台动作。失败只记日志，用户仍处登录态（数据可能暂缺，下次登录可重试收养）。
@@ -146,7 +147,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     const account: Account = {
       id: crypto.randomUUID(),
       type: 'guest',
-      nickname: nickname.trim() || '我',
+      nickname: nickname.trim() || t('comp.avatar.me'),
       plan: 'guest',
       createdAt: new Date().toISOString(),
     }

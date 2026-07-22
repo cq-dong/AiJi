@@ -57,5 +57,5 @@ export const chat = {
   'login.errorPasswordMismatch': 'Passwords do not match',
   'login.errorAuth409Hint': 'This email is already registered, please sign in',
   'login.footerNote': 'Data is always local-first; the account is just an identity and entitlement credential',
-  'login.disclaimer': 'AiJi · AI 记 — open source at github.com/cq-dong/AiJi · for learning only · AI-generated content (categories/summaries/Q&A) may be inaccurate, verify important decisions yourself · using this app means you accept this notice',
+  'login.disclaimer': 'AiJi · AI Journal — open source at github.com/cq-dong/AiJi · for learning only · AI-generated content (categories/summaries/Q&A) may be inaccurate, verify important decisions yourself · using this app means you accept this notice',
 }

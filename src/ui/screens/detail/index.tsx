@@ -575,8 +575,8 @@ function MoreSheet({
     setExporting(true)
     try {
       const result = await exportEntryZip(entryId)
-      // 用户取消分享面板（method=none, error='已取消'）——静默，不弹 toast。
-      // 注：'已取消' 是适配器落库的原始 error 码（非显示文案），不本地化，匹配保持稳定。
+      // 用户取消分享面板（method=none, error='CANCELLED'）——静默，不弹 toast。
+      // 注：'CANCELLED' 是适配器返回的协议 sentinel（非显示文案），不本地化，匹配保持稳定。
       if (!result.ok && result.method === 'none' && result.error === 'CANCELLED') return
       onExportResult(formatSaveFeedback(result), result.ok)
     } catch (e) {

@@ -1334,7 +1334,7 @@ export default function Settings() {
     setZipExporting(true)
     try {
       const result = await exportZip()
-      // 用户取消（method=none, ok=false, error='已取消'）——静默，不弹 toast。
+      // 用户取消（method=none, ok=false, error='CANCELLED'）——静默，不弹 toast。
       if (!result.ok && result.method === 'none' && result.error === 'CANCELLED') {
         return
       }

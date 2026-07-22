@@ -81,7 +81,7 @@ export function CategoryEditSheet({
     setZipExporting(true)
     try {
       const result = await exportCategoryZip(category.slug)
-      // 「已取消」是 fileShare 适配器返回的协议 sentinel（用户取消分享面板）→ 静默。
+      // 'CANCELLED' 是 fileShare 适配器返回的协议 sentinel（用户取消分享面板）→ 静默。
       if (!result.ok && result.method === 'none' && result.error === 'CANCELLED') return
       setZipToast({ msg: formatSaveFeedback(result), ok: result.ok })
     } catch (e) {

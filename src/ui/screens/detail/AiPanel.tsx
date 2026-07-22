@@ -115,7 +115,7 @@ function FailedBody({ error, onReprocess, onManualEdit }: { error?: string; onRe
   const hint = error
     ? error.includes('未配置') || error.includes('BYOK')
       ? t('detail.fail.noKey')
-      : error.includes('空') || error.includes('empty')
+      : error.includes('无文本') || error.includes('空') || error.includes('empty')
         ? t('detail.fail.emptyText')
         : t('detail.fail.reason', { error })
     : t('detail.fail.network')
