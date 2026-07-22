@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   extractMemory: vi.fn(),
   saveConversation: vi.fn(),
   saveMemory: vi.fn(),
+  listConversations: vi.fn(),
 }))
 
 vi.mock('@/app/di', () => ({
@@ -23,6 +24,8 @@ vi.mock('@/app/di', () => ({
     storage: {
       saveConversation: (c: unknown) => mocks.saveConversation(c),
       saveMemory: (m: unknown) => mocks.saveMemory(m),
+      // 多会话（2026-07-22）：sendMessage 落库后 refreshChatList 读列表；空数组即够，本文件不测历史。
+      listConversations: () => mocks.listConversations(),
     },
   },
 }))
@@ -46,8 +49,9 @@ beforeEach(() => {
   mocks.extractMemory.mockResolvedValue(null)
   mocks.saveConversation.mockResolvedValue(undefined)
   mocks.saveMemory.mockResolvedValue(undefined)
+  mocks.listConversations.mockResolvedValue([])
   // online=true（避免离线早返）；conversation=null（lazy-create）；entries=[]（cache key 稳定）。
-  useUiStore.setState({ online: true, conversation: null, entries: [], memories: [], hydrated: true })
+  useUiStore.setState({ online: true, conversation: null, chatList: [], entries: [], memories: [], hydrated: true })
 })
 
 // 注意：chatAnswerCache 是 store.ts 模块级 Map，跨用例持久。各用例用不同问题串避免缓存命中
