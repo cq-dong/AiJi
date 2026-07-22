@@ -3,6 +3,9 @@
 > 本文件是给 Claude Code（及任何 AI 协作者）的项目指令。产品 spec 见
 > `docs/superpowers/specs/2026-07-15-aiji-design.md`（PRD，8 节）。
 > 这里只写**非显而易见、承重**的工程约束与产品铁律。
+>
+> **联动**：后端 / i18n / 测试 / git / agent 协作流程见 `AGENTS.md`（跨 agent CLI
+> 协作指令）。两文件互补、互引——改承重约定查对方是否需同步。详见 `AGENTS.md` §0。
 
 ## 1. 产品身份铁律（不可动摇）
 
@@ -100,3 +103,45 @@ npm run dev          # http://localhost:5173（视口 390×844 调试）
 npm run typecheck    # tsc -b（lead 集成用）
 npm run build        # tsc -b && vite build
 ```
+
+## 12. 发版与部署（APK release 实测流程）
+
+**版本真源** = `package.json` version。CI「Sync version into gradle」从它写 versionName；
+**tag 触发时断言 tag == package.json**，不一致直接失败（先 bump 再打 tag）。
+
+**两种发版 tag**（`.github/workflows/build-apk.yml`）：
+- `v2.0.1-rcN`（含 `-rc`）→ debug 签名 → GitHub **prerelease**（不取代 Latest，测试包）。
+- `vX.Y.Z`（正式）→ release 签名（secret `ANDROID_KEYSTORE_BASE64` 解码 keystore）→ **Latest release**。
+
+**发版流程**：`npm pkg set version=X.Y.Z` → commit（chore: bump/release）→ `git tag vX.Y.Z`
+→ push 分支 + tag → CI 构建 → softprops/action-gh-release 发 `aiji.apk`。
+**应用内更新**取 releases list[0] + compareSemver 判断是否提示更新；固定直链
+`releases/latest/download/aiji.apk` 只有正式 tag 才指向。
+
+**push 坑（本机必用）**：github.com smart-HTTP 在本机挂（HTTP/2 framing 坏），
+credential-helper 在后台任务也会挂。统一用：
+```sh
+git -c http.version=HTTP/1.1 -c http.proxy=http://127.0.0.1:7897 \
+  push "https://cq-dong:$(gh auth token)@github.com/cq-dong/AiJi.git" <branch> <tag>
+```
+
+**分支策略**：功能分支（`feat/*`）开发 → 发版分支（`vX.Y`）承载发布。
+`feat/network-register → main` 的 PR 合并由用户控制，不擅自合。
+
+**后端部署**（腾讯云 106.54.26.195，**平铺** `/opt/aiji`，pm2 进程 `aiji-api`）：
+**严禁远端 `npm ci`**（会挂 25min 且先删 node_modules）。标准姿势：
+```sh
+cd server && npm run build   # 本机构建
+sshpass rsync -az dist/ root@106.54.26.195:/opt/aiji/dist/
+ssh root@106.54.26.195 'pm2 restart aiji-api'
+```
+改 env（如 CORS_ORIGINS/GAODE_KEY）→ sed 服务器 `.env` + `pm2 restart`。
+服务器还跑着别的项目（onetoken/clash/codex），pm2 list 别误操作他人进程。
+
+**密钥纪律**：`server/.env`（JWT_SECRET/REFRESH_SECRET/DEEPSEEK_KEY/DASHSCOPE_KEY/
+GAODE_KEY）永不 commit、不打印值；前端 `.env.local` BYOK keys gitignored；
+`release/`（本地 APK 产物）**永不 `git add`**。
+
+**e2e 验收栈**：`npm run build && npm run preview -- --port 4173`（prod build 避免
+DEV auto-seed）+ Playwright / chrome-devtools-mcp，视口 390×844。每个用例前清
+SW + localStorage + IndexedDB；截图一律存 `.e2e_shots/`（gitignored，禁根目录 `/*.png`）。
