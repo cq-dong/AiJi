@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   adoptLocal: vi.fn(),
   storeRehydrate: vi.fn(),
   storeHydrated: false,
+  quotaReset: vi.fn(),
 }))
 
 vi.mock('@/app/di', () => ({
@@ -32,7 +33,7 @@ vi.mock('@/app/di', () => ({
   },
 }))
 
-import { useAccountStore, registerStoreRehydrate } from '@/app/accountStore'
+import { useAccountStore, registerStoreRehydrate, registerQuotaReset } from '@/app/accountStore'
 import { localAccount } from '@/adapters/localAccount'
 import { localSession } from '@/app/session'
 
@@ -42,6 +43,14 @@ import { localSession } from '@/app/session'
 // hydrate（post-adopt）测试保持 storeHydrated=false 断言 rehydrate 不被调。
 registerStoreRehydrate(async () => {
   if (mocks.storeHydrated) await mocks.storeRehydrate()
+})
+
+// 注册 quotaReset 回调（模拟 quotaStore.ts 模块加载时的注册）。accountStore 在
+// postNetworkLogin（login/register/bindNetwork）与 logout 调用——清旧账号配额快照。
+// 无 hydrated 守卫（quota reset 总是执行：reset 内存态 + refresh 拉新配额；logout 时
+// refresh 无 session 静默失败 → quota 保持 null → UI skeleton，正确）。
+registerQuotaReset(async () => {
+  await mocks.quotaReset()
 })
 
 const networkAccount: Account = {
@@ -69,6 +78,8 @@ beforeEach(() => {
   mocks.storeRehydrate.mockReset()
   mocks.storeRehydrate.mockResolvedValue(undefined)
   mocks.storeHydrated = false
+  mocks.quotaReset.mockReset()
+  mocks.quotaReset.mockResolvedValue(undefined)
   useAccountStore.setState({ account: null, session: null, sessionStale: false, hydrated: false })
 })
 
@@ -103,6 +114,8 @@ describe('accountStore — login', () => {
     await vi.waitFor(() => expect(mocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ keySource: 'builtin' })))
     // store rehydrate 被触发（清旧 owner 快照）
     await vi.waitFor(() => expect(mocks.storeRehydrate).toHaveBeenCalledOnce())
+    // quota reset 被触发（清旧账号配额快照，拉新账号配额）
+    await vi.waitFor(() => expect(mocks.quotaReset).toHaveBeenCalledOnce())
   })
 })
 
@@ -171,6 +184,8 @@ describe('accountStore — logout', () => {
     expect(mocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ keySource: 'byok' }))
     // 切回 'local' 视图也触发 rehydrate
     await vi.waitFor(() => expect(mocks.storeRehydrate).toHaveBeenCalledOnce())
+    // 登出也清配额快照（无 session refresh 静默失败 → quota 保持 null → UI skeleton）
+    await vi.waitFor(() => expect(mocks.quotaReset).toHaveBeenCalledOnce())
   })
 })
 

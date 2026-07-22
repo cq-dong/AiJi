@@ -224,3 +224,48 @@ describe('builtinLlm', () => {
     expect(bodyStr).toContain('猫跳上墙。')
   })
 })
+
+// ── extractMemory（AI 记忆自动提取，§4）──────────────────────────────────────
+// 走 /api/llm/chat（chatFetch 内置 401→refresh 重试）+ consume('llm', 1)。
+// parseMemoryReply 把 NULL/空 → null。BYOK 路径不 consume（在 openAiCompatLlm 测，此处只测 builtin）。
+describe('builtinLlm — extractMemory', () => {
+  it('非 NULL 回复 → 返记忆原文 + consume llm quota', async () => {
+    okReply('我对花生过敏')
+    const mem = await builtinLlm.extractMemory('别忘了我对花生过敏')
+    expect(mem).toBe('我对花生过敏')
+    expect(consumeFn).toHaveBeenCalledWith('llm', 1)
+  })
+
+  it('NULL 回复 → 返 null（仍 consume，LLM 已被调）', async () => {
+    okReply('NULL')
+    const mem = await builtinLlm.extractMemory('今天天气怎么样')
+    expect(mem).toBeNull()
+    expect(consumeFn).toHaveBeenCalledWith('llm', 1)
+  })
+
+  it('401 → refresh → retry succeeds（chatFetch 内置 401 处理）', async () => {
+    let calls = 0
+    globalThis.fetch = vi.fn(async () => {
+      calls++
+      if (calls === 1) return new Response('', { status: 401 })
+      return new Response(JSON.stringify({ reply: '我对花生过敏' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }) as never
+    const mem = await builtinLlm.extractMemory('记住我对花生过敏')
+    expect(calls).toBe(2)
+    expect(mem).toBe('我对花生过敏')
+    expect(localSession.get()?.jwt).toBe('newjwt')
+    expect(refreshFn).toHaveBeenCalledOnce()
+  })
+
+  it('guest account throws NotNetworkError', async () => {
+    const m = await import('@/app/accountStore')
+    ;(m.useAccountStore as unknown as { getState: () => unknown }).getState = () => ({
+      account: { id: 'g', type: 'guest', nickname: 'g', plan: 'guest', createdAt: '' },
+    })
+    okReply('NULL')
+    await expect(builtinLlm.extractMemory('hi')).rejects.toBeInstanceOf(NotNetworkError)
+  })
+})

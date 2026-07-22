@@ -57,12 +57,33 @@ async function triggerStoreRehydrate(): Promise<void> {
   }
 }
 
+// quotaStore 的配额快照是内存单例（同 store），hydrate 守卫只跑一次。账号切换不刷新 → 新账号
+// 看到旧账号「今日 LLM 4 次」。同槽模式：quotaStore 模块加载时把 reset+refresh 注册进本槽，
+// accountStore 在 postNetworkLogin/logout 调用。零反向 import 成环。
+let quotaResetFn: (() => Promise<void>) | null = null
+
+/** quotaStore 模块加载时注册：账号切换时清旧账号配额快照 + 拉新账号配额。 */
+export function registerQuotaReset(fn: () => Promise<void>): void {
+  quotaResetFn = fn
+}
+
+async function triggerQuotaReset(): Promise<void> {
+  if (!quotaResetFn) return
+  try {
+    await quotaResetFn()
+  } catch (e) {
+    // 静默：logout 场景 refresh 无 session 会失败，不应打扰账号切换主流程。
+    console.error('[accountStore] quota reset failed', e)
+  }
+}
+
 // network 账号登录/绑定后的 best-effort 收尾：先写 keySource='builtin'（防 di 路由漂移到 BYOK），
 // 再 rehydrate（重载新 owner 数据）。顺序有意——rehydrate 内会读 settings，先落 builtin 再重载
 // 避免 race 读到旧 byok。两者均吞错不阻塞登录主流程。
 async function postNetworkLogin(): Promise<void> {
   await setKeySourceBuiltin()
   await triggerStoreRehydrate()
+  await triggerQuotaReset()
 }
 
 interface AccountState {
@@ -216,6 +237,8 @@ export const useAccountStore = create<AccountState>((set, get) => ({
       .catch((e) => console.error('[accountStore] logout reset keySource failed', e))
     // 切回 'local' 视图：清旧 owner 快照重载（隔离）。登出无内置访问权，keySource 保持 byok。
     void triggerStoreRehydrate()
+    // 清旧账号配额快照：logout 后无 session，refresh 静默失败 → quota 保持 null → UI skeleton。
+    void triggerQuotaReset()
   },
   setAvatar: (dataUrl) => {
     const cur = get().account

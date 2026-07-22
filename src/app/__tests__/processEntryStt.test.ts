@@ -49,6 +49,10 @@ vi.mock('@/app/accountStore', () => ({
   useAccountStore: {
     getState: () => ({ account: accountMocks.account, session: accountMocks.session }),
   },
+  // store.ts 模块加载时调用 registerStoreRehydrate 注册回调（槽模式）；mock 需提供该导出，
+  // 否则 store.ts 模块加载即抛「No registerStoreRehydrate export」。本用例不验 rehydrate 行为，no-op。
+  registerStoreRehydrate: () => {},
+  registerQuotaReset: () => {},
 }))
 
 import { useUiStore } from '@/app/store'

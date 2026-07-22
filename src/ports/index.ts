@@ -126,6 +126,10 @@ export interface LlmPort {
     cites: ChatCite[] // 已压缩的 top-K 召回条目（LLM 作答的上下文素材）
     conversation: { role: 'user' | 'assistant'; content: string }[] // 先前多轮对话
   }): Promise<ChatAnswer>
+  // AI 记忆自动提取（2026-07-22 §4）：从用户一句话提取应长期记住的事实/偏好/归类指令。
+  // 返一句精炼中文记忆原文；无可记内容（普通提问）返 null。store.sendMessage 在用户说
+  // 「记住 X」类意图时调用，非 null 则落 AI 记忆 + 回确认消息。失败静默（不影响主问答）。
+  extractMemory(text: string): Promise<string | null>
   // Connectivity probe：tiniest chat ping（max_tokens:1）。设置页连通性测试用。
   // opts 传入时直接用表单值（url/model/key），不读 Dexie/secrets——测未保存的新配置；
   // 省略时回落 settings + secrets（测已落库配置）。key 为空串视为省略（回落已存 key）。

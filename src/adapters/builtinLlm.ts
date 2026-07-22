@@ -21,6 +21,7 @@ import {
   buildAggregatePrompt, parseAggregateJson,
   buildIntentPrompt, parseIntentJson,
   buildAnswerPrompt, parseAnswerJson,
+  buildExtractMemoryPrompt, parseMemoryReply,
   collectEntryImages, inferMediaType, loadEnabledMemoryContents,
   type VisionTextPart, type VisionImagePart,
 } from '@/adapters/openAiCompatLlm'
@@ -240,6 +241,16 @@ export const builtinLlm: LlmPort = {
     const validIds = new Set(cites.map((c) => c.id))
     const citedEntryIds = parsed.citedEntryIds.filter((cid) => validIds.has(cid))
     return { answer: parsed.answer, citedEntryIds } satisfies ChatAnswer
+  },
+
+  // AI 记忆自动提取（2026-07-22 §4）：同 buildExtractMemoryPrompt 走 /api/llm/chat + consume('llm', 1)。
+  // 401→refresh 重试由 chatFetch 内置处理；parseMemoryReply 把 NULL/空→null。
+  async extractMemory(text) {
+    assertNetwork()
+    const messages = buildExtractMemoryPrompt(text)
+    const raw = await chat(messages)
+    useQuotaStore.getState().consume('llm', 1)
+    return parseMemoryReply(raw)
   },
 
   // ping 签名必须接受可选 opts（LlmPort.ping(opts?)），即使 builtin 忽略 opts。

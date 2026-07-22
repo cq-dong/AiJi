@@ -1,20 +1,24 @@
 import type { GeoPoint } from '@/domain/types'
+// 后端代理路径：network 账号（有 JWT）走 {BASE}/api/geocode/reverse，服务端持高德 Key，
+// 不再烘 APK。accountStore/session/di 均不反向 import geocoding，故无环（store→geocoding 单向）。
+import { useAccountStore } from '@/app/accountStore'
+import { localSession } from '@/app/session'
+import { di } from '@/app/di'
 
 // D5/D24: Reverse geocoding adapter — converts lat/lng to human-readable address.
-// 双通道：
-//   1) 高德（Gaode）web 服务 REST —— 国内稳定可靠，需 BYOK Key（settings.geocodingKeyRef）。
-//      浏览器/WebView 直连，CORS 友好。配了 Key 时首选。
-//   2) Nominatim（OpenStreetMap）—— 免费、无需 Key，但国内网络常超时/不可达（OSM 服务器在境外，
-//      移动网络丢包严重）。未配高德 Key 时回落，并放宽超时 + 一次重试提高成功率。
+// 三通道（按优先级）：
+//   1) 高德（Gaode）web 服务 REST —— 用户自配 BYOK Key（settings.geocodingKeyRef → opts.key）。
+//      国内稳定可靠，浏览器/WebView 直连 CORS 友好。配了 Key 时首选。
+//   2) 后端代理 /api/geocode/reverse —— 无自配 Key 且当前为 network 账号（有 JWT）时走。
+//      服务端持高德 Key + 扣账号配额；前端只持 JWT，401→refresh 重试一次（模式照 builtinLlm.chatFetch）。
+//      免去把 Key 烘进 APK 的风险；guest / 未登录回落 Nominatim。
+//   3) Nominatim（OpenStreetMap）—— 免费、无需 Key，但国内网络常超时/不可达（OSM 服务器在境外，
+//      移动网络丢包严重）。兜底，并放宽超时 + 一次重试提高成功率。
 // 接口（reverseGeocode / enrichLocation）不变，只增 opts.key 透传高德 Key。
 
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse'
 const GAODE_REVERSE = 'https://restapi.amap.com/v3/geocode/regeo'
-
-// 内置高德 Key（CI 构建时从 GitHub secret VITE_GAODE_KEY 烘入，免用户手动配置即可
-// 解析地址）。用户在「设置 → 地点编码 Key」自配的 Key 优先（opts.key 传入则覆盖）。
-// 本地 dev 未注入 → 空串，回落 Nominatim。
-const BUILTIN_GAODE_KEY = (import.meta.env.VITE_GAODE_KEY as string | undefined) ?? ''
+const BACKEND_REVERSE_PATH = '/api/geocode/reverse'
 
 async function reverseGeocodeGaode(
   lat: number,
@@ -94,24 +98,86 @@ async function reverseGeocodeNominatim(
 }
 
 /**
+ * 后端代理反向地理编码：network 账号（有 JWT）走 {BASE}/api/geocode/reverse。
+ * 服务端持高德 Key + 扣账号配额；前端只持 JWT。401 → refresh 重试一次（模式照 builtinLlm.chatFetch）。
+ * 返 {address: string}；任何失败返 null（调用方回落 Nominatim）。
+ */
+async function reverseGeocodeViaBackend(
+  lat: number,
+  lng: number,
+  jwt: string,
+  opts?: { signal?: AbortSignal; timeoutMs?: number },
+): Promise<string | null> {
+  const BASE = import.meta.env.VITE_AIJI_BACKEND_BASE ?? ''
+  if (!BASE) return null
+  const timeoutMs = opts?.timeoutMs ?? 6000
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  if (opts?.signal) {
+    if (opts.signal.aborted) ctrl.abort()
+    else opts.signal.addEventListener('abort', () => ctrl.abort(), { once: true })
+  }
+  const params = new URLSearchParams({ lat: String(lat), lng: String(lng) })
+  const doFetch = (token: string) =>
+    fetch(`${BASE}${BACKEND_REVERSE_PATH}?${params}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: ctrl.signal,
+    })
+  try {
+    let res = await doFetch(jwt)
+    if (res.status === 401) {
+      let newSession
+      try {
+        newSession = await di.auth.refresh()
+        localSession.set(newSession)
+      } catch {
+        // refresh 失败（401/网络）→ 会话过期清 session，回落 Nominatim 不打扰用户。
+        localSession.clear()
+        return null
+      }
+      res = await doFetch(newSession.jwt)
+    }
+    if (!res.ok) return null
+    const data = await res.json()
+    if (typeof data?.address === 'string' && data.address.trim()) return data.address.trim()
+    return null
+  } catch (e) {
+    console.warn('[geocoding] backend reverseGeocode failed', e)
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
  * Reverse-geocode lat/lng to a display address string. Returns null on any
  * failure (network/timeout/parse) — callers fall back to raw coordinates.
  *
- * @param opts.key 高德 web 服务 Key。提供 → 走高德（国内稳定）；否则回落 Nominatim
- *                 （超时放宽到 8s + 一次重试，境内仍可能失败）。
+ * 优先级：① opts.key（用户自配高德 Key）→ 高德直连；② 无自配 Key 且当前 network 账号
+ * （有 JWT）→ 后端代理（服务端持 Key，401→refresh 重试）；③ 都不满足 → Nominatim 兜底。
+ * 任一主通道失败都回落 Nominatim，别让用户看到坐标。
  */
 export async function reverseGeocode(
   lat: number,
   lng: number,
   opts?: { signal?: AbortSignal; timeoutMs?: number; key?: string },
 ): Promise<string | null> {
-  // 用户自配 Key 优先；否则用内置 Key（CI 烘入）；都没有 → 跳过高德走 Nominatim。
-  const gaodeKey = opts?.key || BUILTIN_GAODE_KEY
-  if (gaodeKey) {
-    const addr = await reverseGeocodeGaode(lat, lng, gaodeKey, opts)
+  // ① 用户自配 Key → 高德直连。
+  if (opts?.key) {
+    const addr = await reverseGeocodeGaode(lat, lng, opts.key, opts)
     if (addr) return addr
-    // 高德失败（配额/Key 非法/网络）→ 再试 Nominatim 兜底，别让用户看到坐标。
+    // 高德失败（配额/Key 非法/网络）→ 落到 Nominatim 兜底。
+  } else {
+    // ② 无自配 Key + network 账号（有 JWT）→ 后端代理。
+    const a = useAccountStore.getState().account
+    const session = localSession.get()
+    if (a?.type === 'network' && session?.jwt) {
+      const addr = await reverseGeocodeViaBackend(lat, lng, session.jwt, opts)
+      if (addr) return addr
+      // 后端失败（配额/网络/服务端 Key 故障）→ 落到 Nominatim 兜底。
+    }
   }
+  // ③ Nominatim 兜底（不变）。
   const addr = await reverseGeocodeNominatim(lat, lng, opts)
   if (addr) return addr
   // D24: Nominatim 一次重试——境内移动网络首次请求常因 DNS/TLS 握手慢而超时，二次往往能过。

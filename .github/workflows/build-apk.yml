@@ -49,14 +49,13 @@ jobs:
         # .env.local 是 gitignored，CI 上不存在 → 须从 secret 注入 env，否则 APK 里
         # token/repo 为空，反馈点击报「未配置」。BYOK key（VITE_LLM_KEY 等）故意不注入：
         # 那是付费 key，烘进公开 APK 会泄露。
-        # VITE_GAODE_KEY = 内置高德 reverseGeocode Key（geocoding.ts 读），免费配额、
-        # 用户开箱即用解析地址；用户自配 Key 仍优先。属 app 内置能力非付费 key，故烘入。
+        # VITE_GAODE_KEY 已移除：地点编码 key 改服务端代理（GET /api/geocode/reverse，
+        # key 存服务器 .env），不再烘进公开 APK 防提取滥用；network 账号开箱即用。
         # VITE_VLM_*/VITE_STT_* = 内置默认端点 URL/model（builtinDefaults.ts 读），仅端点非密钥；
         # 用户未手动配 URL 时适配器回落这些默认值，开箱即用。用户自配值仍优先。secret 缺失 → 空串回落硬编码。
         env:
           VITE_FEEDBACK_GITHUB_TOKEN: ${{ secrets.FEEDBACK_GITHUB_TOKEN }}
           VITE_FEEDBACK_GITHUB_REPO: ${{ secrets.FEEDBACK_GITHUB_REPO }}
-          VITE_GAODE_KEY: ${{ secrets.VITE_GAODE_KEY }}
           VITE_VLM_URL: ${{ secrets.VITE_VLM_URL }}
           VITE_VLM_MODEL: ${{ secrets.VITE_VLM_MODEL }}
           VITE_STT_URL_STREAM: ${{ secrets.VITE_STT_URL_STREAM }}

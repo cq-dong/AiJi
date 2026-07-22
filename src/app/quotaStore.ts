@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Quota } from '@/domain/quota'
 import { di } from './di'
+import { registerQuotaReset } from './accountStore'
 
 type ConsumeType = 'llm' | 'stt' | 'agg'
 
@@ -11,6 +12,10 @@ interface QuotaState {
   hydrate: () => Promise<void>
   refresh: () => Promise<void>
   consume: (type: ConsumeType, amount: number) => void
+  // 账号切换（login/register/bindNetwork/logout）时由 accountStore 触发：清旧账号内存态
+  // 配额快照，避免新账号看到旧账号「今日 LLM 4 次」。reset 只清内存态，refresh 随后拉新账号
+  // 配额；logout 时无 session → refresh 静默失败 → quota 保持 null → UI 显 skeleton（正确）。
+  reset: () => void
 }
 
 function isExhausted(q: Quota): boolean {
@@ -52,4 +57,16 @@ export const useQuotaStore = create<QuotaState>((set, get) => ({
           : { ...cur, aggUsed: cur.aggUsed + amount }
     set({ quota: next, exhausted: isExhausted(next) })
   },
+  reset: () => {
+    // 清内存态配额快照 + hydrated 守卫，使 refresh 必走网络拉新账号配额（不再被守卫跳过）。
+    set({ quota: null, hydrated: false, exhausted: false })
+  },
 }))
+
+// 账号切换时 accountStore 调本回调：reset 内存态 → refresh 拉新账号配额。
+// 与 store.ts 模块尾 registerStoreRehydrate 同槽模式（accountStore 持可变槽，避免反向 import 成环）。
+// logout 场景 refresh 会因无 session 静默失败（catch 内不 set）→ quota 保持 null → UI skeleton。
+registerQuotaReset(async () => {
+  useQuotaStore.getState().reset()
+  await useQuotaStore.getState().refresh()
+})

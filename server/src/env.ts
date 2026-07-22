@@ -24,6 +24,8 @@ export const env = {
   dashscopeModel: process.env.DASHSCOPE_MODEL ?? 'paraformer-realtime-v2',
   // VLM 多模态模型（qwen-vl 系列）；不强制校验存在，缺省回落。
   vlmModel: process.env.VLM_MODEL ?? 'qwen-vl-max',
+  // 高德 web 服务 key（逆地理解码代理用）；不强制校验，缺省空串→路由返 503。
+  gaodeKey: process.env.GAODE_KEY ?? '',
   corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173,https://localhost').split(',').map((s) => s.trim()).filter(Boolean),
   port: int('PORT', 8787),
   jwtTtl: int('JWT_TTL_SECONDS', 900),

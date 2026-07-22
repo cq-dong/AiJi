@@ -478,6 +478,52 @@ export function parseAnswerJson(raw: string): { answer: string; citedEntryIds: s
   return { answer, citedEntryIds }
 }
 
+// AI 记忆自动提取（2026-07-22 §4）：从用户一句话提取应长期记住的事实/偏好/归类指令。
+// store.sendMessage 在用户说「记住 X」类意图时调用。输出一句精炼中文记忆原文；无可记内容输出 NULL。
+// builtinLlm 复用此 helper（双路径 prompt 一致）。
+export function buildExtractMemoryPrompt(text: string): ChatMessage[] {
+  const system = `你是「AiJi」(AI 记) 的记忆提取器。给定用户的一句话，判断其中是否含有需要长期记住的事实、偏好或归类指令，并提炼成一句精炼的中文记忆原文。
+
+铁律：
+1. 只提取需要长期记住的内容：个人事实（如「我对花生过敏」）、偏好（如「日记都归到 life 类」）、归类指令（如「和老婆的对话都归到家庭类」）、习惯（如「我每天早上 7 点起」）。
+2. 提炼成一句完整中文，保留关键信息，去掉口语衬词与指令性词汇本身（「帮我」「请」「记住」「以后」「别忘了」等不进记忆原文）。
+3. 若用户只是普通提问、闲聊、查询（如「上个月做了什么」「这是什么」），无可记内容，输出 NULL（三个大写字母）。
+4. 只输出记忆原文或 NULL，不要 markdown 围栏、不要解释、不要引号。`
+  const example = `示例1（含归类指令，提炼后去衬词）：
+用户："帮我记住以后所有关于螺蛳粉的条目都归到 food 类"
+输出：螺蛳粉相关条目都归到 food 类
+
+示例2（含事实）：
+用户："别忘了我对花生过敏"
+输出：我对花生过敏
+
+示例3（普通提问，无可记）：
+用户："我上个月关于跑步的想法"
+输出：NULL`
+  const user = `用户的话：${text}
+输出：`
+  return [
+    { role: 'system', content: system + '\n\n' + example },
+    { role: 'user', content: user },
+  ]
+}
+
+// 解析 extractMemory 响应：NULL/空 → null（无可记）；否则返记忆原文（去围栏/引号）。
+// 容忍 LLM 偶发围栏与首尾引号；大小写不敏感识别 NULL。
+export function parseMemoryReply(raw: string): string | null {
+  let s = raw.trim()
+  if (!s) return null
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fence) s = fence[1].trim()
+  if (!s) return null
+  if (/^null$/i.test(s.trim())) return null
+  // 去首尾引号（LLM 偶给 "记忆原文" / 「记忆」）
+  const unquoted = s.replace(/^["'“”‘’「」『』]+|["'“”‘’「」『』]+$/g, '').trim()
+  if (!unquoted) return null
+  if (/^null$/i.test(unquoted)) return null
+  return unquoted
+}
+
 // D29: 清洗 answer 正文里的内联引用「（见 <id>）」。LLM 常臆造短别名（如 e3）或错配 id，
 // UI 拿非法 id 找不到条目 → 误显「已删除」（实未删）。validIds 外的引用段整段去掉（含前导
 // 空白/标点），合法 id 保留交 UI 渲染。匹配全角括号（见…）与半角括号 (见…) 两种。
@@ -772,6 +818,34 @@ export const openAiCompatLlm: LlmPort = {
     // 合法 id 保留原样交 UI 渲染成可点链接。
     const answer = sanitizeInlineCites(parsed.answer, validIds)
     return { answer, citedEntryIds }
+  },
+  // AI 记忆自动提取（2026-07-22 §4）：BYOK 路径走主 LLM fetch。consume 由调用方不管
+  //（BYOK 无 quota 概念——builtin 路径才扣配额）。失败抛错由 store.sendMessage 静默 catch。
+  async extractMemory(text) {
+    const settings = await di.storage.getSettings()
+    const apiKey = await di.secrets.get(SECRET_KEY)
+    const url = settings.llmUrl
+    const model = settings.llmModel || 'deepseek-v4-flash'
+    if (!apiKey || !url) throw new Error('LLM BYOK 未配置（url/key 缺失）')
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: buildExtractMemoryPrompt(text),
+        max_tokens: 128,
+        temperature: 0,
+        ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}),
+      }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      throw new Error(`LLM HTTP ${res.status}: ${t.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    const raw = data?.choices?.[0]?.message?.content
+    if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
+    return parseMemoryReply(raw)
   },
   async ping(opts?: { url?: string; model?: string; key?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
     const settings = await di.storage.getSettings()

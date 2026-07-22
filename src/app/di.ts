@@ -73,6 +73,8 @@ const llmProxy: LlmPort = {
   parseChatIntent: (q, now) => readKeySource().then((k) =>
     k === 'builtin' ? builtinLlm.parseChatIntent(q, now) : openAiCompatLlm.parseChatIntent(q, now)),
   answerChat: (o) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.answerChat(o) : openAiCompatLlm.answerChat(o))),
+  extractMemory: (text) => readKeySource().then((k) =>
+    k === 'builtin' ? builtinLlm.extractMemory(text) : openAiCompatLlm.extractMemory(text)),
   ping: (o) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.ping(o) : openAiCompatLlm.ping(o))),
 }
 

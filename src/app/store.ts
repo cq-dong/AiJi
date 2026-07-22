@@ -895,6 +895,32 @@ export const useUiStore = create<UiState>((set, get) => ({
       conv = appendMessage(conv, aiMsg)
       set({ conversation: conv, chatLoading: 'idle' })
       void di.storage.saveConversation(conv).catch((e) => console.error('[store] saveConversation(answer) failed', e))
+
+      // 回答成功落库后：若用户消息含「记住」类意图，自动提取记忆落 AI 记忆 + 回确认消息。
+      // fire-and-forget + 自闭环 try/catch：extractMemory 失败静默，不影响主问答（answer 已显）。
+      // 复用 saveMemory action：内部造 Memory 对象（id/enabled/timestamps）+ 落库 + 内存态追加。
+      void (async () => {
+        if (!/记住|记一下|以后.*记|别忘了|给我记/.test(trimmed)) return
+        let memoryContent: string | null
+        try {
+          memoryContent = await di.llm.extractMemory(trimmed)
+        } catch (e) {
+          console.error('[store] extractMemory failed', e)
+          return
+        }
+        if (!memoryContent) return
+        await get().saveMemory(memoryContent)
+        const confirmMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `已记住：${memoryContent}（可在 设置→AI 记忆 管理）`,
+          createdAt: new Date().toISOString(),
+        }
+        const cur = get().conversation ?? ensureConversation(null)
+        const conv2 = appendMessage(cur, confirmMsg)
+        set({ conversation: conv2 })
+        void di.storage.saveConversation(conv2).catch((e) => console.error('[store] saveConversation(memory) failed', e))
+      })().catch((e) => console.error('[store] memory pipeline failed', e))
     } catch (e) {
       // 任一 LLM 轮失败：追加 error 消息（不抛——UI 显重试态而非卡 loading）。
       // D37: content 带真实失败原因（非笼统「稍后重试」），trace.error 存原文便于排查。
