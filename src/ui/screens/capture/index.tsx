@@ -5,6 +5,7 @@ import { useUiStore } from '@/app/store'
 import { useAccountStore } from '@/app/accountStore'
 import { useQuotaStore } from '@/app/quotaStore'
 import { di } from '@/app/di'
+import { useT } from '@/app/i18n/useT'
 import { enrichLocation } from '@/adapters/geocoding'
 import type { EntryPart } from '@/domain/types'
 import {
@@ -79,6 +80,7 @@ export default function Capture() {
   const clearDraft = useUiStore((s) => s.clearDraft)
   const saveDraft = useUiStore((s) => s.saveDraft)
   const primeLocation = useUiStore((s) => s.primeLocation)
+  const t = useT()
 
   const [view, setView] = useState<View>('compose')
   const [elapsed, setElapsed] = useState(0)
@@ -109,7 +111,7 @@ export default function Capture() {
   useEffect(() => {
     if (!sessionStale) return
     setActionToast({
-      message: '登录已过期，请重新登录',
+      message: t('capture.sessionStale'),
     })
   }, [sessionStale])
   // Wave 3 #4: draft hint banner — shows when parts are restored from a
@@ -293,12 +295,12 @@ export default function Capture() {
     const eligible = isGuest || (keySource === 'byok' && !(await di.secrets.get('stt:key')))
     if (eligible) {
       setActionToast({
-        message: '采集失败',
-        actionLabel: '或注册网络账号用免费额度',
+        message: t('capture.captureFailed'),
+        actionLabel: t('capture.registerNetwork'),
         onAction: () => navigate('/login'),
       })
     } else {
-      setActionToast({ message: '采集失败，请重试' })
+      setActionToast({ message: t('capture.captureFailedRetry') })
     }
   }
 
@@ -311,17 +313,17 @@ export default function Capture() {
   // Wave 3 #4: 清空 — confirm before clearing (draft in memory + Dexie).
   const handleClear = () => {
     if (parts.length === 0) return
-    if (window.confirm('清空当前草稿？')) {
+    if (window.confirm(t('capture.clearConfirm'))) {
       clearDraft()
       setShowDraftHint(false)
-      setToast('已清空')
+      setToast(t('capture.cleared'))
     }
   }
 
   // Wave 3 #4: 存草稿 — persist parts+title+location to Dexie, brief toast.
   const handleSaveDraft = () => {
     saveDraft()
-    setToast('已存草稿')
+    setToast(t('capture.draftSaved'))
   }
 
   // D1: 保存前预检——含 audio part 且用户为 guest 或 (byok 且未配 stt:key) 时，
@@ -336,8 +338,8 @@ export default function Capture() {
       if (eligible) {
         skipNavigateRef.current = true
         setActionToast({
-          message: '未配置语音 Key，转写将失败',
-          actionLabel: '或注册网络账号用免费额度',
+          message: t('capture.noSttKey'),
+          actionLabel: t('capture.registerNetwork'),
           onAction: () => {
             if (navTimerRef.current !== null) {
               window.clearTimeout(navTimerRef.current)
@@ -384,10 +386,10 @@ export default function Capture() {
       {view === 'compose' && quotaBlocked && (
         <div className="mx-4 mb-2 rounded-chip bg-catPending/10 px-3 py-2.5">
           <p className="text-[12px] font-medium text-catPending">
-            今日内置额度已用完，明早 8 点重置
+            {t('capture.quotaExhausted')}
           </p>
           <p className="mt-0.5 text-[11px] text-t3">
-            或切用自己的 Key
+            {t('capture.quotaUseOwnKey')}
           </p>
         </div>
       )}
