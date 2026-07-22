@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Eraser, Mic, Square } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Square, SquarePen } from 'lucide-react'
 import { Chip, Spinner } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { t } from '@/app/i18n'
 import { useT } from '@/app/i18n/useT'
+import { HistorySheet } from './HistorySheet'
 import type { ChatMessage, ChatTrace, Entry } from '@/domain/types'
 
-// 裸路由顶栏：返回 ‹ + 标题「问 AI」+ 清空会话（Eraser）。
-function TopBar({ onBack, onClear, canClear }: { onBack: () => void; onClear: () => void; canClear: boolean }) {
+// 裸路由顶栏：返回 ‹ + 标题「问 AI」+ 历史(History) / 新会话(SquarePen) 两图标按钮。
+// 新会话在当前会话为空（无消息）时禁用——开新空会话无意义。
+function TopBar({ onBack, onHistory, onNewChat, canNewChat }: { onBack: () => void; onHistory: () => void; onNewChat: () => void; canNewChat: boolean }) {
   const t = useT()
   return (
     <div className="flex h-12 shrink-0 items-center justify-between border-b border-brd/70 bg-card/90 px-2 backdrop-blur-lg shadow-sm">
@@ -21,15 +23,25 @@ function TopBar({ onBack, onClear, canClear }: { onBack: () => void; onClear: ()
         <ChevronLeft size={24} strokeWidth={2} />
       </button>
       <h1 className="text-[24px] font-bold leading-tight text-ink">{t('chat.title')}</h1>
-      <button
-        type="button"
-        onClick={onClear}
-        disabled={!canClear}
-        aria-label={t('chat.aria.clear')}
-        className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-30 disabled:active:scale-100"
-      >
-        <Eraser size={18} />
-      </button>
+      <div className="flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={onHistory}
+          aria-label={t('chat.aria.history')}
+          className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        >
+          <History size={20} />
+        </button>
+        <button
+          type="button"
+          onClick={onNewChat}
+          disabled={!canNewChat}
+          aria-label={t('chat.aria.newChat')}
+          className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-30 disabled:active:scale-100"
+        >
+          <SquarePen size={20} />
+        </button>
+      </div>
     </div>
   )
 }
@@ -286,12 +298,13 @@ export default function Chat() {
   const chatLoading = useUiStore((s) => s.chatLoading)
   const online = useUiStore((s) => s.online)
   const sendMessage = useUiStore((s) => s.sendMessage)
-  const clearConversation = useUiStore((s) => s.clearConversation)
+  const newConversation = useUiStore((s) => s.newConversation)
   const chatVoice = useUiStore((s) => s.chatVoice)
   const startChatVoice = useUiStore((s) => s.startChatVoice)
   const stopChatVoice = useUiStore((s) => s.stopChatVoice)
 
   const [text, setText] = useState('')
+  const [historyOpen, setHistoryOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 新消息 / loading 阶段变化 → 滚到底。
@@ -336,13 +349,14 @@ export default function Chat() {
     }
   }
 
-  const onClear = () => {
-    if (hasMessages && window.confirm(t('chat.clearConfirm'))) void clearConversation()
-  }
-
   return (
     <div className="flex h-full flex-col">
-      <TopBar onBack={() => navigate('/')} onClear={onClear} canClear={hasMessages} />
+      <TopBar
+        onBack={() => navigate('/')}
+        onHistory={() => setHistoryOpen(true)}
+        onNewChat={() => newConversation()}
+        canNewChat={hasMessages}
+      />
 
       {/* 隐私披露：问题 + 召回片段上送 LLM 作答（仅检索，AI 不写数据）。 */}
       <p className="shrink-0 px-4 text-[11px] text-t3">{t('chat.privacy')}</p>
@@ -403,6 +417,8 @@ export default function Chat() {
           </button>
         </div>
       </form>
+
+      <HistorySheet open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </div>
   )
 }
