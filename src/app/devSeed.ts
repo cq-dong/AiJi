@@ -51,5 +51,6 @@ export async function seedDevDefaults(): Promise<void> {
   if (vlmUrl && s.vlmUrl === seedSettings.vlmUrl) patch.vlmUrl = vlmUrl
   if (vlmModel && s.vlmModel === seedSettings.vlmModel) patch.vlmModel = vlmModel
   if (vlmKey && !s.vlmKeyRef) patch.vlmKeyRef = 'vlm:key'
+  if (!s.keySource) patch.keySource = 'byok'
   if (Object.keys(patch).length > 0) await di.storage.saveSettings({ ...s, ...patch })
 }

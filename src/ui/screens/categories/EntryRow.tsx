@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import type { Category, Entry, EntryAi } from '@/domain/types'
 import { Card, Chip, cn } from '@/ui/components'
+import { useT } from '@/app/i18n/useT'
 import { firstText, modalityLabel, timeLabel } from './helpers'
 
 type Accent = Category['accent']
@@ -29,7 +30,8 @@ interface EntryRowProps {
 
 export function EntryRow({ entry, ai, category }: EntryRowProps) {
   const navigate = useNavigate()
-  const title = ai?.titleSuggestion || firstText(entry.parts) || '未命名'
+  const t = useT()
+  const title = ai?.titleSuggestion || firstText(entry.parts) || t('categories.entry.untitled')
   const preview = firstText(entry.parts)
   const bar = category?.accent ? BAR[category.accent] : 'bg-t3'
   const tone = category?.accent ? CHIP_TONE[category.accent] : 'default'
@@ -46,9 +48,9 @@ export function EntryRow({ entry, ai, category }: EntryRowProps) {
         }
       }}
       padded={false}
-      className="relative cursor-pointer p-3 pl-4 transition duration-base ease-out active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+      className="relative cursor-pointer p-3 pl-4 shadow-card transition-all duration-base ease-out hover:border-t3/30 hover:shadow-cardHover active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card animate-fade-in-up"
     >
-      <span className={cn('absolute left-0 top-0 bottom-0 w-1', bar)} />
+      <span className={cn('absolute left-0 top-0 bottom-0 w-1 rounded-l-card', bar)} />
       <h3 className="line-clamp-1 text-[14px] font-medium leading-tight text-ink">{title}</h3>
       {preview && preview !== title && (
         <p className="mt-0.5 line-clamp-1 text-[12px] leading-tight text-t2">{preview}</p>

@@ -1,3 +1,4 @@
+import { t, type I18nKey } from '@/app/i18n'
 import type { Category, Entry, EntryAi, PartType, Tag } from '@/domain/types'
 
 export interface SearchResult {
@@ -29,12 +30,13 @@ export const EMPTY_FILTERS: SearchFilters = {
   dateTo: '',
 }
 
-// Fixed modality chip set (text/audio/video). The design chips use Chinese labels
-// but the filter compares against EntryPart.type, so slug stays the PartType union.
-export const MODALITY_CHIPS: ReadonlyArray<{ slug: PartType; label: string }> = [
-  { slug: 'text', label: '文本' },
-  { slug: 'audio', label: '语音' },
-  { slug: 'video', label: '视频' },
+// Fixed modality chip set (text/audio/video). `label` is an i18n key resolved by
+// the component at render (helpers run before the active language is known).
+// The filter compares against EntryPart.type, so slug stays the PartType union.
+export const MODALITY_CHIPS: ReadonlyArray<{ slug: PartType; label: I18nKey }> = [
+  { slug: 'text', label: 'search.modality.text' },
+  { slug: 'audio', label: 'search.modality.audio' },
+  { slug: 'video', label: 'search.modality.video' },
 ]
 
 // Aggregate distinct moods from aiByEntry (mood is an optional facet — only
@@ -53,11 +55,12 @@ export function moodChipsFrom(aiByEntry: Record<string, EntryAi>): Array<{ slug:
 // Quick relative date chips. One is active at a time; the 全部 button (added by
 // ChipRow) clears the axis. The custom from-to inputs live alongside — when both
 // are filled, `date` switches to 'custom' and ChipRow shows no quick chip active.
-export const QUICK_DATE_CHIPS: ReadonlyArray<{ slug: DateRangeSlug; label: string }> = [
-  { slug: 'today', label: '今天' },
-  { slug: 'yesterday', label: '昨天' },
-  { slug: 'thisWeek', label: '本周' },
-  { slug: 'thisMonth', label: '本月' },
+// `label` is an i18n key (today/yesterday reused from common.date).
+export const QUICK_DATE_CHIPS: ReadonlyArray<{ slug: DateRangeSlug; label: I18nKey }> = [
+  { slug: 'today', label: 'date.today' },
+  { slug: 'yesterday', label: 'date.yesterday' },
+  { slug: 'thisWeek', label: 'search.date.thisWeek' },
+  { slug: 'thisMonth', label: 'search.date.thisMonth' },
 ]
 
 export type DateRangeSlug = 'today' | 'yesterday' | 'thisWeek' | 'thisMonth'
@@ -161,9 +164,9 @@ export function previewText(entry: Entry, ai?: EntryAi): string {
 }
 
 export function modality(entry: Entry): string {
-  if (entry.parts.some((p) => p.type === 'video')) return '视频'
-  if (entry.parts.some((p) => p.type === 'audio')) return '语音'
-  return '文本'
+  if (entry.parts.some((p) => p.type === 'video')) return t('search.modality.video')
+  if (entry.parts.some((p) => p.type === 'audio')) return t('search.modality.audio')
+  return t('search.modality.text')
 }
 
 // Anchor "today" to the newest entry's day so relative labels (今天/昨天/M/D)
@@ -187,8 +190,8 @@ export function formatRelativeTime(iso: string, now: Date): string {
   const dayDiff = Math.round((startNow.getTime() - startD.getTime()) / 86_400_000)
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
-  if (dayDiff <= 0) return `今天 ${hh}:${mm}`
-  if (dayDiff === 1) return '昨天'
+  if (dayDiff <= 0) return t('search.time.todayAt', { time: `${hh}:${mm}` })
+  if (dayDiff === 1) return t('date.yesterday')
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 

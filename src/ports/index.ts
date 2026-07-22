@@ -1,7 +1,10 @@
 // Port interfaces (PRD §7.3). PWA-agnostic; adapters implement these.
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, FeedbackItem, GeoPoint, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, FeedbackItem, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
+import type { Account, AuthSession } from '@/domain/account'
+import type { Quota } from '@/domain/quota'
+import type { PlanTier } from '@/domain/plan'
 
 export interface StoragePort {
   listEntries(): Promise<Entry[]>
@@ -55,6 +58,15 @@ export interface StoragePort {
   getConversation(id: string): Promise<Conversation | undefined>
   saveConversation(c: Conversation): Promise<void>
   deleteConversation(id: string): Promise<void>
+  // 账号分区 · 收养 local 数据（Slice B）。login/register 成功后调用：把 6 张分区表里
+  // ownerId==='local' 的行改盖为 accountId，未登录期间记的数据归属首次登录的网络账号。
+  // 单用户手机语义；多用户共用设备不在本期。entryAi/drafts/settings 不参与。
+  adoptLocal(accountId: string): Promise<void>
+  // AI 记忆（2026-07-22）：用户明确记忆/偏好。分区语义同 reminders——list 按 currentOwner
+  // 过滤、save 强制盖章、delete 先 get 验 owner。classify 与 answerChat 注入 prompt。
+  listMemories(): Promise<Memory[]>
+  saveMemory(m: Memory): Promise<void>
+  deleteMemory(id: string): Promise<void>
 }
 
 export interface CapturePort {
@@ -114,6 +126,10 @@ export interface LlmPort {
     cites: ChatCite[] // 已压缩的 top-K 召回条目（LLM 作答的上下文素材）
     conversation: { role: 'user' | 'assistant'; content: string }[] // 先前多轮对话
   }): Promise<ChatAnswer>
+  // AI 记忆自动提取（2026-07-22 §4）：从用户一句话提取应长期记住的事实/偏好/归类指令。
+  // 返一句精炼中文记忆原文；无可记内容（普通提问）返 null。store.sendMessage 在用户说
+  // 「记住 X」类意图时调用，非 null 则落 AI 记忆 + 回确认消息。失败静默（不影响主问答）。
+  extractMemory(text: string): Promise<string | null>
   // Connectivity probe：tiniest chat ping（max_tokens:1）。设置页连通性测试用。
   // opts 传入时直接用表单值（url/model/key），不读 Dexie/secrets——测未保存的新配置；
   // 省略时回落 settings + secrets（测已落库配置）。key 为空串视为省略（回落已存 key）。
@@ -180,4 +196,46 @@ export interface LocalNotificationsPort {
 // （见 docs/superpowers/specs/2026-07-19-feedback-feature-design.md §2）。
 export interface FeedbackPort {
   submit(items: FeedbackItem[]): Promise<{ issueUrl: string }>
+}
+
+// ── Slice B 端口 ──────────────────────────────────────────────
+// 错误类：适配器抛、UI/store catch 按 name 分流。erasableSyntaxOnly 禁 class 参数属性，手写 constructor。
+export class SessionExpiredError extends Error {
+  constructor(message = 'session expired') {
+    super(message)
+    this.name = 'SessionExpiredError'
+  }
+}
+export class NotNetworkError extends Error {
+  constructor(message = 'builtin key requires network account') {
+    super(message)
+    this.name = 'NotNetworkError'
+  }
+}
+export class QuotaExhaustedError extends Error {
+  constructor(message = 'quota exhausted') {
+    super(message)
+    this.name = 'QuotaExhaustedError'
+  }
+}
+
+export interface AuthPort {
+  register(email: string, password: string): Promise<{ account: Account; session: AuthSession }>
+  login(email: string, password: string): Promise<{ account: Account; session: AuthSession }>
+  refresh(): Promise<AuthSession>
+  logout(): Promise<void>
+}
+
+export interface QuotaPort {
+  getQuota(): Promise<Quota>
+}
+
+export interface PlanPort {
+  getPlans(): Promise<PlanTier[]>
+  upgrade(planId: string): Promise<{
+    orderId: string
+    paidPlanId: string
+    paidExpiresAt: string
+    payUrl?: string
+  }>
 }

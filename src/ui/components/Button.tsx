@@ -11,9 +11,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-pri text-card',
-  secondary: 'bg-card text-ink border border-brd',
-  ghost: 'bg-transparent text-pri',
+  // 主按钮：品牌发光影 + 顶部内高光（shadow-glowPri），按压时发光收敛、亮度下沉
+  primary:
+    'bg-pri text-card shadow-glowPriSm hover:brightness-[1.06] active:brightness-95 active:shadow-sm',
+  secondary:
+    'bg-card text-ink border border-brd shadow-sm hover:border-t3/40 active:bg-page',
+  ghost: 'bg-transparent text-pri hover:bg-priS/60 active:bg-priS',
 }
 
 const SIZES: Record<Size, string> = {
@@ -26,7 +29,7 @@ export function Button({ variant = 'primary', size = 'md', className, children, 
   return (
     <button
       className={cn(
-        'inline-flex items-center justify-center gap-1.5 rounded-btn font-medium transition duration-base ease-out active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-50',
+        'inline-flex items-center justify-center gap-1.5 rounded-btn font-medium transition-all duration-base ease-out active:scale-[0.96] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-50 disabled:shadow-none',
         VARIANTS[variant],
         SIZES[size],
         className,

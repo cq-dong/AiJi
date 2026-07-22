@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
-import { Button, Card, EmptyState, ReminderCreator, cn } from '@/ui/components'
+import { Button, Card, EmptyState, ReminderCreator, Sheet, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
+import { t } from '@/app/i18n'
+import { useT } from '@/app/i18n/useT'
 import { enrichLocation } from '@/adapters/geocoding'
 import { exportEntryZip, shareEntry, canShareEntry } from '@/adapters/zipExport'
 import { canShareFiles, type SaveResult } from '@/adapters/fileShare'
 import type { EntryAi, EntryPart, EntryStatus, Reminder } from '@/domain/types'
 import { AudioPlayer, VideoThumb, LocationBadge } from './PartView'
 import { AiPanel, type AiState } from './AiPanel'
-import { Sheet } from './Sheet'
 import { formatTitle, formatDateTime, formatDuration, partTypeLabel, tagLabel } from './helpers'
 import { ChevronLeft, MoreHorizontal, Pencil, Trash2, X } from 'lucide-react'
 
@@ -22,13 +23,14 @@ function statusToAiState(s: EntryStatus): AiState {
 }
 
 function TopBar({ title, onBack, onMore }: { title: string; onBack: () => void; onMore?: () => void }) {
+  const t = useT()
   return (
     <div className="flex h-11 items-center">
       <button
         type="button"
         onClick={onBack}
-        aria-label="返回"
-        className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        aria-label={t('common.back')}
+        className="-ml-2 flex size-11 items-center justify-center rounded-full text-ink transition-all duration-base ease-out hover:bg-page active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
       >
         <ChevronLeft size={26} strokeWidth={2} />
       </button>
@@ -37,8 +39,8 @@ function TopBar({ title, onBack, onMore }: { title: string; onBack: () => void; 
         <button
           type="button"
           onClick={onMore}
-          aria-label="更多"
-          className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          aria-label={t('detail.aria.more')}
+          className="-mr-2 flex size-11 items-center justify-center rounded-full text-t2 transition-all duration-base ease-out hover:bg-page active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           <MoreHorizontal size={22} strokeWidth={2} />
         </button>
@@ -113,6 +115,7 @@ function SourcePartView({
   onRemove: () => void
   onEditText: (content: string) => void
 }) {
+  const t = useT()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(part.type === 'text' ? part.content : '')
   const helper = `${formatDateTime(iso)} · ${partTypeLabel(part)}${
@@ -128,7 +131,7 @@ function SourcePartView({
       <button
         type="button"
         onClick={onRemove}
-        aria-label="删除片段"
+        aria-label={t('detail.aria.deletePart')}
         className="absolute right-1 top-1 flex size-9 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-pri/10 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <Trash2 size={14} strokeWidth={2.2} />
@@ -149,12 +152,12 @@ function SourcePartView({
                 size="sm"
                 variant="primary"
                 onClick={() => {
-                  const t = draft.trim()
-                  if (t) onEditText(t)
+                  const text = draft.trim()
+                  if (text) onEditText(text)
                   setEditing(false)
                 }}
               >
-                确认
+                {t('common.confirm')}
               </Button>
               <Button
                 type="button"
@@ -166,7 +169,7 @@ function SourcePartView({
                   setEditing(false)
                 }}
               >
-                取消
+                {t('common.cancel')}
               </Button>
             </div>
           </div>
@@ -176,7 +179,7 @@ function SourcePartView({
             <button
               type="button"
               onClick={() => { setDraft(part.content); setEditing(true) }}
-              aria-label="编辑文本"
+              aria-label={t('detail.aria.editText')}
               className="absolute right-0 top-0 flex size-9 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-pri/10 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
             >
               <Pencil size={13} strokeWidth={2.2} />
@@ -217,6 +220,7 @@ function AiEditSheet({
   onSave: (patch: Partial<EntryAi>) => Promise<void> | void
   onClose: () => void
 }) {
+  const t = useT()
   const categories = useUiStore((s) => s.categories)
   const tags = useUiStore((s) => s.tags)
   const [title, setTitle] = useState(ai.titleSuggestion ?? '')
@@ -234,7 +238,7 @@ function AiEditSheet({
         .map((s) => s.trim())
         .filter(Boolean)
         .map((label) => {
-          const found = tags.find((t) => t.label === label)
+          const found = tags.find((tag) => tag.label === label)
           return found?.slug ?? label.toLowerCase().replace(/\s+/g, '-')
         })
       await onSave({
@@ -253,31 +257,31 @@ function AiEditSheet({
 
   return (
     <Sheet
-      title="编辑 AI 处理"
+      title={t('detail.editAiTitle')}
       onClose={onClose}
       footer={
         <>
           <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button type="button" variant="primary" className="flex-1" onClick={handleSave} disabled={saving}>
-            保存
+            {t('common.save')}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-1.5">
-        <label className="text-[11px] text-t2">标题</label>
-        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} placeholder="无标题" />
+        <label className="text-[11px] text-t2">{t('detail.title')}</label>
+        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className={inputCls} placeholder={t('detail.noTitle')} />
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="text-[11px] text-t2">摘要</label>
-        <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={3} className={inputCls} placeholder="无摘要" />
+        <label className="text-[11px] text-t2">{t('detail.summary')}</label>
+        <textarea value={summary} onChange={(e) => setSummary(e.target.value)} rows={3} className={inputCls} placeholder={t('detail.noSummary')} />
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="text-[11px] text-t2">类别</label>
+        <label className="text-[11px] text-t2">{t('detail.category')}</label>
         <select value={category} onChange={(e) => setCategory(e.target.value)} className={inputCls}>
-          <option value="">未分类</option>
+          <option value="">{t('detail.uncategorized')}</option>
           {categories.map((c) => (
             <option key={c.slug} value={c.slug}>
               {c.label}
@@ -286,8 +290,8 @@ function AiEditSheet({
         </select>
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="text-[11px] text-t2">标签</label>
-        <input type="text" value={tagsText} onChange={(e) => setTagsText(e.target.value)} className={inputCls} placeholder="用逗号分隔" />
+        <label className="text-[11px] text-t2">{t('detail.tags')}</label>
+        <input type="text" value={tagsText} onChange={(e) => setTagsText(e.target.value)} className={inputCls} placeholder={t('detail.tagsPlaceholder')} />
       </div>
     </Sheet>
   )
@@ -303,6 +307,7 @@ function PartsEditSheet({
   onSave: (parts: EntryPart[]) => Promise<void> | void
   onClose: () => void
 }) {
+  const t = useT()
   const [draft, setDraft] = useState<EntryPart[]>(() => parts.map((p) => ({ ...p })))
   const [saving, setSaving] = useState(false)
 
@@ -323,15 +328,15 @@ function PartsEditSheet({
 
   return (
     <Sheet
-      title="手动编辑"
+      title={t('detail.manualEdit')}
       onClose={onClose}
       footer={
         <>
           <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button type="button" variant="primary" className="flex-1" onClick={handleSave} disabled={saving}>
-            保存
+            {t('common.save')}
           </Button>
         </>
       }
@@ -352,7 +357,7 @@ function PartsEditSheet({
           )}
           {(p.type === 'audio' || p.type === 'video') && (
             <>
-              <span className="text-[11px] text-t3">转写文本</span>
+              <span className="text-[11px] text-t3">{t('detail.transcript')}</span>
               <textarea
                 value={p.transcript ?? ''}
                 onChange={(e) =>
@@ -362,9 +367,9 @@ function PartsEditSheet({
                 }
                 rows={3}
                 className={inputCls}
-                placeholder="无转写"
+                placeholder={t('detail.noTranscript')}
               />
-              <span className="text-[10px] text-t3">原始媒体不可编辑</span>
+              <span className="text-[10px] text-t3">{t('detail.rawMediaNotEditable')}</span>
             </>
           )}
         </div>
@@ -380,6 +385,7 @@ function ConfirmDeleteDialog({
   onConfirm: () => Promise<void> | void
   onClose: () => void
 }) {
+  const t = useT()
   const [deleting, setDeleting] = useState(false)
   const handleDelete = async () => {
     setDeleting(true)
@@ -391,16 +397,16 @@ function ConfirmDeleteDialog({
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6" role="dialog" aria-modal="true">
-      <button type="button" aria-label="取消" tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/40 animate-fade-in" />
-      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card bg-card p-4 animate-fade-in shadow-lg">
-        <h3 className="text-[14px] font-bold text-ink">移到回收站</h3>
-        <p className="text-[12px] leading-relaxed text-t2">移到回收站？30 天内可在回收站恢复。</p>
+      <button type="button" aria-label={t('common.cancel')} tabIndex={-1} onClick={onClose} className="absolute inset-0 bg-black/45 backdrop-blur-[2px] animate-fade-in" />
+      <div className="relative flex w-full max-w-[300px] flex-col gap-3 rounded-card border border-brd/60 bg-card p-5 animate-scale-in shadow-pop">
+        <h3 className="text-[15px] font-bold text-ink">{t('detail.moveToTrash')}</h3>
+        <p className="text-[12px] leading-relaxed text-t2">{t('detail.trashConfirmDesc')}</p>
         <div className="flex items-center gap-2 pt-1">
           <Button type="button" variant="secondary" className="flex-1" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button type="button" variant="primary" className="flex-1 bg-catFail" onClick={handleDelete} disabled={deleting}>
-            移到回收站
+            {t('detail.moveToTrash')}
           </Button>
         </div>
       </div>
@@ -408,17 +414,17 @@ function ConfirmDeleteDialog({
   )
 }
 
-// D10: SaveResult → 反馈文案（与 settings/categories 同语义）。
+// D10: SaveResult → 反馈文案（与 settings/categories 同语义）。非组件函数，用模块 t()。
 function formatSaveFeedback(result: SaveResult): string {
-  if (!result.ok) return result.error ? `导出失败：${result.error}` : '导出失败'
-  if (result.method === 'share') return '已分享'
+  if (!result.ok) return result.error ? t('detail.exportFailReason', { error: result.error }) : t('detail.exportFail')
+  if (result.method === 'share') return t('detail.shared')
   if (result.method === 'filesystem') {
     const p = result.path ?? ''
     const tail = p ? p.replace(/^file:\/\//, '').replace(/^content:\/\//, '') : ''
-    return tail ? `已保存到 ${tail}` : '已保存到 文档/AiJi/'
+    return tail ? t('detail.savedTo', { path: tail }) : t('detail.savedToDefault')
   }
-  if (result.method === 'download') return '已下载到浏览器下载目录'
-  return '已导出'
+  if (result.method === 'download') return t('detail.downloadedToBrowser')
+  return t('detail.exported')
 }
 
 // D10: 导出确认 sheet（底部 sheet 风格，与 settings/categories 对齐）。
@@ -434,59 +440,60 @@ function ExportConfirmSheet({
   onClose: () => void
   onConfirm: () => void
 }) {
+  const t = useT()
   const isNative = Capacitor.isNativePlatform()
   const locationHint = canShareFiles()
-    ? '系统分享面板（可选保存到任意位置）'
+    ? t('detail.locShare')
     : isNative
-      ? '文档/AiJi/（文件管理器可见）'
-      : '浏览器下载目录'
+      ? t('detail.locDocs')
+      : t('detail.locBrowser')
   return (
     <div
-      className="fixed inset-0 z-[55] flex items-end justify-center bg-black/40 animate-fade-in"
+      className="fixed inset-0 z-[55] flex items-end justify-center bg-black/45 backdrop-blur-[2px] animate-fade-in"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="导出确认"
+      aria-label={t('detail.aria.exportConfirm')}
     >
       <div
-        className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up"
+        className="w-full max-w-[420px] rounded-screen border-t border-white/10 bg-page p-5 shadow-sheet animate-slide-up"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">导出确认</p>
+          <p className="text-[17px] font-bold text-ink">{t('detail.exportConfirm')}</p>
           <button
             type="button"
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={t('common.close')}
             className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
           >
             <X size={18} strokeWidth={2} />
           </button>
         </div>
-        <div className="mt-3 space-y-2">
-          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">导出范围</span>
-            <span className="text-[13px] font-medium text-ink">本条目</span>
+        <div className="mt-3.5 space-y-1.5">
+          <div className="flex items-center justify-between rounded-card border border-brd/80 bg-card px-3.5 py-2.5 shadow-sm">
+            <span className="text-[13px] text-t2">{t('detail.exportScope')}</span>
+            <span className="text-[13px] font-semibold text-ink">{t('detail.thisEntry')}</span>
           </div>
-          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">媒体数</span>
-            <span className="text-[13px] font-medium text-ink">{mediaCount} 个</span>
+          <div className="flex items-center justify-between rounded-card border border-brd/80 bg-card px-3.5 py-2.5 shadow-sm">
+            <span className="text-[13px] text-t2">{t('detail.mediaCount')}</span>
+            <span className="text-[13px] font-semibold tabular-nums text-ink">{t('detail.mediaCountValue', { count: mediaCount })}</span>
           </div>
-          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">文件名</span>
+          <div className="flex items-center justify-between rounded-card border border-brd/80 bg-card px-3.5 py-2.5 shadow-sm">
+            <span className="text-[13px] text-t2">{t('detail.fileName')}</span>
             <span className="text-[12px] font-medium text-ink">{filename}</span>
           </div>
-          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">保存位置</span>
+          <div className="flex items-center justify-between rounded-card border border-brd/80 bg-card px-3.5 py-2.5 shadow-sm">
+            <span className="text-[13px] text-t2">{t('detail.saveLocation')}</span>
             <span className="text-[12px] font-medium text-t2">{locationHint}</span>
           </div>
         </div>
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button variant="primary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onConfirm}>
-            确认导出
+            {t('detail.confirmExport')}
           </Button>
         </div>
       </div>
@@ -524,19 +531,20 @@ function ExistingReminderCard({
   reminder: Reminder
   onEdit: () => void
 }) {
+  const t = useT()
   return (
-    <div className="flex flex-col gap-2 rounded-card bg-priS p-4 shadow-sm">
+    <div className="flex flex-col gap-2 rounded-card border border-pri/15 bg-gradient-to-b from-priS to-priS/60 p-4 shadow-card">
       <div className="flex items-center gap-2">
-        <span className="size-2 rounded-full bg-pri" />
-        <p className="text-[12px] font-bold text-pri">已设提醒</p>
+        <span className="size-2 rounded-full bg-pri shadow-glowPriSm" />
+        <p className="text-[12px] font-bold text-pri">{t('detail.reminderSet')}</p>
         <button
           type="button"
           onClick={onEdit}
-          aria-label="编辑提醒"
-          className="ml-auto flex items-center gap-1 rounded-chip border border-brd bg-card px-2 py-1 text-[11px] font-medium text-pri transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          aria-label={t('detail.aria.editReminder')}
+          className="ml-auto flex items-center gap-1 rounded-chip border border-brd/80 bg-card px-2 py-1 text-[11px] font-medium text-pri shadow-sm transition-all duration-base ease-out hover:border-t3/40 active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         >
           <Pencil size={11} strokeWidth={2.2} />
-          编辑
+          {t('common.edit')}
         </button>
       </div>
       <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{reminder.label}</p>
@@ -557,6 +565,7 @@ function MoreSheet({
   onClose: () => void
   onExportResult: (msg: string, ok: boolean) => void
 }) {
+  const t = useT()
   const [confirmExport, setConfirmExport] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [shareFeedback, setShareFeedback] = useState<string | null>(null)
@@ -566,11 +575,12 @@ function MoreSheet({
     setExporting(true)
     try {
       const result = await exportEntryZip(entryId)
-      // 用户取消分享面板（method=none, error='已取消'）——静默，不弹 toast。
-      if (!result.ok && result.method === 'none' && result.error === '已取消') return
+      // 用户取消分享面板（method=none, error='CANCELLED'）——静默，不弹 toast。
+      // 注：'CANCELLED' 是适配器返回的协议 sentinel（非显示文案），不本地化，匹配保持稳定。
+      if (!result.ok && result.method === 'none' && result.error === 'CANCELLED') return
       onExportResult(formatSaveFeedback(result), result.ok)
     } catch (e) {
-      onExportResult(`导出失败：${e instanceof Error ? e.message : String(e)}`, false)
+      onExportResult(t('detail.exportFailReason', { error: e instanceof Error ? e.message : String(e) }), false)
     } finally {
       setExporting(false)
       onClose()
@@ -579,24 +589,24 @@ function MoreSheet({
 
   const handleShare = async () => {
     const result = await shareEntry(entryId)
-    if (result.method === 'share') setShareFeedback('已分享')
-    else if (result.method === 'clipboard') setShareFeedback('已复制到剪贴板')
-    else setShareFeedback('分享失败')
+    if (result.method === 'share') setShareFeedback(t('detail.shared'))
+    else if (result.method === 'clipboard') setShareFeedback(t('detail.copiedToClipboard'))
+    else setShareFeedback(t('detail.shareFail'))
   }
 
-  const shareLabel = canShareEntry() ? '分享…' : '分享'
+  const shareLabel = canShareEntry() ? t('detail.shareWith') : t('common.share')
 
   return (
     <>
-      <Sheet title="更多操作" onClose={onClose}>
+      <Sheet title={t('detail.moreActions')} onClose={onClose}>
         <button
           type="button"
           onClick={() => setConfirmExport(true)}
           disabled={exporting}
           className="flex w-full items-center justify-between rounded-btn border border-brd bg-card px-4 py-3 text-[14px] font-medium text-ink transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-50"
         >
-          <span>导出</span>
-          {exporting && <span className="text-[12px] text-t3">导出中…</span>}
+          <span>{t('detail.export')}</span>
+          {exporting && <span className="text-[12px] text-t3">{t('detail.exporting')}</span>}
         </button>
         <div className="flex flex-col gap-1.5">
           <button
@@ -624,6 +634,7 @@ function MoreSheet({
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const t = useT()
   // 深链兜底：直接访问 /detail/{id}（刷新）时 store 可能还没 hydrate 完，
   // aiByEntry[id] 可能缺。异步从 di.storage.getEntryAi 载入到本地 state，
   // 渲染时优先用 store 的、回落到异步载入的。
@@ -709,13 +720,13 @@ export default function Detail() {
   if (!found) {
     return (
       <div className="px-4">
-        <TopBar title="条目详情" onBack={() => navigate('/')} />
+        <TopBar title={t('detail.entryDetail')} onBack={() => navigate('/')} />
         <EmptyState
-          title="条目不存在"
-          subtitle="该条目可能已被删除"
+          title={t('detail.notFoundTitle')}
+          subtitle={t('detail.notFoundSubtitle')}
           action={
             <Button type="button" variant="secondary" onClick={() => navigate('/')}>
-              返回首页
+              {t('detail.backToHome')}
             </Button>
           }
         />
@@ -759,28 +770,32 @@ export default function Detail() {
         onMore={() => setMoreOpen(true)}
       />
 
-      <div className="flex items-center gap-1 self-start rounded-btn bg-page p-1">
+      <div className="flex items-center gap-1 self-start rounded-[12px] border border-brd/60 bg-page p-1 shadow-inner">
         <button
           type="button"
           onClick={() => setViewMode('record')}
           aria-pressed={viewMode === 'record'}
           className={cn(
-            'rounded-btn px-3 py-1 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-            viewMode === 'record' ? 'bg-card text-ink shadow-sm' : 'text-t3 active:scale-95',
+            'rounded-[9px] px-3.5 py-1.5 text-[12px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            viewMode === 'record'
+              ? 'bg-card font-semibold text-ink shadow-sm'
+              : 'font-medium text-t3 hover:text-t2 active:scale-95',
           )}
         >
-          记录
+          {t('detail.viewRecord')}
         </button>
         <button
           type="button"
           onClick={() => setViewMode('source')}
           aria-pressed={viewMode === 'source'}
           className={cn(
-            'rounded-btn px-3 py-1 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-            viewMode === 'source' ? 'bg-card text-ink shadow-sm' : 'text-t3 active:scale-95',
+            'rounded-[9px] px-3.5 py-1.5 text-[12px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+            viewMode === 'source'
+              ? 'bg-card font-semibold text-ink shadow-sm'
+              : 'font-medium text-t3 hover:text-t2 active:scale-95',
           )}
         >
-          原态
+          {t('detail.viewSource')}
         </button>
       </div>
 

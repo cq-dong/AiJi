@@ -38,9 +38,14 @@
 
 /* 深色模式阴影提级：浅色 6-8% 黑在近黑底上几乎不可见，深色用更高 alpha 还原"抬升"感 */
 .dark .shadow-sm { box-shadow: 0 1px 2px rgb(var(--aji-shadow) / 0.24); }
-.dark .shadow-md { box-shadow: 0 4px 12px rgb(var(--aji-shadow) / 0.28); }
-.dark .shadow-lg { box-shadow: 0 8px 24px rgb(var(--aji-shadow) / 0.32); }
+.dark .shadow-md { box-shadow: 0 1px 2px rgb(var(--aji-shadow) / 0.22), 0 4px 12px rgb(var(--aji-shadow) / 0.28); }
+.dark .shadow-lg { box-shadow: 0 2px 4px rgb(var(--aji-shadow) / 0.22), 0 8px 24px rgb(var(--aji-shadow) / 0.32); }
 .dark .shadow-sheet { box-shadow: 0 -8px 30px rgb(var(--aji-shadow) / 0.4); }
+.dark .shadow-card { box-shadow: 0 1px 2px rgb(var(--aji-shadow) / 0.22), 0 10px 28px -6px rgb(var(--aji-shadow) / 0.3); }
+.dark .shadow-cardHover { box-shadow: 0 2px 4px rgb(var(--aji-shadow) / 0.24), 0 14px 34px -6px rgb(var(--aji-shadow) / 0.36); }
+.dark .shadow-glowPri { box-shadow: 0 8px 22px -6px rgb(var(--c-pri) / 0.55), inset 0 1px 0 0 rgb(255 255 255 / 0.16); }
+.dark .shadow-glowPriSm { box-shadow: 0 4px 14px -4px rgb(var(--c-pri) / 0.5), inset 0 1px 0 0 rgb(255 255 255 / 0.12); }
+.dark .shadow-pop { box-shadow: 0 4px 8px rgb(var(--aji-shadow) / 0.24), 0 16px 40px -8px rgb(var(--aji-shadow) / 0.4); }
 
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -70,6 +75,20 @@
     background-color: rgb(var(--c-page) / 1);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* 去掉移动端点按灰色高亮（各组件自带 pressed 态，系统高亮显廉价） */
+    -webkit-tap-highlight-color: transparent;
+    /* 提升中文排版质感 */
+    text-rendering: optimizeLegibility;
+    font-feature-settings: 'tnum' 1;
+  }
+  /* 选中文字用品牌色浅底，细节处统一品牌感 */
+  ::selection {
+    background: rgb(var(--c-pri) / 0.18);
+  }
+  /* 细滚动条：横向 chip 流等溢出滚动区域不抢视觉 */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
   }
   #root {
     display: flex;

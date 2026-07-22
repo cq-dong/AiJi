@@ -1,3 +1,5 @@
+import { t } from '@/app/i18n'
+import { getCurrentLang } from '@/app/currentLang'
 import type { EntryPart } from '@/domain/types'
 
 // "今天" 的参照点：取最新一条 entry 的日期作为时间线的锚定今天，
@@ -16,8 +18,8 @@ export function todayKeyFrom(entries: ReadonlyArray<{ createdAt: string }>): str
   let maxIso = entries[0]!.createdAt
   let maxT = new Date(maxIso).getTime()
   for (const e of entries) {
-    const t = new Date(e.createdAt).getTime()
-    if (t > maxT) { maxT = t; maxIso = e.createdAt }
+    const ts = new Date(e.createdAt).getTime()
+    if (ts > maxT) { maxT = ts; maxIso = e.createdAt }
   }
   return localDateKey(maxIso)
 }
@@ -26,22 +28,25 @@ export function dateKey(iso: string): string {
   return localDateKey(iso)
 }
 
-const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] as const
+function locale(): string {
+  return getCurrentLang() === 'zh' ? 'zh-CN' : 'en-US'
+}
 
 function parseYmd(key: string): [number, number, number] {
   const [y, m, d] = key.split('-').map(Number)
   return [y, m - 1, d]
 }
 
+// 周几：Intl weekday short。zh→「周一」en→「Mon」。调用时读当前语言。
 export function weekdayLabel(key: string): string {
   const [y, m, d] = parseYmd(key)
-  const wd = new Date(y, m, d).getDay()
-  return WEEKDAYS[wd] ?? '周?'
+  return new Intl.DateTimeFormat(locale(), { weekday: 'short' }).format(new Date(y, m, d))
 }
 
+// M月D日：Intl month short + day。zh→「7月15日」en→「Jul 15」。
 export function monthDayLabel(key: string): string {
-  const [, m, d] = parseYmd(key)
-  return `${m + 1}月${d}日`
+  const [y, m, d] = parseYmd(key)
+  return new Intl.DateTimeFormat(locale(), { month: 'short', day: 'numeric' }).format(new Date(y, m, d))
 }
 
 function dayDiff(aKey: string, bKey: string): number {
@@ -56,9 +61,9 @@ function dayDiff(aKey: string, bKey: string): number {
 export function groupLabel(iso: string, todayKey: string): string {
   const key = dateKey(iso)
   const diff = dayDiff(key, todayKey)
-  if (diff === 0) return '今天'
-  if (diff === -1) return '昨天'
-  if (diff === 1) return '明天'
+  if (diff === 0) return t('date.today')
+  if (diff === -1) return t('date.yesterday')
+  if (diff === 1) return t('comp.rel.tomorrow')
   return `${monthDayLabel(key)} ${weekdayLabel(key)}`
 }
 
@@ -76,16 +81,16 @@ export function timeLabel(iso: string): string {
 }
 
 export function modalityLabel(parts: EntryPart[]): string {
-  if (parts.length > 1) return '多模态'
+  if (parts.length > 1) return t('comp.modality.multi')
   const p = parts[0]
-  if (!p) return '文本'
-  if (p.type === 'audio') return '语音'
+  if (!p) return t('comp.modality.text')
+  if (p.type === 'audio') return t('comp.modality.audio')
   if (p.type === 'video') {
     // CLAUDE.md: 照片是 durationSec=0 的 video part（mediaType='image'）。
     // 区分照片与真视频，否则单拍照片在时间线被错标「视频」（D14）。
-    return p.mediaType === 'image' || p.durationSec === 0 ? '图片' : '视频'
+    return p.mediaType === 'image' || p.durationSec === 0 ? t('comp.modality.image') : t('comp.modality.video')
   }
-  return '文本'
+  return t('comp.modality.text')
 }
 
 // 第一段可读文本（转写或正文），用于预览/无 AI 时的标题回退

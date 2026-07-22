@@ -1,28 +1,30 @@
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Search, Sparkles } from 'lucide-react'
 import { Fab, FiringReminderPopup, NavBottom, ReminderPopup, Statusbar } from '@/ui/components'
+import { useT } from '@/app/i18n/useT'
 
 // Wave 3: 顶栏搜索入口（搜索从底栏移出，放大镜置顶，点击进 /search）。
 // AI Chat（纯读检索）：问 AI 入口置顶，点击进 /chat。
 function TopBar() {
   const navigate = useNavigate()
+  const t = useT()
   return (
-    <div className="flex h-9 shrink-0 items-center justify-end gap-2 px-4">
+    <div className="flex h-10 shrink-0 items-center justify-end gap-2 px-4">
       <button
         type="button"
         onClick={() => navigate('/chat')}
-        className="flex h-8 items-center gap-1 rounded-full bg-priS px-3 text-[12px] font-medium text-pri active:opacity-70"
+        className="flex h-8 items-center gap-1.5 rounded-full border border-pri/15 bg-priS px-3.5 text-[12px] font-medium text-pri shadow-sm transition-all duration-base ease-out hover:border-pri/25 active:scale-95"
       >
-        <Sparkles size={14} strokeWidth={2} />
-        问 AI
+        <Sparkles size={14} strokeWidth={2.2} />
+        {t('comp.topbar.askAi')}
       </button>
       <button
         type="button"
         onClick={() => navigate('/search')}
-        aria-label="搜索"
-        className="flex size-8 items-center justify-center rounded-full text-t2 active:bg-page"
+        aria-label={t('nav.search')}
+        className="flex size-8 items-center justify-center rounded-full border border-brd/80 bg-card text-t2 shadow-sm transition-all duration-base ease-out hover:text-ink active:scale-90"
       >
-        <Search size={20} strokeWidth={2} />
+        <Search size={17} strokeWidth={2.2} />
       </button>
     </div>
   )

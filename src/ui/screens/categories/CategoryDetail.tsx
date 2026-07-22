@@ -3,18 +3,21 @@ import { ChevronLeft, Download, X } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import type { Category, Entry, EntryAi, Facets, Tag } from '@/domain/types'
 import { Button, Card, EmptyState, cn } from '@/ui/components'
+import { useT } from '@/app/i18n/useT'
+import { t, type I18nKey } from '@/app/i18n'
 import { exportCategoryZip } from '@/adapters/zipExport'
 import { canShareFiles, type SaveResult } from '@/adapters/fileShare'
+import { LENS_KEYS } from './helpers'
 import { EntryRow } from './EntryRow'
 
 // Group-by dimension within a category's detail list.
 type GroupBy = 'time' | 'project' | 'person' | 'place'
 
-const GROUP_OPTIONS: { key: GroupBy; label: string }[] = [
-  { key: 'time', label: '时间' },
-  { key: 'project', label: '项目' },
-  { key: 'person', label: '人物' },
-  { key: 'place', label: '地点' },
+const GROUP_OPTIONS: { key: GroupBy; labelKey: I18nKey }[] = [
+  { key: 'time', labelKey: LENS_KEYS.time },
+  { key: 'project', labelKey: LENS_KEYS.project },
+  { key: 'person', labelKey: LENS_KEYS.person },
+  { key: 'place', labelKey: LENS_KEYS.place },
 ]
 
 const BAR: Record<NonNullable<Category['accent']>, string> = {
@@ -42,15 +45,15 @@ interface CategoryDetailProps {
 
 // D10: SaveResult → 反馈文案（与 settings 一致语义；category 自带 path 截尾逻辑）。
 function formatSaveFeedback(result: SaveResult): string {
-  if (!result.ok) return result.error ? `导出失败：${result.error}` : '导出失败'
-  if (result.method === 'share') return '已分享'
+  if (!result.ok) return result.error ? t('categories.export.failWith', { error: result.error }) : t('categories.export.fail')
+  if (result.method === 'share') return t('categories.export.shared')
   if (result.method === 'filesystem') {
     const p = result.path ?? ''
     const tail = p ? p.replace(/^file:\/\//, '').replace(/^content:\/\//, '') : ''
-    return tail ? `已保存到 ${tail}` : '已保存到 文档/AiJi/'
+    return tail ? t('categories.export.savedTo', { path: tail }) : t('categories.export.savedDefault')
   }
-  if (result.method === 'download') return '已下载到浏览器下载目录'
-  return '已导出'
+  if (result.method === 'download') return t('categories.export.downloaded')
+  return t('categories.export.done')
 }
 
 function countMedia(parts: Entry['parts']): number {
@@ -77,49 +80,50 @@ function ExportConfirmSheet({
   onClose: () => void
   onConfirm: () => void
 }) {
+  const t = useT()
   const isNative = Capacitor.isNativePlatform()
   const locationHint = canShareFiles()
-    ? '系统分享面板（可选保存到任意位置）'
+    ? t('categories.export.sheet.location.share')
     : isNative
-      ? '文档/AiJi/（文件管理器可见）'
-      : '浏览器下载目录'
+      ? t('categories.export.sheet.location.native')
+      : t('categories.export.sheet.location.browser')
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">导出确认</p>
-          <button type="button" onClick={onClose} aria-label="关闭" className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <p className="text-[17px] font-bold text-ink">{t('categories.export.sheet.title')}</p>
+          <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <X size={18} strokeWidth={2} />
           </button>
         </div>
         <div className="mt-3 space-y-2">
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">导出范围</span>
+            <span className="text-[13px] text-t2">{t('categories.export.sheet.scopeLabel')}</span>
             <span className="text-[13px] font-medium text-ink">{scopeLabel}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">条目数</span>
-            <span className="text-[13px] font-medium text-ink">{entryCount} 条</span>
+            <span className="text-[13px] text-t2">{t('categories.export.sheet.entryCount')}</span>
+            <span className="text-[13px] font-medium text-ink">{t('common.itemsCount', { count: entryCount })}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">媒体数</span>
-            <span className="text-[13px] font-medium text-ink">{mediaCount} 个</span>
+            <span className="text-[13px] text-t2">{t('categories.export.sheet.mediaCount')}</span>
+            <span className="text-[13px] font-medium text-ink">{t('categories.export.sheet.mediaUnit', { count: mediaCount })}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">文件名</span>
+            <span className="text-[13px] text-t2">{t('categories.export.sheet.filename')}</span>
             <span className="text-[12px] font-medium text-ink">{filename}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">保存位置</span>
+            <span className="text-[13px] text-t2">{t('categories.export.sheet.locationLabel')}</span>
             <span className="text-[12px] font-medium text-t2">{locationHint}</span>
           </div>
         </div>
         <div className="mt-4 flex gap-2">
           <Button variant="secondary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onClose}>
-            取消
+            {t('common.cancel')}
           </Button>
           <Button variant="primary" size="sm" className="h-[38px] flex-1 rounded-btn" onClick={onConfirm}>
-            确认导出
+            {t('categories.export.sheet.confirm')}
           </Button>
         </div>
       </div>
@@ -157,6 +161,7 @@ export function CategoryDetail({
   onBack,
 }: CategoryDetailProps) {
   const [groupBy, setGroupBy] = useState<GroupBy>('time')
+  const t = useT()
 
   // D10: .zip 导出确认 + 反馈状态。
   const [zipConfirm, setZipConfirm] = useState(false)
@@ -185,10 +190,11 @@ export function CategoryDetail({
     setZipExporting(true)
     try {
       const result = await exportCategoryZip(category.slug)
-      if (!result.ok && result.method === 'none' && result.error === '已取消') return
+      // 'CANCELLED' 是 fileShare 适配器返回的协议 sentinel（用户取消分享面板）→ 静默。
+      if (!result.ok && result.method === 'none' && result.error === 'CANCELLED') return
       setZipToast({ msg: formatSaveFeedback(result), ok: result.ok })
     } catch (e) {
-      setZipToast({ msg: `导出失败：${e instanceof Error ? e.message : String(e)}`, ok: false })
+      setZipToast({ msg: t('categories.export.failWith', { error: e instanceof Error ? e.message : String(e) }), ok: false })
     } finally {
       setZipExporting(false)
     }
@@ -199,8 +205,8 @@ export function CategoryDetail({
       <div>
         <DetailHeader label={category.label} dot={dot} count={0} onBack={onBack} onExportClick={() => setZipConfirm(true)} exporting={zipExporting} />
         <EmptyState
-          title="该类别下还没有条目"
-          subtitle="记几条相关内容，AI 会自动归到这个类别"
+          title={t('categories.detail.empty.title')}
+          subtitle={t('categories.detail.empty.subtitle')}
         />
         {zipToast && (
           <Toast message={zipToast.msg} ok={zipToast.ok} onDismiss={() => setZipToast(null)} />
@@ -219,7 +225,7 @@ export function CategoryDetail({
         onExportClick={() => setZipConfirm(true)}
         exporting={zipExporting}
       />
-      <div className="mt-3 grid grid-cols-4 gap-1 rounded-btn bg-page p-1">
+      <div className="mt-3 grid grid-cols-4 gap-1 rounded-[12px] border border-brd/60 bg-page p-1 shadow-inner">
         {GROUP_OPTIONS.map((o) => (
           <button
             key={o.key}
@@ -227,13 +233,13 @@ export function CategoryDetail({
             onClick={() => setGroupBy(o.key)}
             aria-pressed={groupBy === o.key}
             className={cn(
-              'rounded-btn py-1 text-[12px] font-medium transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+              'rounded-[8px] py-1 text-[12px] font-medium transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
               groupBy === o.key
-                ? 'bg-card text-ink shadow-sm'
+                ? 'bg-card text-ink shadow-sm font-semibold'
                 : 'text-t3 active:scale-95',
             )}
           >
-            {o.label}
+            {t(o.labelKey)}
           </button>
         ))}
       </div>
@@ -256,7 +262,7 @@ export function CategoryDetail({
       </div>
       {zipConfirm && (
         <ExportConfirmSheet
-          scopeLabel={`类别「${category.label}」`}
+          scopeLabel={t('categories.export.sheet.scopeValue', { label: category.label })}
           filename={filename}
           entryCount={items.length}
           mediaCount={mediaCount}
@@ -279,6 +285,7 @@ interface GroupedEntriesProps {
 }
 
 function GroupedEntries({ items, aiByEntry, category, kind }: GroupedEntriesProps) {
+  const t = useT()
   const clusters = useMemo(() => {
     const map = new Map<string, Entry[]>()
     for (const e of items) {
@@ -300,8 +307,8 @@ function GroupedEntries({ items, aiByEntry, category, kind }: GroupedEntriesProp
   if (clusters.length === 0) {
     return (
       <EmptyState
-        title={`暂无${kind === 'project' ? '项目' : kind === 'person' ? '人物' : '地点'}侧面`}
-        subtitle="该类别下的条目尚未识别该侧面"
+        title={t('categories.detail.grouped.empty.title', { facet: t(LENS_KEYS[kind]) })}
+        subtitle={t('categories.detail.grouped.empty.subtitle')}
       />
     )
   }
@@ -309,11 +316,11 @@ function GroupedEntries({ items, aiByEntry, category, kind }: GroupedEntriesProp
   return (
     <div className="flex flex-col gap-3">
       {clusters.map((c) => (
-        <Card key={c.value} padded={false} className="p-3">
+        <Card key={c.value} padded={false} className="p-3 shadow-card animate-fade-in-up">
           <div className="mb-2 flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-pri" />
+            <span className="size-2 rounded-full bg-gradient-to-br from-pri to-pri/60 ring-2 ring-pri/15" />
             <h3 className="text-[14px] font-medium text-ink">{c.value}</h3>
-            <span className="text-[11px] text-t3">{c.count} 条</span>
+            <span className="text-[11px] text-t3">{t('common.itemsCount', { count: c.count })}</span>
           </div>
           <div className="flex flex-col gap-2">
             {c.list.map((e) => {
@@ -342,17 +349,18 @@ function DetailHeader({
   onExportClick: () => void
   exporting: boolean
 }) {
+  const t = useT()
   return (
     <div className="flex items-center gap-2">
       <Button variant="ghost" size="sm" onClick={onBack}>
-        <ChevronLeft size={16} /> 返回
+        <ChevronLeft size={16} /> {t('common.back')}
       </Button>
       <span className={cn('size-3 rounded-full', dot)} />
       <span className="text-[17px] font-bold text-ink">{label}</span>
-      <span className="text-[12px] text-t3">{count} 条</span>
+      <span className="text-[12px] text-t3">{t('common.itemsCount', { count })}</span>
       <button
         type="button"
-        aria-label="导出该类别"
+        aria-label={t('categories.edit.export')}
         disabled={exporting}
         onClick={onExportClick}
         className="ml-auto grid size-11 cursor-pointer place-items-center rounded-btn text-t2 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-50"

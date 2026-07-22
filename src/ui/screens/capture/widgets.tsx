@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { cn, Spinner } from '@/ui/components'
 import { di } from '@/app/di'
+import { useT } from '@/app/i18n/useT'
 import type { EntryPart, GeoPoint } from '@/domain/types'
 
 const KEYFRAMES =
@@ -84,14 +85,15 @@ export function CaptureHeader({
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
+  const t = useT()
 
   const startEdit = () => {
     setDraft(title ?? '')
     setEditing(true)
   }
   const commit = () => {
-    const t = draft.trim()
-    onTitleChange(t.length > 0 ? t : undefined)
+    const v = draft.trim()
+    onTitleChange(v.length > 0 ? v : undefined)
     setEditing(false)
   }
 
@@ -100,7 +102,7 @@ export function CaptureHeader({
       <button
         type="button"
         onClick={onClose}
-        aria-label="关闭"
+        aria-label={t('common.close')}
         className="flex size-11 items-center justify-center rounded-full text-ink cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <X size={20} strokeWidth={2.2} />
@@ -108,13 +110,13 @@ export function CaptureHeader({
       {editing ? (
         <input
           name="captureTitle"
-          aria-label="条目标题"
+          aria-label={t('capture.aria.entryTitle')}
           autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() } }
-          placeholder="新条目"
+          placeholder={t('capture.newEntry')}
           maxLength={60}
           className="min-w-0 flex-1 border-b border-pri bg-transparent text-[17px] font-bold text-ink outline-none placeholder:text-t3"
         />
@@ -124,12 +126,12 @@ export function CaptureHeader({
           onClick={startEdit}
           className="min-w-0 truncate rounded-chip text-[17px] font-bold text-ink cursor-pointer transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
-          {title || '新条目'}
+          {title || t('capture.newEntry')}
         </button>
       )}
       {partCount > 0 && (
         <span className="flex h-6 shrink-0 items-center rounded-chip bg-priS px-2 text-[11px] font-medium text-pri">
-          {partCount} 片段
+          {t('capture.partsCount', { count: partCount })}
         </span>
       )}
       {location && (
@@ -144,14 +146,15 @@ export function CaptureHeader({
 
 // ── Draft hint banner: shown when parts restored from persisted draft ──
 export function DraftHintBanner({ onDismiss }: { onDismiss: () => void }) {
+  const t = useT()
   return (
     <div className="mx-4 mb-2 flex items-center gap-2 rounded-chip bg-priS px-3 py-2">
       <Info size={14} strokeWidth={2.2} className="shrink-0 text-pri" />
-      <span className="flex-1 text-[12px] font-medium text-pri">继续上次草稿</span>
+      <span className="flex-1 text-[12px] font-medium text-pri">{t('capture.draftHint')}</span>
       <button
         type="button"
         onClick={onDismiss}
-        aria-label="关闭提示"
+        aria-label={t('capture.aria.dismissHint')}
         className="flex size-11 shrink-0 items-center justify-center rounded-full text-pri cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-pri/10 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <X size={13} strokeWidth={2.4} />
@@ -177,11 +180,12 @@ export function Toast({ message, onDone }: { message: string; onDone: () => void
 
 // ── Remove button for parts ──
 function RemoveButton({ onRemove }: { onRemove: () => void }) {
+  const t = useT()
   return (
     <button
       type="button"
       onClick={onRemove}
-      aria-label="删除片段"
+      aria-label={t('capture.aria.removePart')}
       className="flex size-11 items-center justify-center rounded-full bg-black/35 text-white backdrop-blur-sm cursor-pointer transition duration-base ease-out active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
     >
       <X size={13} strokeWidth={2.4} />
@@ -202,6 +206,7 @@ function TextFlowPart({
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(content)
+  const t = useT()
   if (editing) {
     return (
       <div className="relative">
@@ -209,8 +214,8 @@ function TextFlowPart({
           value={draft}
           onChange={setDraft}
           onConfirm={() => {
-            const t = draft.trim()
-            if (t) onEdit(t)
+            const v = draft.trim()
+            if (v) onEdit(v)
             setEditing(false)
           }}
           onCancel={() => {
@@ -221,7 +226,7 @@ function TextFlowPart({
         <button
           type="button"
           onClick={onRemove}
-          aria-label="删除文本"
+          aria-label={t('capture.aria.removeText')}
           className="absolute right-1 top-1 flex size-9 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-pri/10 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           <X size={14} strokeWidth={2.2} />
@@ -234,7 +239,7 @@ function TextFlowPart({
       <button
         type="button"
         onClick={() => { setDraft(content); setEditing(true) }}
-        aria-label="编辑文本"
+        aria-label={t('capture.aria.editText')}
         className="block w-full cursor-text rounded-chip text-left transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <p className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-ink">{content}</p>
@@ -242,7 +247,7 @@ function TextFlowPart({
       <button
         type="button"
         onClick={onRemove}
-        aria-label="删除文本"
+        aria-label={t('capture.aria.removeText')}
         className="absolute right-0 top-1 flex size-11 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <X size={14} strokeWidth={2.2} />
@@ -264,6 +269,7 @@ export function FlowPart({
   onRemove: () => void
   onEdit?: (next: string) => void
 }) {
+  const t = useT()
   if (part.type === 'text') {
     return <TextFlowPart content={part.content} onRemove={onRemove} onEdit={onEdit ?? (() => {})} />
   }
@@ -272,7 +278,7 @@ export function FlowPart({
       <div className="relative flex h-12 items-center gap-2 rounded-btn bg-priS pl-2 pr-9">
         <MiniWaveform />
         <div className="flex min-w-0 flex-col">
-          <span className="text-[12px] font-medium text-pri">语音 · {fmtDur(part.durationSec)}</span>
+          <span className="text-[12px] font-medium text-pri">{t('capture.voicePart', { duration: fmtDur(part.durationSec) })}</span>
           {part.transcript && (
             <span className="line-clamp-1 text-[11px] leading-tight text-t2">{part.transcript}</span>
           )}
@@ -280,7 +286,7 @@ export function FlowPart({
         <button
           type="button"
           onClick={onRemove}
-          aria-label="删除语音"
+          aria-label={t('capture.aria.removeVoice')}
           className="absolute right-1.5 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-card focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           <X size={14} strokeWidth={2.2} />
@@ -294,7 +300,7 @@ export function FlowPart({
     <div className="relative overflow-hidden rounded-card bg-black/5">
       {isPhoto ? (
         mediaUrl ? (
-          <img src={mediaUrl} alt="照片" className="block max-h-[420px] w-full object-contain" />
+          <img src={mediaUrl} alt={t('capture.photo')} className="block max-h-[420px] w-full object-contain" />
         ) : (
           <div className="flex aspect-square items-center justify-center bg-page text-t3">
             <ImageIcon size={28} strokeWidth={1.6} />
@@ -327,14 +333,15 @@ export function FlowPart({
 
 // ── Empty compose state: a real prompt, not a dead placeholder ──
 export function EmptyCompose() {
+  const t = useT()
   return (
-    <div className="flex flex-col items-center justify-center px-6 py-20 text-center">
-      <div className="flex size-16 items-center justify-center rounded-full bg-priS">
+    <div className="flex flex-col items-center justify-center px-6 py-20 text-center animate-fade-in-up">
+      <div className="flex size-16 items-center justify-center rounded-full bg-gradient-to-b from-priS to-priS/50 ring-1 ring-pri/10 shadow-glowPriSm">
         <Mic size={28} strokeWidth={2} className="text-pri" />
       </div>
-      <p className="mt-5 text-[15px] font-medium text-ink">说一句、打几个字、或拍一张</p>
+      <p className="mt-5 text-[15px] font-semibold text-ink">{t('capture.emptyTitle')}</p>
       <p className="mt-2 max-w-[260px] text-[12px] leading-relaxed text-t3">
-        不点保存继续记，多条会堆成一条多片段
+        {t('capture.emptyHint')}
       </p>
     </div>
   )
@@ -362,13 +369,15 @@ function ToolButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'flex flex-1 flex-col items-center gap-1.5 py-1 cursor-pointer transition duration-base ease-out active:scale-95 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
+        'flex flex-1 flex-col items-center gap-1.5 py-1 cursor-pointer transition-all duration-base ease-out active:scale-90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
       )}
     >
       <span
         className={cn(
-          'flex size-12 items-center justify-center rounded-card border',
-          primary ? 'border-transparent bg-pri text-white' : 'border-brd bg-card text-ink',
+          'flex size-12 items-center justify-center rounded-card border transition-shadow duration-base',
+          primary
+            ? 'border-transparent bg-gradient-to-b from-pri to-pri/85 text-white shadow-glowPriSm'
+            : 'border-brd/80 bg-card text-ink shadow-sm hover:border-t3/40',
         )}
       >
         {icon}
@@ -391,12 +400,13 @@ export function CaptureToolbar({
   onGallery: () => void
   disabled?: boolean
 }) {
+  const t = useT()
   return (
     <div className="flex items-stretch gap-1">
-      <ToolButton icon={<Type size={22} strokeWidth={2} />} label="文本" onClick={onText} disabled={disabled} />
-      <ToolButton icon={<Mic size={22} strokeWidth={2} />} label="语音" onClick={onVoice} primary disabled={disabled} />
-      <ToolButton icon={<Camera size={22} strokeWidth={2} />} label="相机" onClick={onCamera} disabled={disabled} />
-      <ToolButton icon={<GalleryThumbnails size={22} strokeWidth={2} />} label="相册" onClick={onGallery} disabled={disabled} />
+      <ToolButton icon={<Type size={22} strokeWidth={2} />} label={t('capture.tool.text')} onClick={onText} disabled={disabled} />
+      <ToolButton icon={<Mic size={22} strokeWidth={2} />} label={t('capture.tool.voice')} onClick={onVoice} primary disabled={disabled} />
+      <ToolButton icon={<Camera size={22} strokeWidth={2} />} label={t('capture.tool.camera')} onClick={onCamera} disabled={disabled} />
+      <ToolButton icon={<GalleryThumbnails size={22} strokeWidth={2} />} label={t('capture.tool.gallery')} onClick={onGallery} disabled={disabled} />
     </div>
   )
 }
@@ -417,41 +427,44 @@ export function SaveBar({
   onSaveDraft: () => void
   onSave: () => void
 }) {
+  const t = useT()
   return (
     <div className="flex items-stretch gap-2">
       <button
         type="button"
         onClick={onClear}
         disabled={disabled || saving}
-        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd/80 bg-card text-[13px] font-medium text-t2 shadow-sm cursor-pointer transition-all duration-base ease-out hover:border-t3/40 active:scale-[0.97] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <Trash2 size={16} strokeWidth={2} />
-        清空
+        {t('capture.clear')}
       </button>
       <button
         type="button"
         onClick={onSaveDraft}
         disabled={disabled || saving}
-        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+        className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-btn border border-brd/80 bg-card text-[13px] font-medium text-t2 shadow-sm cursor-pointer transition-all duration-base ease-out hover:border-t3/40 active:scale-[0.97] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <Bookmark size={16} strokeWidth={2} />
-        存草稿
+        {t('capture.saveDraft')}
       </button>
       <button
         type="button"
         onClick={onSave}
         disabled={disabled || saving}
         className={cn(
-          'flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-btn text-[15px] font-medium cursor-pointer transition duration-base ease-out active:scale-[0.99] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
-          saving ? 'border border-brd bg-priS text-pri' : 'bg-pri text-white',
+          'flex h-12 flex-[1.4] items-center justify-center gap-2 rounded-btn text-[15px] font-medium cursor-pointer transition-all duration-base ease-out active:scale-[0.98] disabled:opacity-40 disabled:shadow-none focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
+          saving
+            ? 'border border-pri/20 bg-priS text-pri'
+            : 'bg-gradient-to-b from-pri to-pri/85 text-white shadow-glowPriSm hover:brightness-[1.06] active:brightness-95',
         )}
       >
         {saving ? (
           <>
-            <Spinner size={16} /> 保存中…
+            <Spinner size={16} /> {t('capture.saving')}
           </>
         ) : (
-          '保存'
+          t('common.save')
         )}
       </button>
     </div>
@@ -469,8 +482,9 @@ export function VoiceBar({
   elapsed: number
   onStop: () => void
 }) {
+  const t = useT()
   return (
-    <div className="flex h-16 shrink-0 items-center gap-3 border-t border-brd bg-card px-4">
+    <div className="flex h-16 shrink-0 items-center gap-3 border-t border-brd/70 bg-card/90 px-4 backdrop-blur-lg animate-slide-up">
       <span className="flex items-center" style={{ gap: 3 }}>
         {LIVE_HEIGHTS.slice(0, 5).map((h, i) => (
           <span
@@ -489,13 +503,13 @@ export function VoiceBar({
           className="inline-block size-2 rounded-full bg-pri"
           style={{ animation: 'aji-pulse 1s ease-in-out infinite' }}
         />
-        录音中 · {fmtDur(elapsed)}
+        {t('capture.recording', { duration: fmtDur(elapsed) })}
       </span>
       <button
         type="button"
         onClick={onStop}
-        aria-label="停止录音"
-        className="ml-auto flex size-12 items-center justify-center rounded-full bg-pri text-white shadow-lg shadow-pri/30 cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+        aria-label={t('capture.aria.stopRecording')}
+        className="ml-auto flex size-12 items-center justify-center rounded-full bg-gradient-to-b from-pri to-pri/85 text-white shadow-glowPri cursor-pointer transition-all duration-base ease-out hover:brightness-[1.06] active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
         <span className="block size-5 rounded-[3px] bg-white" />
       </button>
@@ -507,9 +521,13 @@ export function VoiceBar({
 // Wave 3 #2: live transcript shown inline below the parts list so the user
 // can see what's being captured without a full-screen takeover.
 export function InterimBubble({ liveTranscript }: { liveTranscript: string }) {
+  const t = useT()
   return (
-    <div className="rounded-card border border-pri/20 bg-priS/30 p-3">
-      <p className="text-[11px] font-medium text-pri">正在转写</p>
+    <div className="rounded-card border border-pri/20 bg-priS/40 p-3 shadow-sm backdrop-blur-sm animate-fade-in-up">
+      <p className="flex items-center gap-1.5 text-[11px] font-medium text-pri">
+        <span className="inline-block size-1.5 animate-pulse rounded-full bg-pri" />
+        {t('capture.transcribing')}
+      </p>
       <p className="mt-1.5 min-h-[1.5em] text-[13px] leading-relaxed text-t2">
         {liveTranscript || '…'}
       </p>
@@ -523,17 +541,18 @@ export function InterimBubble({ liveTranscript }: { liveTranscript: string }) {
 // with an actual getUserMedia call (via requestMicPermission) to re-detect.
 export function NoMicPanel({ onUseText, onRetry }: { onUseText: () => void; onRetry: () => void }) {
   const isNative = Capacitor.isNativePlatform()
+  const t = useT()
   return (
     <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
       <div className="flex size-20 items-center justify-center rounded-full border border-brd bg-card">
         <Mic size={32} strokeWidth={1.8} className="text-t3" />
       </div>
       <div>
-        <p className="text-[16px] font-bold text-ink">麦克风未授权</p>
+        <p className="text-[16px] font-bold text-ink">{t('capture.micDeniedTitle')}</p>
         <p className="mt-2 max-w-[280px] text-[12px] leading-relaxed text-t2">
           {isNative
-            ? '若已在系统设置中授权麦克风，点击「再试一次」重新检测。或改用文本记录。'
-            : '未获得麦克风权限 · 可在系统设置中开启，或改用文本记录'}
+            ? t('capture.micDeniedNative')
+            : t('capture.micDeniedWeb')}
         </p>
       </div>
       <div className="flex w-full max-w-[280px] gap-3">
@@ -542,14 +561,14 @@ export function NoMicPanel({ onUseText, onRetry }: { onUseText: () => void; onRe
           onClick={onUseText}
           className="flex h-11 flex-1 items-center justify-center rounded-btn bg-pri text-[13px] font-medium text-white cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
-          改用文本
+          {t('capture.useText')}
         </button>
         <button
           type="button"
           onClick={onRetry}
           className="flex h-11 flex-1 items-center justify-center rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
-          再试一次
+          {t('common.retry')}
         </button>
       </div>
     </div>
@@ -573,18 +592,19 @@ export function TextPartEditor({
   const ref = useRef<HTMLTextAreaElement>(null)
   useEffect(() => { ref.current?.focus() }, [])
   const canConfirm = value.trim().length > 0
+  const t = useT()
   return (
-    <div className="rounded-card border border-pri/30 bg-priS/30 p-3" role="dialog" aria-label="文本片段编辑">
+    <div className="rounded-card border border-pri/30 bg-priS/30 p-3" role="dialog" aria-label={t('capture.aria.textEditor')}>
       <textarea
         ref={ref}
         name="captureText"
-        aria-label="条目内容"
+        aria-label={t('capture.aria.entryContent')}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onConfirm()
         }}
-        placeholder="记一句…"
+        placeholder={t('capture.textPlaceholder')}
         className="h-24 w-full resize-none bg-transparent text-[14px] leading-relaxed text-ink outline-none placeholder:text-t3"
       />
       <div className="mt-2 flex justify-end gap-2">
@@ -593,7 +613,7 @@ export function TextPartEditor({
           onClick={onCancel}
           className="flex h-9 items-center justify-center rounded-btn px-4 text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
-          取消
+          {t('common.cancel')}
         </button>
         <button
           type="button"
@@ -601,7 +621,7 @@ export function TextPartEditor({
           disabled={!canConfirm}
           className="flex h-9 items-center justify-center rounded-btn bg-pri px-4 text-[13px] font-medium text-white disabled:opacity-40 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
-          确认
+          {t('common.confirm')}
         </button>
       </div>
     </div>
@@ -631,6 +651,7 @@ export function CameraView({
   // stream) but recording will be silent. User should switch to photo or grant mic.
   const [micDeniedForVideo, setMicDeniedForVideo] = useState(false)
   const [busy, setBusy] = useState(false)
+  const t = useT()
 
   // Start camera on mount / facing switch / mode switch; release on unmount +
   // when the PWA is backgrounded (pagehide) so the camera light doesn't stay on.
@@ -734,7 +755,7 @@ export function CameraView({
         <button
           type="button"
           onClick={handleClose}
-          aria-label="关闭相机"
+          aria-label={t('capture.aria.closeCamera')}
           className="flex size-11 items-center justify-center rounded-full bg-white/15 cursor-pointer transition duration-base ease-out active:scale-90 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           <X size={20} strokeWidth={2.2} />
@@ -753,7 +774,7 @@ export function CameraView({
               )}
             >
               {m === 'photo' ? <Camera size={14} strokeWidth={2.2} /> : <Video size={14} strokeWidth={2.2} />}
-              {m === 'photo' ? '拍照' : '录视频'}
+              {m === 'photo' ? t('capture.modePhoto') : t('capture.modeVideo')}
             </button>
           ))}
         </div>
@@ -761,7 +782,7 @@ export function CameraView({
           type="button"
           onClick={() => setFacing((f) => (f === 'user' ? 'environment' : 'user'))}
           disabled={recording}
-          aria-label="切换摄像头"
+          aria-label={t('capture.aria.switchCamera')}
           className="flex size-11 items-center justify-center rounded-full bg-white/15 cursor-pointer transition duration-base ease-out active:scale-90 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           <Camera size={18} strokeWidth={2.2} />
@@ -771,7 +792,7 @@ export function CameraView({
       {/* D8: mic denied for video — show banner so user knows recording will be silent */}
       {micDeniedForVideo && mode === 'video' && !denied && (
         <div className="shrink-0 bg-amber-500/90 px-4 py-2 text-center text-[12px] font-medium text-white">
-          录像需要麦克风权限，视频将无声。可切换到拍照，或在系统设置中开启麦克风。
+          {t('capture.videoMicDenied')}
         </div>
       )}
 
@@ -779,16 +800,16 @@ export function CameraView({
         {denied ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center text-white/80">
             <Camera size={36} strokeWidth={1.6} />
-            <p className="text-[14px] font-medium">相机未授权</p>
+            <p className="text-[14px] font-medium">{t('capture.cameraDeniedTitle')}</p>
             <p className="max-w-[260px] text-[12px] leading-relaxed text-white/60">
-              请在系统设置中开启相机权限，或改用相册选择
+              {t('capture.cameraDeniedHint')}
             </p>
             <button
               type="button"
               onClick={handleClose}
               className="mt-2 flex h-11 items-center justify-center rounded-btn bg-white/15 px-5 text-[13px] font-medium text-white cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
             >
-              返回
+              {t('common.back')}
             </button>
           </div>
         ) : (
@@ -811,7 +832,7 @@ export function CameraView({
           type="button"
           onClick={handleShutter}
           disabled={busy || denied}
-          aria-label={mode === 'video' ? (recording ? '停止录制' : '开始录制') : '拍照'}
+          aria-label={mode === 'video' ? (recording ? t('capture.aria.stopRecord') : t('capture.aria.startRecord')) : t('capture.aria.takePhoto')}
           className={cn(
             'flex items-center justify-center rounded-full border-4 border-white bg-white/10 cursor-pointer transition duration-base ease-out active:scale-95 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
             recording ? 'size-16 border-red-500' : 'size-[68px]',

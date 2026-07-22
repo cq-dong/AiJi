@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { useT } from '@/app/i18n/useT'
 import type { Entry, EntryAi } from '@/domain/types'
 import { CategoryCard } from './CategoryCard'
 import { CategoryDetail } from './CategoryDetail'
@@ -36,6 +37,7 @@ function HubIcon() {
 
 export default function Categories() {
   const navigate = useNavigate()
+  const t = useT()
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [editingSlug, setEditingSlug] = useState<string | null>(null)
   const [view, setView] = useState<CategoryView>('category')
@@ -75,9 +77,9 @@ export default function Categories() {
       {isEmpty ? (
         <EmptyState
           icon={<HubIcon />}
-          title="类别会随你记的内容自动涌现"
-          subtitle="先记几条，AI 会帮你归类"
-          action={<Button size="sm" onClick={() => navigate('/capture')}>记一笔</Button>}
+          title={t('categories.empty.title')}
+          subtitle={t('categories.empty.subtitle')}
+          action={<Button size="sm" onClick={() => navigate('/capture')}>{t('categories.empty.action')}</Button>}
         />
       ) : selected ? (
         <CategoryDetail
@@ -89,10 +91,14 @@ export default function Categories() {
         />
       ) : (
         <>
-          <div>
-            <h1 className="text-[24px] font-bold leading-tight text-ink">类别地图</h1>
-            <p className="mt-1 text-[12px] text-t3">
-              {categories.length} 个涌现类别 · {totalCount} 条 · LLM 自动发现
+          <div className="animate-fade-in-up">
+            <h1 className="text-[24px] font-bold leading-tight text-ink">{t('categories.title')}</h1>
+            <p className="mt-1 flex items-center gap-1.5 text-[12px] text-t3">
+              <span className="font-medium tabular-nums text-t2">{categories.length}</span> {t('categories.counts.emergedSuffix')}
+              <span aria-hidden="true" className="inline-block size-[3px] rounded-full bg-t3/50" />
+              <span className="font-medium tabular-nums text-t2">{totalCount}</span> {t('categories.counts.itemsSuffix')}
+              <span aria-hidden="true" className="inline-block size-[3px] rounded-full bg-t3/50" />
+              {t('categories.counts.llmHint')}
             </p>
           </div>
           <div className="mt-3">

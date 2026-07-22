@@ -1,30 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Aggregate, AggregateScopeType } from '@/domain/types'
 import { useUiStore } from '@/app/store'
+import { useT } from '@/app/i18n/useT'
+import type { I18nKey } from '@/app/i18n'
 import { DigestCard } from './DigestCard'
 import { lastRanges, scopeRange } from './aggregate'
 import * as summaryCache from '@/adapters/summaryCache'
 
 type Scope = AggregateScopeType
 
-const SCOPES: { key: Scope; label: string }[] = [
-  { key: 'day', label: '日' },
-  { key: 'week', label: '周' },
-  { key: 'month', label: '月' },
+const SCOPES: { key: Scope; labelKey: I18nKey }[] = [
+  { key: 'day', labelKey: 'summary.scope.day' },
+  { key: 'week', labelKey: 'summary.scope.week' },
+  { key: 'month', labelKey: 'summary.scope.month' },
 ]
 
-const DETAIL_LEVELS = [
-  { level: 1 as const, label: '极简' },
-  { level: 2 as const, label: '简洁' },
-  { level: 3 as const, label: '标准' },
-  { level: 4 as const, label: '详细' },
-  { level: 5 as const, label: '详尽' },
+const DETAIL_LEVELS: { level: 1 | 2 | 3 | 4 | 5; labelKey: I18nKey }[] = [
+  { level: 1, labelKey: 'summary.detailLevel.1' },
+  { level: 2, labelKey: 'summary.detailLevel.2' },
+  { level: 3, labelKey: 'summary.detailLevel.3' },
+  { level: 4, labelKey: 'summary.detailLevel.4' },
+  { level: 5, labelKey: 'summary.detailLevel.5' },
 ]
 
 // Limited-concurrency enqueue: avoid LLM stampede when many periods need recompute.
 const RECOMPUTE_CONCURRENCY = 2
 
 export default function Summary() {
+  const t = useT()
+  // lang 作为 periods useMemo 依赖：切换语言时 lastRanges 内的 t()/Intl 标签须重算，
+  // 否则 memo 命中旧语言标签（今日/昨日/本周… / Today/Yesterday/…）。
+  const lang = useUiStore((s) => s.settings.language)
   const [scope, setScope] = useState<Scope>('week')
   const aggregates = useUiStore((s) => s.aggregates)
   const recalculatingMap = useUiStore((s) => s.recalculating)
@@ -49,7 +55,7 @@ export default function Summary() {
     }
     return m
   }, [entries, scope])
-  const periods = useMemo(() => lastRanges(scope), [scope])
+  const periods = useMemo(() => lastRanges(scope), [scope, lang])
 
   // Refs to scan latest aggregates/recalculating without re-subscribing the effect
   // (avoids recompute loop — failure leaves stale, effect doesn't re-fire on aggregates change).
@@ -144,11 +150,11 @@ export default function Summary() {
   }
 
   return (
-    <div className="px-4 pb-4 pt-4">
-      <h1 className="text-[24px] font-bold text-ink">时间摘要</h1>
+    <div className="px-4 pb-6 pt-4">
+      <h1 className="text-[24px] font-bold text-ink">{t('summary.title')}</h1>
 
-      {/* scope tabs: 日/周/月 */}
-      <div className="mt-3 flex gap-2">
+      {/* scope tabs: 日/周/月 —— 与 categories ViewSwitcher 同款分段控件，全局一致 */}
+      <div className="mt-3 grid grid-cols-3 gap-1 rounded-[14px] border border-brd/60 bg-page p-1 shadow-inner">
         {SCOPES.map((s) => {
           const active = s.key === scope
           return (
@@ -157,11 +163,13 @@ export default function Summary() {
               type="button"
               onClick={() => onScopeChange(s.key)}
               className={[
-                'h-11 flex-1 cursor-pointer rounded-[18px] text-[14px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-                active ? 'bg-pri text-white' : 'border border-brd bg-card text-t3',
+                'h-10 cursor-pointer rounded-[10px] text-[13px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                active
+                  ? 'bg-card font-semibold text-ink shadow-sm'
+                  : 'font-medium text-t3 hover:text-t2 active:scale-95',
               ].join(' ')}
             >
-              {s.label}
+              {t(s.labelKey)}
             </button>
           )
         })}
@@ -169,9 +177,9 @@ export default function Summary() {
 
       {/* detail level selector: 极简/简洁/标准/详细/详尽 */}
       <div className="mt-3">
-        <div className="mb-1.5 text-[11px] font-medium text-t3">详细度</div>
-        <div className="flex gap-1 rounded-btn bg-page p-1">
-          {DETAIL_LEVELS.map(({ level, label }) => {
+        <div className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-t3">{t('summary.detailLevel')}</div>
+        <div className="flex gap-1 rounded-[14px] border border-brd/60 bg-page p-1 shadow-inner">
+          {DETAIL_LEVELS.map(({ level, labelKey }) => {
             const active = level === detailLevel
             return (
               <button
@@ -179,11 +187,13 @@ export default function Summary() {
                 type="button"
                 onClick={() => onLevelChange(level)}
                 className={[
-                  'h-11 flex-1 cursor-pointer rounded-[10px] text-[11px] font-medium transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-                  active ? 'bg-card text-ink shadow-sm' : 'text-t3',
+                  'h-9 flex-1 cursor-pointer rounded-[9px] text-[11px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                  active
+                    ? 'bg-card font-semibold text-ink shadow-sm'
+                    : 'font-medium text-t3 hover:text-t2 active:scale-95',
                 ].join(' ')}
               >
-                {label}
+                {t(labelKey)}
               </button>
             )
           })}

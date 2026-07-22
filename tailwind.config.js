@@ -32,9 +32,17 @@ export default {
       },
       boxShadow: {
         sm: '0 1px 2px rgb(var(--aji-shadow) / 0.05)',
-        md: '0 4px 12px rgb(var(--aji-shadow) / 0.06)',
-        lg: '0 8px 24px rgb(var(--aji-shadow) / 0.08)',
+        md: '0 1px 2px rgb(var(--aji-shadow) / 0.04), 0 4px 12px rgb(var(--aji-shadow) / 0.06)',
+        lg: '0 2px 4px rgb(var(--aji-shadow) / 0.04), 0 8px 24px rgb(var(--aji-shadow) / 0.08)',
         sheet: '0 -8px 30px rgb(var(--aji-shadow) / 0.12)',
+        // 精致卡片：近距接触影 + 远距环境影，双层叠加出“浮起”感
+        card: '0 1px 2px rgb(var(--aji-shadow) / 0.04), 0 10px 28px -6px rgb(var(--aji-shadow) / 0.08)',
+        cardHover: '0 2px 4px rgb(var(--aji-shadow) / 0.05), 0 14px 34px -6px rgb(var(--aji-shadow) / 0.12)',
+        // 主按钮/悬浮钮：品牌色发光 + 顶部内高光（玻璃质感）
+        glowPri: '0 8px 22px -6px rgb(var(--c-pri) / 0.5), inset 0 1px 0 0 rgb(255 255 255 / 0.22)',
+        glowPriSm: '0 4px 14px -4px rgb(var(--c-pri) / 0.45), inset 0 1px 0 0 rgb(255 255 255 / 0.18)',
+        // 元素浮于内容之上（toast / 弹出层）
+        pop: '0 4px 8px rgb(var(--aji-shadow) / 0.06), 0 16px 40px -8px rgb(var(--aji-shadow) / 0.16)',
       },
       transitionDuration: {
         fast: '150ms',
@@ -54,6 +62,14 @@ export default {
           from: { opacity: '0' },
           to: { opacity: '1' },
         },
+        'aji-fade-in-up': {
+          from: { opacity: '0', transform: 'translateY(12px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        'aji-scale-in': {
+          from: { opacity: '0', transform: 'scale(0.9)' },
+          to: { opacity: '1', transform: 'scale(1)' },
+        },
         'aji-shimmer': {
           from: { transform: 'translateX(-100%)' },
           to: { transform: 'translateX(100%)' },
@@ -66,6 +82,9 @@ export default {
       animation: {
         'slide-up': 'aji-slide-up 280ms cubic-bezier(0.16,1,0.3,1)',
         'fade-in': 'aji-fade-in 180ms ease-out',
+        // 列表/卡片入场：上浮+淡入，both 填充模式配合 animationDelay 做 stagger
+        'fade-in-up': 'aji-fade-in-up 340ms cubic-bezier(0.16,1,0.3,1) both',
+        'scale-in': 'aji-scale-in 220ms cubic-bezier(0.16,1,0.3,1) both',
         'shimmer': 'aji-shimmer 1.5s ease-in-out infinite',
         'indeterminate': 'aji-indeterminate 1.3s ease-in-out infinite',
       },

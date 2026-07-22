@@ -17,6 +17,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+!.env.production
 
 # Editor directories and files
 .vscode/*
@@ -47,3 +48,7 @@ dist-ssr
 # Throwaway STT/LLM probe scripts + test audio (exploration only, no keys)
 scripts/probe-*.mjs
 public/asr-test.wav
+
+# Backend (server/) — sqlite data + build output
+server/data/
+server/dist/

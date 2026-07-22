@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Mic } from 'lucide-react'
 import { Button, EmptyState } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { useT } from '@/app/i18n/useT'
 import type { Entry } from '@/domain/types'
 import { dateKey, groupLabel, todayKeyFrom, topDateLabel } from './helpers'
 import { HomeHeader } from './HomeHeader'
@@ -11,6 +12,7 @@ import { TimelineCard } from './TimelineCard'
 
 export default function Home() {
   const navigate = useNavigate()
+  const t = useT()
   const online = useUiStore((s) => s.online)
   const entries = useUiStore((s) => s.entries)
   const justSaved = useUiStore((s) => s.justSaved)
@@ -18,7 +20,8 @@ export default function Home() {
   const categories = useUiStore((s) => s.categories)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
 
-  const todayKey = todayKeyFrom(entries)
+  // 空库时 todayKeyFrom 返 ''，topDateLabel('') 会渲出「NaN月undefined日」——回落系统今天。
+  const todayKey = todayKeyFrom(entries) || dateKey(new Date().toISOString())
   const todayCount = entries.filter((e) => dateKey(e.createdAt) === todayKey).length
 
   const showOffline = !online
@@ -67,25 +70,28 @@ export default function Home() {
         {isEmpty ? (
           <EmptyState
             icon={
-              <div className="flex size-24 items-center justify-center rounded-full bg-priS">
+              <div className="flex size-24 items-center justify-center rounded-full bg-gradient-to-b from-priS to-priS/50 ring-1 ring-pri/10 shadow-glowPriSm">
                 <Mic size={36} className="text-pri" />
               </div>
             }
-            title="还没有记下任何东西"
-            subtitle="点下方的麦克风，记一笔"
+            title={t('home.empty.title')}
+            subtitle={t('home.empty.subtitle')}
             action={
               <Button size="lg" onClick={() => navigate('/capture')}>
-                记一笔
+                {t('home.empty.action')}
               </Button>
             }
           />
         ) : (
           <div className="flex flex-col gap-6">
-            {groups.map((g) => (
+            {groups.map((g, gi) => (
               <section key={g.key}>
-                <h2 className="mb-2 text-[12px] font-medium text-t3">{g.label}</h2>
+                <h2 className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">
+                  {g.label}
+                  <span className="h-px flex-1 bg-gradient-to-r from-brd to-transparent" aria-hidden="true" />
+                </h2>
                 <div className="flex flex-col gap-2.5">
-                  {g.entries.map((e) => {
+                  {g.entries.map((e, ei) => {
                     const ai = aiMap.get(e.id)
                     const cat = ai ? catMap.get(ai.category) : undefined
                     return (
@@ -95,6 +101,7 @@ export default function Home() {
                         ai={ai}
                         catLabel={cat?.label}
                         catAccent={cat?.accent}
+                        index={gi * 3 + ei}
                       />
                     )
                   })}

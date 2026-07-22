@@ -68,6 +68,10 @@ export interface GeoPoint {
 
 export interface Entry {
   id: string
+  // 账号分区键（Slice B 本地账号分区）：'local'=未登录本地数据 | network account.id。
+  // 可选仅为构造期便利——dexieStorage.saveEntry 强制盖章 ownerId=getCurrentOwner()，
+  // 覆盖调用方传入值；db v7 upgrade 回填存量行 'local'。运行时所有行都有具体 ownerId。
+  ownerId?: string
   createdAt: string // ISO
   updatedAt: string // ISO
   parts: EntryPart[]
@@ -114,6 +118,8 @@ export type ReminderStatus = 'pending' | 'fired' | 'snoozed' | 'missed'
 
 export interface Reminder {
   id: string
+  // 账号分区键（同 Entry）。saveReminder 强制盖章 getCurrentOwner()。
+  ownerId?: string
   entryId: string // links back to the Entry that gave rise to this reminder
   dueAt: string // ISO 8601 absolute timestamp (LLM-parsed, Q2)
   label: string // short description shown in notification + settings sheet
@@ -123,6 +129,8 @@ export interface Reminder {
 
 export interface Category {
   slug: string
+  // 账号分区键（同 Entry）。saveCategory 强制盖章 getCurrentOwner()。
+  ownerId?: string
   label: string
   aliases: string[]
   usageCount: number
@@ -132,6 +140,8 @@ export interface Category {
 
 export interface Tag {
   slug: string
+  // 账号分区键（同 Entry）。saveTag 强制盖章 getCurrentOwner()。
+  ownerId?: string
   label: string
   usageCount: number
   createdAt: string
@@ -141,6 +151,8 @@ export type AggregateScopeType = 'day' | 'week' | 'month'
 
 export interface Aggregate {
   id: string
+  // 账号分区键（同 Entry）。saveAggregate 强制盖章 getCurrentOwner()。
+  ownerId?: string
   scope: { type: AggregateScopeType; range: string } // range: '2026-07-15' / '2026-W28' / '2026-07'
   summary: string
   highlights?: string[] // optional LLM-highlighted key items
@@ -201,6 +213,11 @@ export interface Settings {
   // D24: 反向地理编码 BYOK Key（高德 web 服务）。未配 → 回落 Nominatim（OSM，国内网络常超时/不可达，
   // 此时地址显示退化为坐标）。配了高德 Key → 国内地址解析稳定可靠。Key 存 SecretStorePort('geocoding:key')。
   geocodingKeyRef?: string
+  // Slice B：AI 调用来源。undefined 视同 'byok'；游客强制 'byok'（store 守卫）。
+  keySource?: 'byok' | 'builtin'
+  // i18n（2026-07-22）：界面语言。undefined = 未固化（boot hydrate 时按系统语言 detect 并写回，
+  // 一次性——之后系统语言变化不跟随，用户在设置里手动改）。
+  language?: 'zh' | 'en'
 }
 
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────
@@ -248,6 +265,8 @@ export interface ChatMessage {
 // MVP 单会话：固定 id=1。多会话时改 schema + listConversations，UI 不动。
 export interface Conversation {
   id: string
+  // 账号分区键（同 Entry）。saveConversation 强制盖章 getCurrentOwner()。
+  ownerId?: string
   messages: ChatMessage[]
   updatedAt: string
 }
@@ -264,4 +283,18 @@ export interface ChatAnswer {
 export interface FeedbackItem {
   text: string
   images: Blob[]
+}
+
+// AI 记忆（用户明确记忆）— docs/superpowers/specs/2026-07-22-ai-memory-design.md
+// 用户显式书写的记忆/偏好，两个消费点：① answerChat 回答时参考；② classify 分类时遵循
+// （如「X 都归到 Y 类」「我对花生过敏」）。enabled=false 停用不删除（不参与 prompt 注入）。
+// 不加 kind/category 枚举——分类理解靠 content 自然语言本身，枚举是过度设计。
+// 账号分区同 Entry：ownerId 可选 + save 盖章 + adoptLocal 收养（v8 新表，无存量回填负担）。
+export interface Memory {
+  id: string // uuid
+  ownerId?: string // 账号分区（同 Entry）：save 强制盖章 getCurrentOwner()
+  content: string // 用户原文
+  enabled: boolean // 停用不删除（参与 prompt 与否的开关）
+  createdAt: string // ISO
+  updatedAt: string // ISO
 }

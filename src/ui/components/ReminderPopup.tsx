@@ -1,4 +1,5 @@
 import { useUiStore } from '@/app/store'
+import { useT } from '@/app/i18n/useT'
 import { ReminderCreator } from './ReminderCreator'
 
 // 保存后即时弹窗：processEntry(isFresh=true) 检出 reminderSuggestion → store.pendingReminder →
@@ -10,15 +11,16 @@ import { ReminderCreator } from './ReminderCreator'
 // 到点由系统触发，不再依赖前台 setTimeout。弹窗本身加 slide-up 动画 + 点击遮罩关闭。
 
 export function ReminderPopup() {
+  const t = useT()
   const pending = useUiStore((s) => s.pendingReminder)
   const dismiss = useUiStore.getState().dismissPendingReminder
   if (!pending) return null
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-[2px] animate-fade-in sm:items-center"
       role="dialog"
       aria-modal="true"
-      aria-label="提醒确认"
+      aria-label={t('comp.reminder.popup.aria')}
       onClick={(e) => {
         // 点击遮罩（非内容区）关闭
         if (e.target === e.currentTarget) dismiss()

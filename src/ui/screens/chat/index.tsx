@@ -1,32 +1,47 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, Eraser, Mic, Square } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Square, SquarePen } from 'lucide-react'
 import { Chip, Spinner } from '@/ui/components'
 import { useUiStore } from '@/app/store'
+import { t } from '@/app/i18n'
+import { useT } from '@/app/i18n/useT'
+import { HistorySheet } from './HistorySheet'
 import type { ChatMessage, ChatTrace, Entry } from '@/domain/types'
 
-// 裸路由顶栏：返回 ‹ + 标题「问 AI」+ 清空会话（Eraser）。
-function TopBar({ onBack, onClear, canClear }: { onBack: () => void; onClear: () => void; canClear: boolean }) {
+// 裸路由顶栏：返回 ‹ + 标题「问 AI」+ 历史(History) / 新会话(SquarePen) 两图标按钮。
+// 新会话在当前会话为空（无消息）时禁用——开新空会话无意义。
+function TopBar({ onBack, onHistory, onNewChat, canNewChat }: { onBack: () => void; onHistory: () => void; onNewChat: () => void; canNewChat: boolean }) {
+  const t = useT()
   return (
-    <div className="flex h-12 shrink-0 items-center justify-between px-2">
+    <div className="flex h-12 shrink-0 items-center justify-between border-b border-brd/70 bg-card/90 px-2 backdrop-blur-lg shadow-sm">
       <button
         type="button"
         onClick={onBack}
-        aria-label="返回"
+        aria-label={t('chat.aria.back')}
         className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
       >
         <ChevronLeft size={24} strokeWidth={2} />
       </button>
-      <h1 className="text-[24px] font-bold leading-tight text-ink">问 AI</h1>
-      <button
-        type="button"
-        onClick={onClear}
-        disabled={!canClear}
-        aria-label="清空会话"
-        className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-30 disabled:active:scale-100"
-      >
-        <Eraser size={18} />
-      </button>
+      <h1 className="text-[24px] font-bold leading-tight text-ink">{t('chat.title')}</h1>
+      <div className="flex items-center gap-0.5">
+        <button
+          type="button"
+          onClick={onHistory}
+          aria-label={t('chat.aria.history')}
+          className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+        >
+          <History size={20} />
+        </button>
+        <button
+          type="button"
+          onClick={onNewChat}
+          disabled={!canNewChat}
+          aria-label={t('chat.aria.newChat')}
+          className="flex size-11 items-center justify-center rounded-btn text-t2 transition duration-base ease-out hover:bg-page active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-30 disabled:active:scale-100"
+        >
+          <SquarePen size={20} />
+        </button>
+      </div>
     </div>
   )
 }
@@ -35,10 +50,10 @@ function TopBar({ onBack, onClear, canClear }: { onBack: () => void; onClear: ()
 // 标签取 summary/标题/首段文本前 16 字；条目已删（不在 entries）→ 灰显「已删除」不可点。
 function citeLabel(id: string, entries: Entry[], aiByEntry: ReturnType<typeof useUiStore.getState>['aiByEntry']): { label: string; gone: boolean } {
   const entry = entries.find((e) => e.id === id)
-  if (!entry) return { label: '已删除', gone: true }
+  if (!entry) return { label: t('chat.citeDeleted'), gone: true }
   const ai = aiByEntry[id]
   const firstText = entry.parts.find((p) => p.type === 'text')?.content ?? ''
-  const label = ai?.titleSuggestion || ai?.summary || firstText.slice(0, 16) || '条目'
+  const label = ai?.titleSuggestion || ai?.summary || firstText.slice(0, 16) || t('chat.entryFallback')
   return { label, gone: false }
 }
 
@@ -46,6 +61,8 @@ function CitationChips({ ids }: { ids: string[] }) {
   const navigate = useNavigate()
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
+  // 订阅语言：citeLabel 的「已删除」走全局 t()，切换语言需重渲刷新。
+  useT()
   if (ids.length === 0) return null
   return (
     <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -80,7 +97,8 @@ function renderRichText(
     if (part.startsWith('**') && part.endsWith('**')) {
       return <b key={i}>{part.slice(2, -2)}</b>
     }
-    const citeRegex = new RegExp('（见\\s+([a-zA-Z0-9-]+)）', 'g')
+    // i18n：zh 提示词产「（见 <id>）」，en 产 "(see <id>)"——解析器两种 wire-format 都认。
+    const citeRegex = new RegExp('[（(]\\s*(?:见|see)\\s+([a-zA-Z0-9_-]+)\\s*[）)]', 'gi')
     const citeNodes: React.ReactNode[] = []
     let lastIndex = 0
     let match: RegExpExecArray | null
@@ -95,7 +113,7 @@ function renderRichText(
             onClick={() => navigate(`/detail/${id}`)}
             className="text-pri underline hover:text-pri/80 cursor-pointer"
           >
-            （见 {getLabel(id)}）
+            {t('chat.seeCite', { label: getLabel(id) })}
           </button>,
         )
       }
@@ -109,10 +127,19 @@ function renderRichText(
 // D37: 思维链面板——理解问题→召回条目→组织回答的过程，默认折叠可展开。
 function TracePanel({ trace }: { trace: ChatTrace }) {
   const [open, setOpen] = useState(false)
+  const t = useT()
   const intent = trace.intent
   const recalled = trace.recalled ?? []
   // 无内容可展示时（无 intent/recalled/error）不渲染。
   if (!intent && recalled.length === 0 && !trace.error) return null
+
+  const scopeType = intent?.scope
+    ? intent.scope.type === 'day'
+      ? t('chat.trace.scopeDay')
+      : intent.scope.type === 'week'
+        ? t('chat.trace.scopeWeek')
+        : t('chat.trace.scopeMonth')
+    : ''
 
   return (
     <div className="mt-1.5">
@@ -122,27 +149,30 @@ function TracePanel({ trace }: { trace: ChatTrace }) {
         className="inline-flex items-center gap-1 text-[11px] text-t3 transition duration-base ease-out active:scale-[0.97]"
       >
         {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        <span>思考过程</span>
+        <span>{t('chat.traceToggle')}</span>
       </button>
       {open && (
         <div className="mt-1.5 rounded-card bg-page px-3 py-2 text-[11px] leading-relaxed text-t2 space-y-1.5">
           {intent && (
             <div>
-              <p className="text-t3">理解问题</p>
+              <p className="text-t3">{t('chat.trace.intent')}</p>
               <p>
-                关键词：{intent.keywords.length > 0 ? intent.keywords.join('、') : '（无，按时间范围检索）'}
+                {t('chat.trace.keywordsLabel')}
+                {intent.keywords.length > 0 ? intent.keywords.join('、') : t('chat.trace.keywordsNone')}
               </p>
               {intent.scope && (
-                <p>时间：{intent.scope.type === 'day' ? '日' : intent.scope.type === 'week' ? '周' : '月'} {intent.scope.range}</p>
+                <p>
+                  {t('chat.trace.scopeLabel')}{scopeType} {intent.scope.range}
+                </p>
               )}
               {intent.categorySlugs && intent.categorySlugs.length > 0 && (
-                <p>类别：{intent.categorySlugs.join('、')}</p>
+                <p>{t('chat.trace.categoriesLabel')}{intent.categorySlugs.join('、')}</p>
               )}
             </div>
           )}
           {recalled.length > 0 && (
             <div>
-              <p className="text-t3">检索库中（{recalled.length} 条相关）</p>
+              <p className="text-t3">{t('chat.trace.recalled', { count: recalled.length })}</p>
               <ul className="list-disc pl-4 space-y-0.5">
                 {recalled.map((r) => (
                   <li key={r.id}>{r.label}</li>
@@ -151,8 +181,8 @@ function TracePanel({ trace }: { trace: ChatTrace }) {
             </div>
           )}
           <div>
-            <p className="text-t3">组织回答</p>
-            <p>基于上述条目综合生成回答。</p>
+            <p className="text-t3">{t('chat.trace.organize')}</p>
+            <p>{t('chat.trace.organizeHint')}</p>
           </div>
         </div>
       )}
@@ -165,6 +195,8 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
   const navigate = useNavigate()
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
+  // 订阅语言：renderRichText 的「见 {label}」走全局 t()，切换语言需重渲刷新。
+  useT()
 
   const getLabel = (id: string) => citeLabel(id, entries, aiByEntry).label
   const isValidId = (id: string) => !citeLabel(id, entries, aiByEntry).gone
@@ -208,10 +240,10 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[85%]">
-        <div
-          className={`rounded-card px-3 py-2 text-[13px] leading-relaxed whitespace-normal break-words ${msg.error ? 'bg-page text-t3' : 'bg-card text-ink border border-brd'}`}
-        >
+        <div className="max-w-[85%]">
+          <div
+            className={`rounded-card px-3 py-2 text-[13px] leading-relaxed whitespace-normal break-words shadow-sm ${msg.error ? 'bg-page text-t3' : 'bg-card text-ink border border-brd/80'}`}
+          >
           {renderMarkdown(msg.content)}
         </div>
         {msg.citedEntryIds && msg.citedEntryIds.length > 0 && <CitationChips ids={msg.citedEntryIds} />}
@@ -224,53 +256,55 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
 function UserBubble({ msg }: { msg: ChatMessage }) {
   return (
     <div className="flex justify-end">
-      <div className="max-w-[85%] rounded-card bg-pri px-3 py-2 text-[13px] leading-relaxed text-white whitespace-pre-wrap break-words">
+      <div className="max-w-[85%] rounded-card bg-gradient-to-b from-pri to-pri/90 px-3 py-2 text-[13px] leading-relaxed text-white shadow-glowPriSm whitespace-pre-wrap break-words">
         {msg.content}
       </div>
     </div>
   )
 }
 
-const LOADING_TEXT: Record<'intent' | 'recall' | 'answer', string> = {
-  intent: '理解问题…',
-  recall: '检索库中…',
-  answer: '组织回答…',
-}
+const LOADING_KEYS = {
+  intent: 'chat.loading.intent',
+  recall: 'chat.loading.recall',
+  answer: 'chat.loading.answer',
+} as const
 
 function LoadingBubble({ phase }: { phase: 'intent' | 'recall' | 'answer' }) {
+  const t = useT()
   return (
     <div className="flex justify-start">
-      <div className="flex items-center gap-2 rounded-card bg-card px-3 py-2 text-[13px] text-t2 border border-brd">
+      <div className="flex items-center gap-2 rounded-card border border-brd/80 bg-card px-3 py-2 text-[13px] text-t2 shadow-sm">
         <Spinner size={14} />
-        <span>{LOADING_TEXT[phase]}</span>
+        <span>{t(LOADING_KEYS[phase])}</span>
       </div>
     </div>
   )
 }
 
 function EmptyTalk() {
+  const t = useT()
   return (
     <div className="mt-10 px-6 text-center">
-      <p className="text-[15px] font-medium text-ink">问库里的内容</p>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-t2">
-        试试「我上个月关于跑步的想法」「桂花拿铁那条」「这周做了什么」
-      </p>
+      <p className="text-[15px] font-medium text-ink">{t('chat.emptyTitle')}</p>
+      <p className="mt-1.5 text-[13px] leading-relaxed text-t2">{t('chat.emptyHint')}</p>
     </div>
   )
 }
 
 export default function Chat() {
   const navigate = useNavigate()
+  const t = useT()
   const conversation = useUiStore((s) => s.conversation)
   const chatLoading = useUiStore((s) => s.chatLoading)
   const online = useUiStore((s) => s.online)
   const sendMessage = useUiStore((s) => s.sendMessage)
-  const clearConversation = useUiStore((s) => s.clearConversation)
+  const newConversation = useUiStore((s) => s.newConversation)
   const chatVoice = useUiStore((s) => s.chatVoice)
   const startChatVoice = useUiStore((s) => s.startChatVoice)
   const stopChatVoice = useUiStore((s) => s.stopChatVoice)
 
   const [text, setText] = useState('')
+  const [historyOpen, setHistoryOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // 新消息 / loading 阶段变化 → 滚到底。
@@ -307,25 +341,25 @@ export default function Chat() {
 
   const toggleVoice = async () => {
     if (recording) {
-      const t = await stopChatVoice()
-      if (t) setText((prev) => `${prev.replace(/\s+$/, '')}${prev.trim() ? ' ' : ''}${t}`)
+      // 注意：局部变量名 transcript 而非 t，避免遮蔽组件级 useT() 的 i18n t。
+      const transcript = await stopChatVoice()
+      if (transcript) setText((prev) => `${prev.replace(/\s+$/, '')}${prev.trim() ? ' ' : ''}${transcript}`)
     } else {
       void startChatVoice()
     }
   }
 
-  const onClear = () => {
-    if (hasMessages && window.confirm('清空当前会话？')) void clearConversation()
-  }
-
   return (
     <div className="flex h-full flex-col">
-      <TopBar onBack={() => navigate('/')} onClear={onClear} canClear={hasMessages} />
+      <TopBar
+        onBack={() => navigate('/')}
+        onHistory={() => setHistoryOpen(true)}
+        onNewChat={() => newConversation()}
+        canNewChat={hasMessages}
+      />
 
       {/* 隐私披露：问题 + 召回片段上送 LLM 作答（仅检索，AI 不写数据）。 */}
-      <p className="shrink-0 px-4 text-[11px] text-t3">
-        问答仅本地检索，问题与片段将上送 LLM 作答 · AI 不会改动你的条目
-      </p>
+      <p className="shrink-0 px-4 text-[11px] text-t3">{t('chat.privacy')}</p>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="space-y-3">
@@ -337,19 +371,19 @@ export default function Chat() {
         </div>
       </div>
 
-      <form onSubmit={submit} className="shrink-0 border-t border-brd bg-card px-3 py-2">
+      <form onSubmit={submit} className="shrink-0 border-t border-brd/70 bg-card/90 px-3 py-2 backdrop-blur-lg">
         {!online && (
-          <p className="mb-1.5 text-[11px] text-catFail">离线中，连上网再问</p>
+          <p className="mb-1.5 text-[11px] text-catFail">{t('chat.offlineHint')}</p>
         )}
         {chatVoice.micDenied && (
-          <p className="mb-1.5 text-[11px] text-catFail">麦克风被拒，去系统设置开权限后重试</p>
+          <p className="mb-1.5 text-[11px] text-catFail">{t('chat.micDenied')}</p>
         )}
         <div className="flex items-end gap-2">
           <button
             type="button"
             onClick={toggleVoice}
             disabled={!online || loading}
-            aria-label={recording ? '停止语音' : '语音输入'}
+            aria-label={recording ? t('chat.aria.stopVoice') : t('chat.aria.startVoice')}
             className="flex size-10 shrink-0 items-center justify-center rounded-btn text-t2 active:bg-page disabled:opacity-40"
           >
             {recording ? (
@@ -367,22 +401,24 @@ export default function Chat() {
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit(e as unknown as React.FormEvent)
             }}
-            placeholder={recording ? '正在听…' : online ? '问点什么…' : '离线中'}
+            placeholder={recording ? t('chat.placeholderListening') : online ? t('chat.placeholder') : t('chat.placeholderOffline')}
             readOnly={recording}
             disabled={loading}
             rows={1}
-            className="flex-1 resize-none rounded-btn bg-page px-3 py-2 text-[14px] text-ink placeholder:text-t3 focus:outline-none focus:ring-1 focus:ring-pri/40 read-only:focus:ring-0 disabled:opacity-50"
+            className="flex-1 resize-none rounded-btn border border-brd/80 bg-card px-3 py-2 text-[14px] text-ink shadow-sm placeholder:text-t3 focus:outline-none focus:border-pri/50 focus:shadow-glowPriSm focus-visible:ring-2 focus-visible:ring-pri/20 read-only:focus:shadow-sm read-only:focus:ring-0 disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={!text.trim() || loading || !online || recording}
-            aria-label="发送"
-            className="flex size-10 shrink-0 items-center justify-center rounded-btn bg-pri text-white disabled:opacity-40"
+            aria-label={t('chat.aria.send')}
+            className="flex size-10 shrink-0 items-center justify-center rounded-btn bg-gradient-to-b from-pri to-pri/90 text-white shadow-glowPriSm transition-all active:scale-90 disabled:opacity-40"
           >
             <ArrowUp size={18} />
           </button>
         </div>
       </form>
+
+      <HistorySheet open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </div>
   )
 }

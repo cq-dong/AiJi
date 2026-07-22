@@ -1,5 +1,7 @@
 import { isoWeekBounds, scopeRange, shiftRef, startOfDay } from '@/domain/dateRange'
 import type { Aggregate, AggregateScopeType, Category, EntryAi } from '@/domain/types'
+import { t } from '@/app/i18n'
+import { getCurrentLang } from '@/app/currentLang'
 
 // A3: scopeRange/shiftRef/isoWeekBounds/startOfDay come from @/domain/dateRange so the
 // week key used to file entries and the label rendered to users share one correct ISO
@@ -24,6 +26,13 @@ function fmtMDHM(iso: string): string {
   return `${fmtMD(d)} ${hh}:${mm}`
 }
 
+// Localized month-year label: zh → 「2026年7月」, en → 「July 2026」。
+// 用于月期间的 base 标签（periodLabel / periodLabels 共用）。
+function fmtMonthYear(d: Date): string {
+  const locale = getCurrentLang() === 'zh' ? 'zh-CN' : 'en-US'
+  return new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long' }).format(d)
+}
+
 export interface ScopeDisplay {
   label: string
   range: string
@@ -36,7 +45,7 @@ export function scopeDisplay(ag: Aggregate): ScopeDisplay {
   const created = new Date(ag.createdAt)
   if (ag.scope.type === 'day') {
     return {
-      label: sameDay(created, TODAY) ? '今日' : fmtMD(created),
+      label: sameDay(created, TODAY) ? t('summary.period.today') : fmtMD(created),
       range: fmtMD(created),
     }
   }
@@ -44,7 +53,7 @@ export function scopeDisplay(ag: Aggregate): ScopeDisplay {
   const includesToday =
     start.getTime() <= TODAY.getTime() && TODAY.getTime() <= end.getTime()
   return {
-    label: includesToday ? '本周' : '上周',
+    label: includesToday ? t('summary.period.thisWeek') : t('summary.period.lastWeek'),
     range: `${fmtMD(start)}–${fmtMD(end)}`,
   }
 }
@@ -106,15 +115,15 @@ export function aggregateChips(
 // Friendly navigator label for the selected period, anchored at ref.
 export function periodLabel(scope: AggregateScopeType, ref: Date, isCurrent: boolean): string {
   if (scope === 'day') {
-    return isCurrent ? '今日' : fmtMD(ref)
+    return isCurrent ? t('summary.period.today') : fmtMD(ref)
   }
   if (scope === 'month') {
-    const base = `${ref.getFullYear()}年${ref.getMonth() + 1}月`
-    return isCurrent ? `本月 · ${base}` : base
+    const base = fmtMonthYear(ref)
+    return isCurrent ? `${t('summary.period.thisMonth')} · ${base}` : base
   }
   const { start, end } = isoWeekBounds(ref)
   const base = `${fmtMD(start)}–${fmtMD(end)}`
-  return isCurrent ? `本周 · ${base}` : base
+  return isCurrent ? `${t('summary.period.thisWeek')} · ${base}` : base
 }
 
 // ── 反向时间序列（Wave 3 user feedback #1）──────────────────────────────
@@ -143,21 +152,21 @@ function periodLabels(
 ): { label: string; dateLabel: string } {
   if (scope === 'day') {
     const date = fmtMD(ref)
-    if (isCurrent) return { label: '今日', dateLabel: date }
-    if (offset === 1) return { label: '昨日', dateLabel: date }
+    if (isCurrent) return { label: t('summary.period.today'), dateLabel: date }
+    if (offset === 1) return { label: t('summary.period.yesterday'), dateLabel: date }
     return { label: date, dateLabel: date }
   }
   if (scope === 'month') {
-    const base = `${ref.getFullYear()}年${ref.getMonth() + 1}月`
-    if (isCurrent) return { label: '本月', dateLabel: base }
-    if (offset === 1) return { label: '上月', dateLabel: base }
+    const base = fmtMonthYear(ref)
+    if (isCurrent) return { label: t('summary.period.thisMonth'), dateLabel: base }
+    if (offset === 1) return { label: t('summary.period.lastMonth'), dateLabel: base }
     return { label: base, dateLabel: base }
   }
   // week — ISO Mon–Sun of ref's week（与 scopeRange 的 ISO 周键逐字对应，A3）。
   const { start, end } = isoWeekBounds(ref)
   const base = `${fmtMD(start)}–${fmtMD(end)}`
-  if (isCurrent) return { label: '本周', dateLabel: base }
-  if (offset === 1) return { label: '上周', dateLabel: base }
+  if (isCurrent) return { label: t('summary.period.thisWeek'), dateLabel: base }
+  if (offset === 1) return { label: t('summary.period.lastWeek'), dateLabel: base }
   return { label: base, dateLabel: base }
 }
 

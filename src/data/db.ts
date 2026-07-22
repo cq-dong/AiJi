@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Aggregate, Category, Conversation, Draft, Entry, EntryAi, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, Category, Conversation, Draft, Entry, EntryAi, Memory, Reminder, Settings, Tag } from '@/domain/types'
 
 // IndexedDB schema (PRD §7.3). UI 层先用 mock 适配器，schema 已就位待接入。
 export class AiJiDB extends Dexie {
@@ -19,6 +19,9 @@ export class AiJiDB extends Dexie {
   // AI Chat · 单会话 MVP（conversations 表 id=1 单行，messages 内嵌数组）。
   // 多会话 schema 已就位（id 索引），v1.1 再铺 listConversations UI。
   conversations!: Table<Conversation, string>
+  // AI 记忆（2026-07-22）：用户明确记忆/偏好，classify 与 answerChat 注入 prompt。
+  // 账号分区同 6 张分区表（ownerId 索引）；v8 新表无存量，无 upgrade 回填。
+  memories!: Table<Memory, string>
 
   constructor() {
     super('aiji')
@@ -90,6 +93,46 @@ export class AiJiDB extends Dexie {
       reminders: 'id, dueAt, status, entryId',
       drafts: 'id, updatedAt',
       conversations: 'id, updatedAt',
+    })
+    // v7: 账号分区——6 张分区表（entries/categories/tags/aggregates/reminders/conversations）
+    // 加 ownerId 索引；entryAi 不加（条目已分区，AI 结果随条目可见性走，简单优先）。
+    // drafts/settings 保持全局（设备级，不分区）。.stores() 非增量——所有 store 逐字重声明
+    // （现有索引逐字保留，仅 6 表追加 , ownerId）。upgrade 回填存量行 ownerId='local'，
+    // 让未登录期间已落库的数据归属 'local'，待首次登录网络账号时被 adoptLocal 收养。
+    this.version(7).stores({
+      entries: 'id, createdAt, updatedAt, status, deletedAt, ownerId',
+      entryAi: 'id, entryId, version',
+      categories: 'slug, usageCount, ownerId',
+      tags: 'slug, usageCount, ownerId',
+      aggregates: 'id, scope.type, scope.range, stale, ownerId',
+      settings: '++id',
+      reminders: 'id, dueAt, status, entryId, ownerId',
+      drafts: 'id, updatedAt',
+      conversations: 'id, updatedAt, ownerId',
+    }).upgrade(async (tx) => {
+      // 存量行回填 'local'。ownerId 字段此前不存在 → 全部行缺失，统一改盖 'local'。
+      // toCollection().modify 是 Dexie 批量改字段的标准姿势，逐表事务内执行。
+      await tx.table('entries').toCollection().modify({ ownerId: 'local' })
+      await tx.table('categories').toCollection().modify({ ownerId: 'local' })
+      await tx.table('tags').toCollection().modify({ ownerId: 'local' })
+      await tx.table('aggregates').toCollection().modify({ ownerId: 'local' })
+      await tx.table('reminders').toCollection().modify({ ownerId: 'local' })
+      await tx.table('conversations').toCollection().modify({ ownerId: 'local' })
+    })
+    // v8: AI 记忆——新表 memories（keyPath id, ownerId/updatedAt 索引）。账号分区同 6 张分区表。
+    // .stores() 非增量——所有 store 逐字重声明（现有索引逐字保留，仅追加 memories）。
+    // 纯加表，无 keyPath 变更，新表无存量 → 无 upgrade 回调。
+    this.version(8).stores({
+      entries: 'id, createdAt, updatedAt, status, deletedAt, ownerId',
+      entryAi: 'id, entryId, version',
+      categories: 'slug, usageCount, ownerId',
+      tags: 'slug, usageCount, ownerId',
+      aggregates: 'id, scope.type, scope.range, stale, ownerId',
+      settings: '++id',
+      reminders: 'id, dueAt, status, entryId, ownerId',
+      drafts: 'id, updatedAt',
+      conversations: 'id, updatedAt, ownerId',
+      memories: 'id, ownerId, updatedAt',
     })
   }
 }

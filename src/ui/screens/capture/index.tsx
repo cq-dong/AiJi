@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
 import { useUiStore } from '@/app/store'
+import { useAccountStore } from '@/app/accountStore'
+import { useQuotaStore } from '@/app/quotaStore'
 import { di } from '@/app/di'
+import { useT } from '@/app/i18n/useT'
 import { enrichLocation } from '@/adapters/geocoding'
 import type { EntryPart } from '@/domain/types'
 import {
@@ -20,6 +23,40 @@ import {
   Toast,
   VoiceBar,
 } from './widgets'
+
+// Task 16: toast 可携带可选 action（"注册网络账号"链接），pointer-events 启用以便点击。
+function ActionToast({
+  message,
+  actionLabel,
+  onAction,
+  onDone,
+}: {
+  message: string
+  actionLabel?: string
+  onAction?: () => void
+  onDone: () => void
+}) {
+  useEffect(() => {
+    const id = window.setTimeout(onDone, 3200)
+    return () => window.clearTimeout(id)
+  }, [onDone])
+  return (
+    <div className="pointer-events-auto absolute inset-x-0 bottom-24 z-40 flex justify-center px-4">
+      <div className="flex max-w-full items-center gap-3 rounded-btn bg-black/85 px-4 py-2.5 text-[13px] font-medium text-white shadow-lg">
+        <span className="flex-1">{message}</span>
+        {actionLabel && onAction && (
+          <button
+            type="button"
+            onClick={() => { onAction(); onDone() }}
+            className="shrink-0 rounded-btn bg-pri px-2.5 py-1 text-[12px] font-semibold text-white active:opacity-70"
+          >
+            {actionLabel}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
 
 type View = 'compose' | 'camera'
 
@@ -43,6 +80,7 @@ export default function Capture() {
   const clearDraft = useUiStore((s) => s.clearDraft)
   const saveDraft = useUiStore((s) => s.saveDraft)
   const primeLocation = useUiStore((s) => s.primeLocation)
+  const t = useT()
 
   const [view, setView] = useState<View>('compose')
   const [elapsed, setElapsed] = useState(0)
@@ -50,6 +88,32 @@ export default function Capture() {
   const [textOpen, setTextOpen] = useState(false)
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
   const [toast, setToast] = useState<string | null>(null)
+  // Task 16: 富 toast（带可选 action 链接）—— 采集失败引导 / session 过期。
+  const [actionToast, setActionToast] = useState<{
+    message: string
+    actionLabel?: string
+    onAction?: () => void
+  } | null>(null)
+
+  // Task 16: quota 耗尽 + 账号态。keySource 默认 'byok'（domain types: undefined→byok）。
+  // quota 仅对 builtin 用户有意义（byok 用自己的 key，不耗内置额度）。
+  const account = useAccountStore((s) => s.account)
+  const sessionStale = useAccountStore((s) => s.sessionStale)
+  const quotaExhausted = useQuotaStore((s) => s.exhausted)
+  const settings = useUiStore((s) => s.settings)
+  const keySource = settings?.keySource ?? 'byok'
+  const isGuest = !account || account.type === 'guest'
+  // builtin 且额度耗尽 → 采集入口降级（用户应切 byok 或等重置）。
+  const quotaBlocked = keySource === 'builtin' && quotaExhausted
+
+  // Task 16: session 过期信号——accountStore hydrate 时 refresh 失败置 sessionStale=true。
+  // 此处不自动 logout（spec: LLM 失败只伤 AI 层；让用户看到失败条目再手动登出）。
+  useEffect(() => {
+    if (!sessionStale) return
+    setActionToast({
+      message: t('capture.sessionStale'),
+    })
+  }, [sessionStale])
   // Wave 3 #4: draft hint banner — shows when parts are restored from a
   // persisted draft on hydrate. Initialized from current parts (common case:
   // hydrate completed before navigating to /capture). Also checks once more
@@ -61,6 +125,15 @@ export default function Capture() {
   const urlsRef = useRef<Record<string, string>>({})
   urlsRef.current = mediaUrls
   useEffect(() => () => { Object.values(urlsRef.current).forEach((u) => URL.revokeObjectURL(u)) }, [])
+
+  // D1: 保存预检——byok-no-key / guest 含语音 part 时，显示转写失败 + 注册网络账号链接，
+  // 仍保存（条目落库→processEntry STT 失败→条目 failed，匹配 spec「条目 failed」）但抑制
+  // 即时 navigate，让 toast 留在屏上可点。3.5s 后自动回首页；点链接则清定时器去 /login。
+  const skipNavigateRef = useRef(false)
+  const navTimerRef = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (navTimerRef.current !== null) window.clearTimeout(navTimerRef.current)
+  }, [])
 
   // L1: 卸载时若在录音/相机 → 停 tracks，免麦克风指示灯/相机常驻（用户按 X 关、navigate 离开均触发 unmount）。
   // stopRecording 把在录音频 finalize 成 part 落到 store（post-unmount set 仍生效），stopCamera 释放相机流。
@@ -107,10 +180,15 @@ export default function Capture() {
   // Saving: persist + return home. (B3: 去掉原 1200ms 人工延迟——延迟期间条目只在 Zustand 内存，
   // 刷新/崩溃丢文本 part + 已 saveMedia 的 blob 成孤儿。finishSave (D7) 已 await saveEntry 落库；
   // saving 态在 await 期间自然驱动 SaveBar spinner，是真实落库耗时而非假延迟。)
+  // D1: skipNavigateRef 由 handleSave 预检置位——byok-no-key/guest 语音保存时抑制即时 navigate，
+  // 让 conversion toast 留屏可点；3.5s 后由 navTimer 自动回首页。
   useEffect(() => {
     if (!saving) return
     void finishSave()
-    navigate('/')
+    if (!skipNavigateRef.current) {
+      navigate('/')
+    }
+    skipNavigateRef.current = false
   }, [saving, finishSave, navigate])
 
   // Draft hint: if parts were empty on mount, check again after hydrate
@@ -190,19 +268,40 @@ export default function Capture() {
         allowMic()
       }
     }
-    void startRecording()
+    void startRecording().catch(() => showCaptureFailureToast())
   }
-  const handleStopVoice = () => { void stopRecording() }
+  const handleStopVoice = () => {
+    void stopRecording().catch(() => showCaptureFailureToast())
+  }
 
   const openCamera = () => setView('camera')
 
   const handleGallery = async () => {
-    const r = await di.capture.pickMedia()
-    if (!r) return
-    addMediaPart(
-      { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)), mime: r.mime, mediaType: r.kind === 'image' ? 'image' : 'video' },
-      r.blob,
-    )
+    try {
+      const r = await di.capture.pickMedia()
+      if (!r) return
+      addMediaPart(
+        { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)), mime: r.mime, mediaType: r.kind === 'image' ? 'image' : 'video' },
+        r.blob,
+      )
+    } catch {
+      showCaptureFailureToast()
+    }
+  }
+
+  // Task 16: 采集失败引导——仅 guest 或 (byok 且未配 stt:key) 时附"注册网络账号"链接。
+  // network+builtin 用户失败只显纯文案 toast（无链接）。
+  const showCaptureFailureToast = async () => {
+    const eligible = isGuest || (keySource === 'byok' && !(await di.secrets.get('stt:key')))
+    if (eligible) {
+      setActionToast({
+        message: t('capture.captureFailed'),
+        actionLabel: t('capture.registerNetwork'),
+        onAction: () => navigate('/login'),
+      })
+    } else {
+      setActionToast({ message: t('capture.captureFailedRetry') })
+    }
   }
 
   // Wave 3 #3: title editing — update store.capture.title directly (no setTitle
@@ -214,20 +313,51 @@ export default function Capture() {
   // Wave 3 #4: 清空 — confirm before clearing (draft in memory + Dexie).
   const handleClear = () => {
     if (parts.length === 0) return
-    if (window.confirm('清空当前草稿？')) {
+    if (window.confirm(t('capture.clearConfirm'))) {
       clearDraft()
       setShowDraftHint(false)
-      setToast('已清空')
+      setToast(t('capture.cleared'))
     }
   }
 
   // Wave 3 #4: 存草稿 — persist parts+title+location to Dexie, brief toast.
   const handleSaveDraft = () => {
     saveDraft()
-    setToast('已存草稿')
+    setToast(t('capture.draftSaved'))
   }
 
-  const handleSave = () => beginSave()
+  // D1: 保存前预检——含 audio part 且用户为 guest 或 (byok 且未配 stt:key) 时，
+  // 显示「未配置语音 Key，转写将失败」+ 注册网络账号链接 toast，仍保存（条目经 processEntry
+  // STT 失败→failed，匹配 spec「条目 failed」），但抑制即时 navigate 让 toast 可点；
+  // 3.5s 后自动回首页，点链接则清定时器跳 /login。其余情况走正常保存+navigate。
+  const handleSave = async () => {
+    const hasAudio = parts.some((p) => p.type === 'audio')
+    if (hasAudio) {
+      const sttKey = await di.secrets.get('stt:key')
+      const eligible = isGuest || (keySource === 'byok' && !sttKey)
+      if (eligible) {
+        skipNavigateRef.current = true
+        setActionToast({
+          message: t('capture.noSttKey'),
+          actionLabel: t('capture.registerNetwork'),
+          onAction: () => {
+            if (navTimerRef.current !== null) {
+              window.clearTimeout(navTimerRef.current)
+              navTimerRef.current = null
+            }
+            navigate('/login')
+          },
+        })
+        beginSave()
+        navTimerRef.current = window.setTimeout(() => {
+          navTimerRef.current = null
+          navigate('/')
+        }, 3500)
+        return
+      }
+    }
+    beginSave()
+  }
 
   const showHeader = view === 'compose'
   const showEmpty = parts.length === 0 && !recording && !micDenied && !textOpen
@@ -250,6 +380,18 @@ export default function Capture() {
       {/* Wave 3 #4: draft restored hint */}
       {view === 'compose' && showDraftHint && parts.length > 0 && (
         <DraftHintBanner onDismiss={() => setShowDraftHint(false)} />
+      )}
+
+      {/* Task 16: quota 耗尽提示（仅 builtin 用户）—— byok 用自己的 key 不受此限。 */}
+      {view === 'compose' && quotaBlocked && (
+        <div className="mx-4 mb-2 rounded-chip bg-catPending/10 px-3 py-2.5">
+          <p className="text-[12px] font-medium text-catPending">
+            {t('capture.quotaExhausted')}
+          </p>
+          <p className="mt-0.5 text-[11px] text-t3">
+            {t('capture.quotaUseOwnKey')}
+          </p>
+        </div>
       )}
 
       <main className="relative flex-1 overflow-y-auto">
@@ -313,13 +455,13 @@ export default function Capture() {
           // Wave 3 #2: compact recording bar at footer — parts list stays visible
           <VoiceBar elapsed={elapsed} onStop={handleStopVoice} />
         ) : !micDenied && (
-          <footer className="flex shrink-0 flex-col gap-3 border-t border-brd bg-card px-4 pb-5 pt-3">
+          <footer className="flex shrink-0 flex-col gap-3 border-t border-brd/70 bg-card/90 px-4 pb-5 pt-3 backdrop-blur-lg">
             <CaptureToolbar
               onText={() => setTextOpen(true)}
               onVoice={handleVoice}
               onCamera={openCamera}
               onGallery={handleGallery}
-              disabled={saving}
+              disabled={saving || quotaBlocked}
             />
             <SaveBar
               saving={saving}
@@ -333,6 +475,14 @@ export default function Capture() {
       )}
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
+      {actionToast && (
+        <ActionToast
+          message={actionToast.message}
+          actionLabel={actionToast.actionLabel}
+          onAction={actionToast.onAction}
+          onDone={() => setActionToast(null)}
+        />
+      )}
     </div>
   )
 }

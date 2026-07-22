@@ -1,3 +1,4 @@
+import { t } from '@/app/i18n'
 import type { Category, EntryPart, Tag } from '@/domain/types'
 
 export type ChipTone = 'default' | 'idea' | 'project' | 'pending' | 'fail'
@@ -46,31 +47,36 @@ export function formatDateTime(iso: string): string {
 export function formatTitle(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return t('detail.titleFormat', {
+    m: d.getMonth() + 1,
+    d: d.getDate(),
+    hh: pad(d.getHours()),
+    mm: pad(d.getMinutes()),
+  })
 }
 
 export function relativeTime(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   const min = Math.floor((Date.now() - d.getTime()) / 60000)
-  if (min < 1) return '刚刚'
-  if (min < 60) return `${min}分钟前`
+  if (min < 1) return t('detail.justNow')
+  if (min < 60) return t('detail.minutesAgo', { min })
   const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr}小时前`
+  if (hr < 24) return t('detail.hoursAgo', { hr })
   const day = Math.floor(hr / 24)
-  if (day < 7) return `${day}天前`
+  if (day < 7) return t('detail.daysAgo', { day })
   return formatDateTime(iso)
 }
 
 export function partTypeLabel(part: EntryPart): string {
   switch (part.type) {
     case 'text':
-      return '文本'
+      return t('detail.partType.text')
     case 'audio':
-      return '语音'
+      return t('detail.partType.audio')
     case 'video':
       // CLAUDE.md: 照片是 durationSec=0 的 video part（mediaType='image'）。
       // 区分照片与真视频，否则单拍照片在详情页被错标「视频」（D14）。
-      return part.mediaType === 'image' || part.durationSec === 0 ? '图片' : '视频'
+      return part.mediaType === 'image' || part.durationSec === 0 ? t('detail.partType.image') : t('detail.partType.video')
   }
 }

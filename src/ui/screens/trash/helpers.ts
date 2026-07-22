@@ -1,3 +1,4 @@
+import { t } from '@/app/i18n'
 import type { EntryAi, EntryPart } from '@/domain/types'
 
 // Full days elapsed since an ISO timestamp. Used for the 30-day auto-purge
@@ -22,7 +23,7 @@ export function entryPreview(parts: EntryPart[]): string {
 export function entryTitle(ai: EntryAi | undefined, parts: EntryPart[]): string {
   if (ai?.titleSuggestion?.trim()) return ai.titleSuggestion
   const p = entryPreview(parts)
-  return p ? p.slice(0, 16) : '未命名'
+  return p ? p.slice(0, 16) : t('trash.untitled')
 }
 
 // MM-DD formatting for an entry's original creation date (no year — screen

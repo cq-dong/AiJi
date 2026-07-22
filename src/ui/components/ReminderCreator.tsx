@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useUiStore } from '@/app/store'
+import { useT } from '@/app/i18n/useT'
+import { getCurrentLang } from '@/app/currentLang'
+import type { I18nKey } from '@/app/i18n'
 import { Button } from './Button'
 import { cn } from './cn'
 import type { Reminder } from '@/domain/types'
@@ -14,6 +17,8 @@ import type { Reminder } from '@/domain/types'
 // 两种模式：
 //   - 创建模式（mode='create'）：从 AI suggestion 或用户手建新 Reminder。
 //   - 编辑模式（mode='edit'）：传入 existing Reminder，改 dueAt/label 后调 editReminder。
+
+type TFn = (key: I18nKey, params?: Record<string, string | number>) => string
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
@@ -31,16 +36,20 @@ function atTime(base: Date, h: number, m: number): Date {
   return x
 }
 
-// ISO → "今天 15:00" / "明天 09:00" / "后天 18:00" / "7/18 15:00"
-function fmtRel(iso: string): string {
+function locale(): string {
+  return getCurrentLang() === 'zh' ? 'zh-CN' : 'en-US'
+}
+
+// ISO → "今天 15:00" / "明天 09:00" / "后天 18:00" / "7/18 15:00"（相对词走 t()，数字日期走 Intl）
+function fmtRel(iso: string, t: TFn): string {
   const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '自定义'
+  if (Number.isNaN(d.getTime())) return t('comp.reminder.custom')
   const hhmm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
   const diff = Math.round((startOfDay(d).getTime() - startOfDay(new Date()).getTime()) / 86400000)
-  if (diff === 0) return `今天 ${hhmm}`
-  if (diff === 1) return `明天 ${hhmm}`
-  if (diff === 2) return `后天 ${hhmm}`
-  return `${d.getMonth() + 1}/${d.getDate()} ${hhmm}`
+  if (diff === 0) return `${t('date.today')} ${hhmm}`
+  if (diff === 1) return `${t('comp.rel.tomorrow')} ${hhmm}`
+  if (diff === 2) return `${t('comp.rel.dayAfter')} ${hhmm}`
+  return `${new Intl.DateTimeFormat(locale(), { month: 'numeric', day: 'numeric' }).format(d)} ${hhmm}`
 }
 
 // ISO → datetime-local input value (YYYY-MM-DDTHH:MM, local)
@@ -62,7 +71,7 @@ function localInputToIso(local: string): string {
 
 type TimePick = { key: string; label: string; iso: string }
 
-function buildPicks(detectedIso: string | undefined): TimePick[] {
+function buildPicks(detectedIso: string | undefined, t: TFn): TimePick[] {
   const now = new Date()
   const tomorrow = new Date(now)
   tomorrow.setDate(tomorrow.getDate() + 1)
@@ -72,12 +81,12 @@ function buildPicks(detectedIso: string | undefined): TimePick[] {
   const sat = new Date(now)
   sat.setDate(sat.getDate() + ((6 - sat.getDay() + 7) % 7))
   const picks: TimePick[] = []
-  if (detectedIso) picks.push({ key: 'detected', label: `AI · ${fmtRel(detectedIso)}`, iso: detectedIso })
-  picks.push({ key: 'today', label: '今天 23:59', iso: atTime(now, 23, 59).toISOString() })
-  picks.push({ key: 'tmw-am', label: '明天 09:00', iso: atTime(tomorrow, 9, 0).toISOString() })
-  picks.push({ key: 'tmw-pm', label: '明天 18:00', iso: atTime(tomorrow, 18, 0).toISOString() })
-  picks.push({ key: 'day-after', label: '后天 09:00', iso: atTime(dayAfter, 9, 0).toISOString() })
-  picks.push({ key: 'weekend', label: '周六 09:00', iso: atTime(sat, 9, 0).toISOString() })
+  if (detectedIso) picks.push({ key: 'detected', label: `AI · ${fmtRel(detectedIso, t)}`, iso: detectedIso })
+  picks.push({ key: 'today', label: `${t('date.today')} 23:59`, iso: atTime(now, 23, 59).toISOString() })
+  picks.push({ key: 'tmw-am', label: `${t('comp.rel.tomorrow')} 09:00`, iso: atTime(tomorrow, 9, 0).toISOString() })
+  picks.push({ key: 'tmw-pm', label: `${t('comp.rel.tomorrow')} 18:00`, iso: atTime(tomorrow, 18, 0).toISOString() })
+  picks.push({ key: 'day-after', label: `${t('comp.rel.dayAfter')} 09:00`, iso: atTime(dayAfter, 9, 0).toISOString() })
+  picks.push({ key: 'weekend', label: `${t('comp.rel.saturday')} 09:00`, iso: atTime(sat, 9, 0).toISOString() })
   return picks
 }
 
@@ -98,9 +107,12 @@ export function ReminderCreator({
   onDone,
   existing,
 }: ReminderCreatorProps) {
+  const t = useT()
+  // useT 已订阅 language；lang 入 useMemo 依赖，语言切换时快捷选项 label 重算（否则 stale）。
+  const lang = getCurrentLang()
   const mode: 'create' | 'edit' = existing ? 'edit' : 'create'
   const initialDueAt = existing?.dueAt ?? suggestion?.dueAt
-  const picks = useMemo(() => buildPicks(initialDueAt), [initialDueAt])
+  const picks = useMemo(() => buildPicks(initialDueAt, t), [initialDueAt, lang, t])
   const [selectedKey, setSelectedKey] = useState<string>(() => {
     if (mode === 'edit' && initialDueAt) {
       // 编辑模式：若初始时间不在快捷选项里，默认选 custom 并填入
@@ -137,25 +149,25 @@ export function ReminderCreator({
   const inputCls =
     'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
 
-  const headerLabel = mode === 'edit' ? '编辑提醒' : 'AI 检测到 · 待办'
-  const submitLabel = mode === 'edit' ? '保存修改' : '创建待办'
+  const headerLabel = mode === 'edit' ? t('comp.reminder.header.edit') : t('comp.reminder.header.create')
+  const submitLabel = mode === 'edit' ? t('comp.reminder.submit.edit') : t('comp.reminder.submit.create')
   const submitAction =
     mode === 'edit' && existing
       ? () => useUiStore.getState().editReminder(existing.id, resolvedIso, label)
       : () => useUiStore.getState().confirmReminder(entryId, resolvedIso, label)
 
   return (
-    <div className="flex flex-col gap-3 rounded-card bg-priS p-4 shadow-sm">
+    <div className="flex flex-col gap-3 rounded-card border border-pri/15 bg-gradient-to-b from-priS to-priS/60 p-4 shadow-card animate-fade-in-up">
       <div className="flex items-center gap-2">
-        <span className="size-2 rounded-full bg-pri" />
+        <span className="size-2 rounded-full bg-pri shadow-glowPriSm" />
         <p className="text-[12px] font-bold text-pri">{headerLabel}</p>
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="text-[11px] text-t2">提醒内容</label>
+        <label className="text-[11px] text-t2">{t('comp.reminder.contentLabel')}</label>
         <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} className={inputCls} />
       </div>
       <div className="flex flex-col gap-1.5">
-        <label className="text-[11px] text-t2">提醒时间</label>
+        <label className="text-[11px] text-t2">{t('comp.reminder.timeLabel')}</label>
         <div className="flex flex-wrap gap-1.5">
           {picks.map((p) => (
             <button
@@ -163,8 +175,10 @@ export function ReminderCreator({
               type="button"
               onClick={() => setSelectedKey(p.key)}
               className={cn(
-                'rounded-chip px-3 py-1.5 text-[12px] font-medium transition',
-                selectedKey === p.key ? 'bg-pri text-white' : 'bg-card text-t2 border border-brd',
+                'rounded-chip px-3 py-1.5 text-[12px] font-medium transition-all duration-base ease-out active:scale-95',
+                selectedKey === p.key
+                  ? 'bg-pri text-white shadow-glowPriSm'
+                  : 'bg-card text-t2 border border-brd/80 shadow-sm hover:border-t3/40',
               )}
             >
               {p.label}
@@ -174,11 +188,13 @@ export function ReminderCreator({
             type="button"
             onClick={() => setSelectedKey('custom')}
             className={cn(
-              'rounded-chip px-3 py-1.5 text-[12px] font-medium transition',
-              selectedKey === 'custom' ? 'bg-pri text-white' : 'bg-card text-t2 border border-brd',
+              'rounded-chip px-3 py-1.5 text-[12px] font-medium transition-all duration-base ease-out active:scale-95',
+              selectedKey === 'custom'
+                ? 'bg-pri text-white shadow-glowPriSm'
+                : 'bg-card text-t2 border border-brd/80 shadow-sm hover:border-t3/40',
             )}
           >
-            自定义
+            {t('comp.reminder.custom')}
           </button>
         </div>
         {selectedKey === 'custom' && (
@@ -210,7 +226,7 @@ export function ReminderCreator({
               })
             }
           >
-            忽略
+            {t('comp.reminder.ignore')}
           </Button>
         )}
       </div>

@@ -9,17 +9,17 @@ interface ChipProps extends HTMLAttributes<HTMLSpanElement> {
 
 const TONES: Record<Tone, string> = {
   default: 'bg-page text-t2 border-brd',
-  idea: 'bg-priS text-pri border-transparent',
-  project: 'bg-catProject/10 text-catProject border-transparent',
-  pending: 'bg-catPending/10 text-catPending border-transparent',
-  fail: 'bg-catFail/10 text-catFail border-transparent',
+  idea: 'bg-priS text-pri border-pri/10',
+  project: 'bg-catProject/10 text-catProject border-catProject/10',
+  pending: 'bg-catPending/10 text-catPending border-catPending/10',
+  fail: 'bg-catFail/10 text-catFail border-catFail/10',
 }
 
 export function Chip({ tone = 'default', className, ...rest }: ChipProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-chip border px-2 py-0.5 text-[11px] font-medium',
+        'inline-flex items-center gap-0.5 rounded-chip border px-2 py-0.5 text-[11px] font-medium leading-[1.4] tracking-[0.01em]',
         TONES[tone],
         className,
       )}
