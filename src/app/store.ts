@@ -8,6 +8,7 @@ import { playReminderBeep } from '@/adapters/reminderSound'
 import * as summaryCache from '@/adapters/summaryCache'
 import { di } from './di'
 import { useAccountStore, registerStoreRehydrate } from './accountStore'
+import { setCurrentLang, detectLang } from '@/app/currentLang'
 
 // 视图状态 / 采集草稿（PRD §7.3 应用层）。entries 走 DexieStorage：D9 后首屏空状态（不再
 // seed 兜底），hydrate() 异步从 Dexie 载入真实条目替换；finishSave 同时落库 + 入队分类。
@@ -282,6 +283,15 @@ export const useUiStore = create<UiState>((set, get) => ({
       )
       const aiByEntry = { ...Object.fromEntries(aiPairs.filter(Boolean) as [string, EntryAi][]) }
       set({ entries, settings, categories, tags, aggregates, reminders, drafts, trashed, memories, aiByEntry, hydrated: true })
+      // i18n：语言固化——用户选过 → 尊重；没选过 → detect 系统语言并持久化（一次性，
+      // 之后系统语言变化不跟随，用户在设置里手动改）。
+      const lang = settings.language ?? detectLang()
+      setCurrentLang(lang)
+      if (!settings.language) {
+        const next = { ...settings, language: lang }
+        set({ settings: next })
+        void di.storage.saveSettings(next).catch(() => {})
+      }
       // 载入后扫 pending 提醒：未来调度到点；overdue <1h 补 fire、≥1h 标 missed（Q3）。
       scheduleReminders()
       // Wave 4: 恢复最近草稿（跨刷新/重启续记）。多草稿里取最新一条载入 capture（仅当 capture 空）。
@@ -473,6 +483,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     const next = { ...get().settings, ...patch }
     set({ settings: next })
     void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+    // i18n：切语言 → 同步 currentLang 单例（t()/提示词构建读它），useT 订阅 settings.language 触发重渲。
+    if (patch.language) setCurrentLang(patch.language)
   },
   setLlmConfig: (url, model, key) => {
     const cur = get().settings

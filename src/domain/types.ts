@@ -215,6 +215,9 @@ export interface Settings {
   geocodingKeyRef?: string
   // Slice B：AI 调用来源。undefined 视同 'byok'；游客强制 'byok'（store 守卫）。
   keySource?: 'byok' | 'builtin'
+  // i18n（2026-07-22）：界面语言。undefined = 未固化（boot hydrate 时按系统语言 detect 并写回，
+  // 一次性——之后系统语言变化不跟随，用户在设置里手动改）。
+  language?: 'zh' | 'en'
 }
 
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────
