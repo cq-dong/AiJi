@@ -1,32 +1,61 @@
+import type { ReactNode } from 'react'
 import type { Category, EntryAi, Facets, Tag } from '@/domain/types'
 import { Button, Card, Chip, Skeleton, Spinner } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
-import { categoryLabel, categoryTone, relativeTime, tagLabel, type ChipTone } from './helpers'
+import {
+  Image as ImageIcon,
+  Pencil,
+  RefreshCw,
+  Trash2,
+  Video as VideoIcon,
+} from 'lucide-react'
+import { categoryLabel, categoryTone, relativeTime, tagLabel } from './helpers'
 
 export type AiState = 'ready' | 'processing' | 'failed'
 
+// footer 操作钮：图标+文字的 quiet ghost 风格（编辑/重处理），删除单独 catFail。
+const actionCls =
+  'inline-flex min-h-9 items-center gap-1 rounded-chip px-2.5 text-[12px] font-medium cursor-pointer transition-all duration-base ease-out active:scale-95 active:bg-page focus-visible:ring-2 focus-visible:ring-pri/40 outline-none'
+
+// 多模态理解子卡：图片/视频内容与摘要分区展示（此前直接拼接在摘要段尾，结构含糊）。
+// icon + 小标签 + 理解文本，bg-page 浅底与主卡区分层级。
+function MediaBlock({ icon, label, text }: { icon: ReactNode; label: string; text: string }) {
+  return (
+    <div className="rounded-chip border border-brd/60 bg-page/70 px-3 py-2.5">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold text-t2">
+        {icon}
+        {label}
+      </p>
+      <p className="mt-1 whitespace-pre-line text-[12px] leading-[1.7] text-t2">{text}</p>
+    </div>
+  )
+}
+
+// 侧面 chips：全部 default 浅调——facet 值自带「情绪·/地点·」前缀，可自我描述；
+// 不再按类型上色（旧版 event 用 fail 红，视觉上像报错）。
 function FacetChips({ facets }: { facets: Facets }) {
   const t = useT()
-  const chips: { label: string; tone: ChipTone }[] = []
-  if (facets.mood) chips.push({ label: t('detail.facet.mood', { value: facets.mood }), tone: 'pending' })
-  if (facets.place) chips.push({ label: t('detail.facet.place', { value: facets.place }), tone: 'project' })
-  if (facets.project) chips.push({ label: t('detail.facet.project', { value: facets.project }), tone: 'project' })
-  if (facets.event) chips.push({ label: t('detail.facet.event', { value: facets.event }), tone: 'fail' })
-  facets.person?.forEach((p) => chips.push({ label: t('detail.facet.person', { value: p }), tone: 'idea' }))
+  const chips: string[] = []
+  if (facets.mood) chips.push(t('detail.facet.mood', { value: facets.mood }))
+  if (facets.place) chips.push(t('detail.facet.place', { value: facets.place }))
+  if (facets.project) chips.push(t('detail.facet.project', { value: facets.project }))
+  if (facets.event) chips.push(t('detail.facet.event', { value: facets.event }))
+  facets.person?.forEach((p) => chips.push(t('detail.facet.person', { value: p })))
   if (chips.length === 0) return null
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[11px] text-t3">{t('detail.facets')}</span>
       {chips.map((c) => (
-        <Chip key={c.label} tone={c.tone}>
-          {c.label}
+        <Chip key={c} tone="default">
+          {c}
         </Chip>
       ))}
     </div>
   )
 }
 
+// 阅读优先的分层结构：标题建议= headline、摘要=正文（ typography 承载层级，
+// 不要表单式小标签）→ 多模态子卡 → 类别+#标签一行 → 侧面 → 发丝线 + 操作行。
 function ReadyBody({
   ai,
   categories,
@@ -43,47 +72,64 @@ function ReadyBody({
   onDelete: () => void
 }) {
   const t = useT()
+  const images = ai.mediaDescription?.images?.trim()
+  const videos = ai.mediaDescription?.videos?.trim()
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-[11px] tabular-nums text-t3">
-        {ai.modelUsed} · {relativeTime(ai.createdAt)}
-      </p>
-      <div className="flex items-center gap-2">
-        <span className="text-[11px] text-t3">{t('detail.category')}</span>
-        <Chip tone={categoryTone(ai.category, categories)}>{categoryLabel(ai.category, categories)}</Chip>
-      </div>
-      {ai.tags.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] text-t3">{t('detail.tags')}</span>
-          {ai.tags.map((slug) => (
-            <Chip key={slug} tone="default">
-              {tagLabel(slug, tags)}
-            </Chip>
-          ))}
-        </div>
-      )}
-      <FacetChips facets={ai.facets} />
-      <div className="h-px bg-gradient-to-r from-transparent via-brd to-transparent" />
+    <div className="flex flex-col">
       {ai.titleSuggestion && (
-        <div className="flex flex-col gap-1">
-          <span className="text-[11px] text-t3">{t('detail.title')}</span>
-          <p className="text-[14px] font-bold text-ink">{ai.titleSuggestion}</p>
-        </div>
+        <p className="text-[16px] font-bold leading-snug text-ink">{ai.titleSuggestion}</p>
       )}
       {ai.summary && (
-        <div className="flex flex-col gap-1">
-          <span className="text-[11px] text-t3">{t('detail.summary')}</span>
-          <p className="text-[12px] leading-relaxed text-t2 whitespace-pre-line">
-            {ai.summary}
-            {ai.mediaDescription?.images?.trim() && `\n${t('detail.imageContent')}${ai.mediaDescription.images.trim()}`}
-            {ai.mediaDescription?.videos?.trim() && `\n${t('detail.videoContent')}${ai.mediaDescription.videos.trim()}`}
-          </p>
+        <p className="mt-1.5 whitespace-pre-line text-[13px] leading-[1.8] text-t2">
+          {ai.summary}
+        </p>
+      )}
+      {(images || videos) && (
+        <div className="mt-3 flex flex-col gap-2">
+          {images && (
+            <MediaBlock
+              icon={<ImageIcon size={12} strokeWidth={2.2} className="text-pri" />}
+              label={t('detail.mediaImages')}
+              text={images}
+            />
+          )}
+          {videos && (
+            <MediaBlock
+              icon={<VideoIcon size={12} strokeWidth={2.2} className="text-pri" />}
+              label={t('detail.mediaVideos')}
+              text={videos}
+            />
+          )}
         </div>
       )}
-      <div className="flex items-center gap-2 pt-1">
-        <button type="button" onClick={onEdit} className="inline-flex min-h-9 items-center rounded-btn border border-brd/80 bg-card px-3 text-[12px] font-medium text-t2 shadow-sm cursor-pointer transition-all duration-base ease-out hover:border-t3/40 active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">{t('common.edit')}</button>
-        <button type="button" onClick={onReprocess} className="inline-flex min-h-9 items-center rounded-btn border border-brd/80 bg-card px-3 text-[12px] font-medium text-t2 shadow-sm cursor-pointer transition-all duration-base ease-out hover:border-t3/40 active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">{t('detail.reprocess')}</button>
-        <button type="button" onClick={onDelete} className="inline-flex min-h-9 items-center rounded-btn border border-catFail/20 bg-catFail/5 px-3 text-[12px] font-medium text-catFail cursor-pointer transition-all duration-base ease-out hover:bg-catFail/10 active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">{t('common.delete')}</button>
+
+      <div className="mt-3.5 flex flex-wrap items-center gap-1.5">
+        <Chip tone={categoryTone(ai.category, categories)}>
+          {categoryLabel(ai.category, categories)}
+        </Chip>
+        {ai.tags.map((slug) => (
+          <Chip key={slug} tone="default">
+            #{tagLabel(slug, tags)}
+          </Chip>
+        ))}
+      </div>
+      <div className="mt-2">
+        <FacetChips facets={ai.facets} />
+      </div>
+
+      <div className="mt-4 flex items-center gap-1 border-t border-brd/60 pt-2">
+        <button type="button" onClick={onEdit} className={`${actionCls} text-t2`}>
+          <Pencil size={13} strokeWidth={2.2} />
+          {t('common.edit')}
+        </button>
+        <button type="button" onClick={onReprocess} className={`${actionCls} text-t2`}>
+          <RefreshCw size={13} strokeWidth={2.2} />
+          {t('detail.reprocess')}
+        </button>
+        <button type="button" onClick={onDelete} className={`${actionCls} ml-auto text-catFail`}>
+          <Trash2 size={13} strokeWidth={2.2} />
+          {t('common.delete')}
+        </button>
       </div>
     </div>
   )
@@ -158,11 +204,17 @@ export function AiPanel({
   const t = useT()
   return (
     <Card className="flex flex-col gap-3 shadow-card">
-      <div className="flex items-center justify-between">
+      <div className="flex items-baseline justify-between gap-2">
         <h2 className="flex items-center gap-2 text-[13px] font-bold text-ink">
           <span className="inline-block size-2 rounded-full bg-gradient-to-br from-pri to-pri/50 ring-2 ring-pri/15" aria-hidden="true" />
           {t('detail.aiPanelTitle')}
         </h2>
+        {/* 模型元信息从正文头部挪到标题行右侧——正文留给内容本身。 */}
+        {state === 'ready' && ai && (
+          <p className="shrink-0 text-[10px] tabular-nums text-t3">
+            {ai.modelUsed} · {relativeTime(ai.createdAt)}
+          </p>
+        )}
       </div>
       {state === 'ready' && ai && (
         <ReadyBody

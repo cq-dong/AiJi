@@ -28,8 +28,9 @@ export const detail = {
   'detail.title': '标题',
   'detail.summary': '摘要',
   'detail.reprocess': '重处理',
-  'detail.imageContent': '图片内容：',
-  'detail.videoContent': '视频内容：',
+  // AiPanel：多模态理解子卡标签（独立分区展示，不再拼进摘要段尾）
+  'detail.mediaImages': '图片内容',
+  'detail.mediaVideos': '视频内容',
   // AiPanel：ProcessingBody
   'detail.aiProcessing': 'AI 处理中…',
   'detail.processingHint': '正在分类 · 已转写',

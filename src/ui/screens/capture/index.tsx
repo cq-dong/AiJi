@@ -13,13 +13,12 @@ import {
   CaptureHeader,
   CaptureKeyframes,
   CaptureToolbar,
+  Composer,
   DraftHintBanner,
-  EmptyCompose,
   FlowPart,
   InterimBubble,
   NoMicPanel,
   SaveBar,
-  TextPartEditor,
   Toast,
   VoiceBar,
 } from './widgets'
@@ -84,9 +83,11 @@ export default function Capture() {
 
   const [view, setView] = useState<View>('compose')
   const [elapsed, setElapsed] = useState(0)
+  // 自由书写面：常驻 Composer 的本地草稿。不加框、无确认钮——加媒体/录音/保存/
+  // 离开时自动并入 parts 流（commitTextDraft），时间序保持、输入永不丢。
   const [textDraft, setTextDraft] = useState('')
-  const [textOpen, setTextOpen] = useState(false)
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({})
+  const composerRef = useRef<HTMLTextAreaElement>(null)
   const [toast, setToast] = useState<string | null>(null)
   // Task 16: 富 toast（带可选 action 链接）—— 采集失败引导 / session 过期。
   const [actionToast, setActionToast] = useState<{
@@ -126,6 +127,21 @@ export default function Capture() {
   urlsRef.current = mediaUrls
   useEffect(() => () => { Object.values(urlsRef.current).forEach((u) => URL.revokeObjectURL(u)) }, [])
 
+  // Composer 草稿 ref 镜像（卸载 cleanup 提交用，避开闭包旧值）+ NoMicPanel
+  // 「改用文本」聚焦旗标（面板卸载后 Composer 才挂载，需延迟一帧 focus）。
+  const draftRef = useRef(textDraft)
+  draftRef.current = textDraft
+  const wantFocusRef = useRef(false)
+
+  // 把书写面文本并入 parts 流（追加到末尾 = 时间序）。addPart 同步落 store，
+  // 后续 finishSave/saveDraft/addMediaPart 立刻可见。空文本 no-op。
+  const commitTextDraft = () => {
+    const v = draftRef.current.trim()
+    if (!v) return
+    addPart({ type: 'text', content: v, mediaType: 'text' })
+    setTextDraft('')
+  }
+
   // D1: 保存预检——byok-no-key / guest 含语音 part 时，显示转写失败 + 注册网络账号链接，
   // 仍保存（条目落库→processEntry STT 失败→条目 failed，匹配 spec「条目 failed」）但抑制
   // 即时 navigate，让 toast 留在屏上可点。3.5s 后自动回首页；点链接则清定时器去 /login。
@@ -137,9 +153,12 @@ export default function Capture() {
 
   // L1: 卸载时若在录音/相机 → 停 tracks，免麦克风指示灯/相机常驻（用户按 X 关、navigate 离开均触发 unmount）。
   // stopRecording 把在录音频 finalize 成 part 落到 store（post-unmount set 仍生效），stopCamera 释放相机流。
+  // 书写面未提交文本一并并入 parts（内存草稿保留，重进 /capture 仍在；save 后清空故不会重复）。
   useEffect(() => () => {
     if (useUiStore.getState().capture.recording) void useUiStore.getState().stopRecording()
     void di.capture.stopCamera()
+    const v = draftRef.current.trim()
+    if (v) useUiStore.getState().addPart({ type: 'text', content: v, mediaType: 'text' })
   }, [])
 
   // Count-up timer while voice-recording.
@@ -148,6 +167,13 @@ export default function Capture() {
     const id = window.setInterval(() => setElapsed((e) => e + 1), 1000)
     return () => window.clearInterval(id)
   }, [recording])
+
+  // NoMicPanel「改用文本」：面板卸载、Composer 挂载后再聚焦（wantFocusRef 延迟消费）。
+  useEffect(() => {
+    if (micDenied || !wantFocusRef.current) return
+    wantFocusRef.current = false
+    composerRef.current?.focus()
+  }, [micDenied])
 
   // recordLocation 修复：capture 屏挂载即取地点，覆盖文本/相机/相册条目（此前仅语音
   // startRecording 调 primeLocation → 其他条目类型 entry.location 恒丢）。幂等：recordLocation
@@ -207,8 +233,10 @@ export default function Capture() {
   }, [hydrated])
 
   // Persist a media blob + add the part. Keeps a local object URL for live preview.
+  // 书写面文本先并入（媒体追加在后 → 时间序正确）。
   const addMediaPart = (part: EntryPart, blob: Blob) => {
     if (part.type !== 'video' && part.type !== 'audio') return
+    commitTextDraft()
     const url = URL.createObjectURL(blob)
     setMediaUrls((m) => ({ ...m, [part.ref]: url }))
     void di.storage.saveMedia(part.ref, blob).catch((e) => console.error('[capture] saveMedia failed', e))
@@ -241,16 +269,6 @@ export default function Capture() {
     }))
   }
 
-  const closeTextSheet = () => {
-    setTextDraft('')
-    setTextOpen(false)
-  }
-  const submitText = () => {
-    const t = textDraft.trim()
-    if (t) addPart({ type: 'text', content: t, mediaType: 'text' })
-    closeTextSheet()
-  }
-
   // D3: On Capacitor native (Android WebView), navigator.permissions.query is
   // unreliable — it may return 'denied'/'prompt' even when the system permission
   // is granted. Probe with an actual getUserMedia({audio:true}) call (via
@@ -268,6 +286,7 @@ export default function Capture() {
         allowMic()
       }
     }
+    commitTextDraft() // 书写面文本先并入，录音 part 追加在后（时间序）
     void startRecording().catch(() => showCaptureFailureToast())
   }
   const handleStopVoice = () => {
@@ -312,16 +331,19 @@ export default function Capture() {
 
   // Wave 3 #4: 清空 — confirm before clearing (draft in memory + Dexie).
   const handleClear = () => {
-    if (parts.length === 0) return
+    if (parts.length === 0 && !textDraft.trim()) return
     if (window.confirm(t('capture.clearConfirm'))) {
       clearDraft()
+      setTextDraft('')
       setShowDraftHint(false)
       setToast(t('capture.cleared'))
     }
   }
 
   // Wave 3 #4: 存草稿 — persist parts+title+location to Dexie, brief toast.
+  // 书写面文本先并入，保证 saveDraft 落库含正在输入的内容。
   const handleSaveDraft = () => {
+    commitTextDraft()
     saveDraft()
     setToast(t('capture.draftSaved'))
   }
@@ -331,6 +353,7 @@ export default function Capture() {
   // STT 失败→failed，匹配 spec「条目 failed」），但抑制即时 navigate 让 toast 可点；
   // 3.5s 后自动回首页，点链接则清定时器跳 /login。其余情况走正常保存+navigate。
   const handleSave = async () => {
+    commitTextDraft() // 书写面文本先并入，finishSave 落库含正在输入的内容
     const hasAudio = parts.some((p) => p.type === 'audio')
     if (hasAudio) {
       const sttKey = await di.secrets.get('stt:key')
@@ -360,7 +383,6 @@ export default function Capture() {
   }
 
   const showHeader = view === 'compose'
-  const showEmpty = parts.length === 0 && !recording && !micDenied && !textOpen
   const liveTranscript = (finalized + interim).trim()
 
   return (
@@ -369,7 +391,7 @@ export default function Capture() {
 
       {showHeader && (
         <CaptureHeader
-          partCount={parts.length}
+          partCount={parts.length + (textDraft.trim() ? 1 : 0)}
           location={location}
           title={title}
           onTitleChange={handleTitleChange}
@@ -398,7 +420,10 @@ export default function Capture() {
         {view === 'compose' && (
           micDenied && !recording ? (
             <NoMicPanel
-              onUseText={() => { allowMic(); setTextOpen(true) }}
+              onUseText={() => {
+                wantFocusRef.current = true
+                allowMic()
+              }}
               onRetry={() => {
                 // D3 修复：native 先 probe，成功才清 micDenied + 开始录音——
                 // 此前 allowMic() 先清再 probe，probe 失败时 micDenied 残留 false。
@@ -415,18 +440,10 @@ export default function Capture() {
                 }
               }}
             />
-          ) : showEmpty ? (
-            <EmptyCompose />
           ) : (
+            // 自由书写流：parts 时间序在上，常驻 Composer 书写面在末尾——
+            // 无边框、无确认钮，写完继续录/拍/存，文本随动作自动并入。
             <div className="flex flex-col gap-3 px-4 py-4">
-              {textOpen && (
-                <TextPartEditor
-                  value={textDraft}
-                  onChange={setTextDraft}
-                  onConfirm={submitText}
-                  onCancel={closeTextSheet}
-                />
-              )}
               {parts.map((p, i) => (
                 <FlowPart
                   key={i}
@@ -438,6 +455,17 @@ export default function Capture() {
               ))}
               {/* Wave 3 #2: interim transcription bubble — stays inline during recording */}
               {recording && <InterimBubble liveTranscript={liveTranscript} />}
+              <Composer
+                value={textDraft}
+                onChange={setTextDraft}
+                empty={parts.length === 0}
+                textareaRef={composerRef}
+              />
+              {parts.length === 0 && !recording && (
+                <p className="text-[11px] leading-relaxed text-t3/80 animate-fade-in-up">
+                  {t('capture.emptyHint')}
+                </p>
+              )}
             </div>
           )
         )}
@@ -457,7 +485,11 @@ export default function Capture() {
         ) : !micDenied && (
           <footer className="flex shrink-0 flex-col gap-3 border-t border-brd/70 bg-card/90 px-4 pb-5 pt-3 backdrop-blur-lg">
             <CaptureToolbar
-              onText={() => setTextOpen(true)}
+              onText={() => {
+                wantFocusRef.current = true
+                composerRef.current?.focus()
+                composerRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+              }}
               onVoice={handleVoice}
               onCamera={openCamera}
               onGallery={handleGallery}
@@ -465,7 +497,7 @@ export default function Capture() {
             />
             <SaveBar
               saving={saving}
-              disabled={parts.length === 0}
+              disabled={parts.length === 0 && !textDraft.trim()}
               onClear={handleClear}
               onSaveDraft={handleSaveDraft}
               onSave={handleSave}

@@ -26,8 +26,9 @@ export const detail = {
   'detail.title': 'Title',
   'detail.summary': 'Summary',
   'detail.reprocess': 'Reprocess',
-  'detail.imageContent': 'Image content: ',
-  'detail.videoContent': 'Video content: ',
+  // AiPanel: multimodal understanding sub-card labels (own section, no longer appended to summary)
+  'detail.mediaImages': 'Image content',
+  'detail.mediaVideos': 'Video content',
   // AiPanel: ProcessingBody
   'detail.aiProcessing': 'AI processing…',
   'detail.processingHint': 'Categorizing · transcribed',

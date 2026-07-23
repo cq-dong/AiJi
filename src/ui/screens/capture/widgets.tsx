@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Capacitor } from '@capacitor/core'
 import {
   Bookmark,
@@ -193,8 +193,88 @@ function RemoveButton({ onRemove }: { onRemove: () => void }) {
   )
 }
 
-// ── Text flow part: click the text to edit inline (reuses TextPartEditor).
-// Confirm updates content; Cancel reverts. Delete button stays. ──
+// ── Auto-growing borderless textarea: the writing surface itself.
+// Height tracks content (1 row → max ~220px then inner scroll). No border,
+// no card — the page is the editor (flomo/Notes-style freedom). ──
+function AutoGrowTextarea({
+  value,
+  onChange,
+  onKeyDown,
+  placeholder,
+  ariaLabel,
+  minHeight,
+  autoFocus,
+  textareaRef,
+}: {
+  value: string
+  onChange: (v: string) => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  placeholder?: string
+  ariaLabel: string
+  minHeight?: number
+  autoFocus?: boolean
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>
+}) {
+  const innerRef = useRef<HTMLTextAreaElement>(null)
+  const ref = textareaRef ?? innerRef
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = '0px'
+    el.style.height = Math.max(minHeight ?? 0, Math.min(el.scrollHeight, 220)) + 'px'
+  }, [value, minHeight, ref])
+  useEffect(() => {
+    if (autoFocus) ref.current?.focus()
+  }, [autoFocus, ref])
+  return (
+    <textarea
+      ref={ref}
+      name="captureText"
+      aria-label={ariaLabel}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
+      placeholder={placeholder}
+      rows={1}
+      className="w-full resize-none bg-transparent text-[15px] leading-[1.8] text-ink caret-pri outline-none placeholder:text-t3/80"
+      style={{ minHeight }}
+    />
+  )
+}
+
+// ── Composer: always-on writing surface pinned to the END of the parts flow
+// (chronological — media/text parts above, you keep writing below). Text stays
+// local to the screen; the parent commits it into the parts flow when media is
+// added, recording starts, or the entry is saved/closed — so ordering stays
+// chronological and nothing typed is ever lost. ──
+export function Composer({
+  value,
+  onChange,
+  empty,
+  textareaRef,
+}: {
+  value: string
+  onChange: (v: string) => void
+  /** true when the flow has no parts yet — placeholder becomes the invitation. */
+  empty: boolean
+  textareaRef?: React.RefObject<HTMLTextAreaElement | null>
+}) {
+  const t = useT()
+  return (
+    <AutoGrowTextarea
+      value={value}
+      onChange={onChange}
+      textareaRef={textareaRef}
+      ariaLabel={t('capture.aria.entryContent')}
+      placeholder={empty ? t('capture.emptyTitle') : t('capture.textPlaceholder')}
+      minHeight={empty ? 96 : undefined}
+    />
+  )
+}
+
+// ── Text flow part: click the text to edit in place — borderless auto-grow
+// surface (same writing feel as the Composer), quiet 完成/取消 text buttons.
+// Delete button stays. ──
 function TextFlowPart({
   content,
   onRemove,
@@ -208,29 +288,43 @@ function TextFlowPart({
   const [draft, setDraft] = useState(content)
   const t = useT()
   if (editing) {
+    const commit = () => {
+      const v = draft.trim()
+      if (v) onEdit(v)
+      setEditing(false)
+    }
     return (
-      <div className="relative">
-        <TextPartEditor
+      // -mx/-my 抵消内边距：编辑态浮出白卡但文字与阅读态逐像素对齐，不跳位。
+      <div className="-mx-2.5 -my-2 rounded-chip bg-card px-2.5 py-2 shadow-card ring-1 ring-pri/25">
+        <AutoGrowTextarea
           value={draft}
           onChange={setDraft}
-          onConfirm={() => {
-            const v = draft.trim()
-            if (v) onEdit(v)
-            setEditing(false)
-          }}
-          onCancel={() => {
-            setDraft(content)
-            setEditing(false)
+          ariaLabel={t('capture.aria.entryContent')}
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) commit()
           }}
         />
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={t('capture.aria.removeText')}
-          className="absolute right-1 top-1 flex size-9 items-center justify-center rounded-full text-t3 cursor-pointer transition duration-base ease-out active:scale-[0.97] active:bg-pri/10 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
-        >
-          <X size={14} strokeWidth={2.2} />
-        </button>
+        <div className="mt-1 flex justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(content)
+              setEditing(false)
+            }}
+            className="flex min-h-9 items-center rounded-chip px-2.5 text-[12px] font-medium text-t3 cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 outline-none"
+          >
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={commit}
+            disabled={!draft.trim()}
+            className="flex min-h-9 items-center rounded-chip px-2.5 text-[12px] font-semibold text-pri cursor-pointer transition duration-base ease-out active:scale-95 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-pri/40 outline-none"
+          >
+            {t('common.confirm')}
+          </button>
+        </div>
       </div>
     )
   }
@@ -242,7 +336,7 @@ function TextFlowPart({
         aria-label={t('capture.aria.editText')}
         className="block w-full cursor-text rounded-chip text-left transition duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
       >
-        <p className="whitespace-pre-wrap break-words text-[14px] leading-relaxed text-ink">{content}</p>
+        <p className="whitespace-pre-wrap break-words text-[15px] leading-[1.8] text-ink">{content}</p>
       </button>
       <button
         type="button"
@@ -327,22 +421,6 @@ export function FlowPart({
       <div className="absolute right-2 top-2">
         <RemoveButton onRemove={onRemove} />
       </div>
-    </div>
-  )
-}
-
-// ── Empty compose state: a real prompt, not a dead placeholder ──
-export function EmptyCompose() {
-  const t = useT()
-  return (
-    <div className="flex flex-col items-center justify-center px-6 py-20 text-center animate-fade-in-up">
-      <div className="flex size-16 items-center justify-center rounded-full bg-gradient-to-b from-priS to-priS/50 ring-1 ring-pri/10 shadow-glowPriSm">
-        <Mic size={28} strokeWidth={2} className="text-pri" />
-      </div>
-      <p className="mt-5 text-[15px] font-semibold text-ink">{t('capture.emptyTitle')}</p>
-      <p className="mt-2 max-w-[260px] text-[12px] leading-relaxed text-t3">
-        {t('capture.emptyHint')}
-      </p>
     </div>
   )
 }
@@ -569,59 +647,6 @@ export function NoMicPanel({ onUseText, onRetry }: { onUseText: () => void; onRe
           className="flex h-11 flex-1 items-center justify-center rounded-btn border border-brd bg-card text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
         >
           {t('common.retry')}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ── Inline text-part editor: renders as an editing fragment card at the top
-// of the flow list (not in the footer). Confirm → becomes a text FlowPart;
-// Cancel → discarded. No modal, no footer takeover. ──
-export function TextPartEditor({
-  value,
-  onChange,
-  onConfirm,
-  onCancel,
-}: {
-  value: string
-  onChange: (v: string) => void
-  onConfirm: () => void
-  onCancel: () => void
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => { ref.current?.focus() }, [])
-  const canConfirm = value.trim().length > 0
-  const t = useT()
-  return (
-    <div className="rounded-card border border-pri/30 bg-priS/30 p-3" role="dialog" aria-label={t('capture.aria.textEditor')}>
-      <textarea
-        ref={ref}
-        name="captureText"
-        aria-label={t('capture.aria.entryContent')}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onConfirm()
-        }}
-        placeholder={t('capture.textPlaceholder')}
-        className="h-24 w-full resize-none bg-transparent text-[14px] leading-relaxed text-ink outline-none placeholder:text-t3"
-      />
-      <div className="mt-2 flex justify-end gap-2">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="flex h-9 items-center justify-center rounded-btn px-4 text-[13px] font-medium text-t2 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
-        >
-          {t('common.cancel')}
-        </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={!canConfirm}
-          className="flex h-9 items-center justify-center rounded-btn bg-pri px-4 text-[13px] font-medium text-white disabled:opacity-40 cursor-pointer transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
-        >
-          {t('common.confirm')}
         </button>
       </div>
     </div>
