@@ -2,10 +2,13 @@ import { useRef, useState, type ReactNode } from 'react'
 import { motion, useMotionValue, animate, useReducedMotion, type PanInfo } from 'framer-motion'
 import { cn } from './cn'
 import { haptic, type HapticStyle } from '@/ui/lib/haptics'
+import { useT } from '@/app/i18n/useT'
 
 // 列表项横向滑卡：左/右滑露出操作钮。遵循 NN/g contextual swipe 六则——
 // 滑动时内容保持可见（只平移不消失）、破坏性操作用危险色且以「滑出→点按」两段确认、
 // 全 app 语义一致、不与导航手势冲突（dragDirectionLock）、操作钮保留为可聚焦 button（无 signifier 兜底）。
+// 外层是 motion.div：调用方包 AnimatePresence 即得移除退场（高度收拢+淡出）。
+// 展开时内容上方盖透明拦截层——点按只收拢不穿透触发内层 onClick/navigate。
 export type SwipeAction = {
   key: string
   label: string
@@ -40,6 +43,7 @@ export function SwipeableCard({
   onClick,
 }: SwipeableCardProps) {
   const reduce = useReducedMotion()
+  const t = useT()
   const x = useMotionValue(0)
   const [openX, setOpenX] = useState(0) // 当前展开停驻位：0 | leftW | -rightW
   const dragging = useRef(false)
@@ -92,7 +96,15 @@ export function SwipeableCard({
   }
 
   return (
-    <div className={cn('relative overflow-hidden rounded-card', className)}>
+    <motion.div
+      className={cn('relative overflow-hidden rounded-card', className)}
+      // AnimatePresence 退场：高度收拢 + 淡出（overflow-hidden 已兜底裁剪）。
+      exit={{
+        opacity: 0,
+        height: 0,
+        transition: reduce ? { duration: 0 } : { duration: 0.22, ease: 'easeOut' },
+      }}
+    >
       {leftW > 0 && (
         <div className="absolute inset-y-0 left-0 flex" style={{ width: leftW }} aria-hidden={openX <= 0}>
           {leftActions.map((a) => (
@@ -122,8 +134,21 @@ export function SwipeableCard({
         onTap={handleTap}
       >
         {children}
+        {/* 展开态拦截层：盖住内容，点按仅收拢——防止穿透触发内层 onClick（如条目卡 navigate）。 */}
+        {openX !== 0 && (
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label={t('common.close')}
+            className="absolute inset-0 z-10 cursor-default"
+            onClick={(e) => {
+              e.stopPropagation()
+              snapTo(0)
+            }}
+          />
+        )}
       </motion.div>
-    </div>
+    </motion.div>
   )
 }
 

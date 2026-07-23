@@ -1,5 +1,6 @@
-import { Outlet, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useOutlet } from 'react-router-dom'
 import { Search, Sparkles } from 'lucide-react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { Fab, FiringReminderPopup, NavBottom, ReminderPopup, Statusbar } from '@/ui/components'
 import { useT } from '@/app/i18n/useT'
 
@@ -30,6 +31,25 @@ function TopBar() {
   )
 }
 
+// 页面转场：按 pathname key 重挂内容，入场 fade+rise（enter-only）。
+// 无 exit——旧屏瞬切新屏淡入，换来 main 滚动语义不变（tab 往返不丢滚动位）；
+// 跨 layout（主↔裸）整树重挂，新 layout 入场动画同样生效。reduced-motion 瞬切。
+function PageTransition() {
+  const location = useLocation()
+  const outlet = useOutlet()
+  const reduce = useReducedMotion()
+  return (
+    <motion.div
+      key={location.pathname}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={reduce ? { duration: 0 } : { duration: 0.22, ease: 'easeOut' }}
+    >
+      {outlet}
+    </motion.div>
+  )
+}
+
 // 主 tab 层：状态栏 + 顶栏(搜索) + 内容 + 采集 FAB + 底部导航
 export function MainLayout() {
   return (
@@ -42,12 +62,13 @@ export function MainLayout() {
       <Statusbar />
       <TopBar />
       {/* D11: 内容区底部留 NavBottom(79) + safe-bottom 的空间，与 NavBottom 等高消除灰带。
-          --safe-bottom 由 MainActivity 注入，PWA fallback 0。 */}
+          --safe-bottom 由 MainActivity 注入，PWA fallback 0。
+          overscroll-behavior: 拦 Android Chrome 原生下拉刷新/过度滚动辉光（home 自实现 PTR）。 */}
       <main
-        className="aji-frame-main flex-1 overflow-y-auto"
+        className="aji-frame-main flex-1 overflow-y-auto overscroll-behavior-y-contain"
         style={{ paddingBottom: 'calc(79px + var(--safe-bottom, 0px))' }}
       >
-        <Outlet />
+        <PageTransition />
       </main>
       <Fab />
       <NavBottom />
@@ -68,10 +89,10 @@ export function BareLayout() {
       <Statusbar />
       {/* D1: 裸层内容区底部留安全区空间，避免采集页底部操作 / 详情页底部按钮被系统导航栏遮挡。 */}
       <main
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto overscroll-behavior-y-contain"
         style={{ paddingBottom: 'var(--safe-bottom, 0px)' }}
       >
-        <Outlet />
+        <PageTransition />
       </main>
       {/* D20: 到点弹窗在裸路由也生效（用户可能在采集/详情页时提醒到点） */}
       <FiringReminderPopup />

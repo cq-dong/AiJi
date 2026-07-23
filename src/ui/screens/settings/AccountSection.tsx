@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Camera, Check, ChevronRight, User, X } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
 import { Button, Card, Sheet, cn } from '@/ui/components'
 import { useAccountStore } from '@/app/accountStore'
 import { useUiStore } from '@/app/store'
@@ -50,7 +51,7 @@ async function compressAvatar(file: File): Promise<string> {
 
 // KeySource 切换 sheet：网络账号可选「内置 Key（免费额度）」或「自己的 Key」。
 // setKeySource 内部有 guest 守卫（guest 选 builtin 时 no-op），但本 sheet 仅在网络账号下能打开，
-// 故此处直调即可。Sheet 原语无 open prop，调用方条件渲染 → 内部 `if (!open) return null`。
+// 故此处直调即可。AnimatePresence 常驻 + open 条件渲染 → Sheet 退出动画完成后才卸载。
 function KeySourceSheet({
   open,
   onClose,
@@ -62,43 +63,46 @@ function KeySourceSheet({
 }) {
   const setKeySource = useUiStore((s) => s.setKeySource)
   const t = useT()
-  if (!open) return null
   const options: { value: 'byok' | 'builtin'; label: string }[] = [
     { value: 'builtin', label: t('settings.keySourceBuiltin') },
     { value: 'byok', label: t('settings.keySourceByok') },
   ]
   return (
-    <Sheet title={t('settings.keySource')} onClose={onClose}>
-      <div className="space-y-2 py-2">
-        {options.map((o) => {
-          const active = o.value === current
-          return (
-            <button
-              key={o.value}
-              type="button"
-              onClick={() => {
-                setKeySource(o.value)
-                // D2: 切到 builtin 后立即刷新额度——否则 quota 行显「加载中…」直到重载。
-                // hydrate 只在 boot 跑；session 内切换需显式 refresh。
-                if (o.value === 'builtin') {
-                  void useQuotaStore.getState().refresh()
-                }
-                onClose()
-              }}
-              className={cn(
-                'flex w-full items-center justify-between rounded-btn border px-4 py-3 text-left text-[13px] transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-                active
-                  ? 'border-pri bg-priS text-pri'
-                  : 'border-brd bg-card text-ink',
-              )}
-            >
-              <span>{o.label}</span>
-              {active && <Check size={16} strokeWidth={2} className="text-pri" />}
-            </button>
-          )
-        })}
-      </div>
-    </Sheet>
+    <AnimatePresence>
+      {open && (
+        <Sheet title={t('settings.keySource')} onClose={onClose}>
+          <div className="space-y-2 py-2">
+            {options.map((o) => {
+              const active = o.value === current
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => {
+                    setKeySource(o.value)
+                    // D2: 切到 builtin 后立即刷新额度——否则 quota 行显「加载中…」直到重载。
+                    // hydrate 只在 boot 跑；session 内切换需显式 refresh。
+                    if (o.value === 'builtin') {
+                      void useQuotaStore.getState().refresh()
+                    }
+                    onClose()
+                  }}
+                  className={cn(
+                    'flex w-full items-center justify-between rounded-btn border px-4 py-3 text-left text-[13px] transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                    active
+                      ? 'border-pri bg-priS text-pri'
+                      : 'border-brd bg-card text-ink',
+                  )}
+                >
+                  <span>{o.label}</span>
+                  {active && <Check size={16} strokeWidth={2} className="text-pri" />}
+                </button>
+              )
+            })}
+          </div>
+        </Sheet>
+      )}
+    </AnimatePresence>
   )
 }
 
@@ -168,7 +172,7 @@ function NicknameSheet({
 
 // 游客升级为网络账号：绑邮箱+密码，account.id 不变（单池）。
 // bindNetwork 抛 'AUTH_<CODE>:<中文>'；成功后 onClose + toast。
-// Sheet 原语无 open prop，调用方条件渲染 → 内部 `if (!open) return null`（hooks 前置）。
+// AnimatePresence 常驻 + open 条件渲染 → Sheet 退出动画完成后才卸载。
 function BindNetworkSheet({
   open,
   onClose,
@@ -185,8 +189,6 @@ function BindNetworkSheet({
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-
-  if (!open) return null
 
   async function onSubmit() {
     setError(null)
@@ -215,44 +217,48 @@ function BindNetworkSheet({
   }
 
   return (
-    <Sheet title={t('settings.upgradeToNetwork')} onClose={onClose}>
-      <div className="space-y-2 py-1">
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder={t('settings.emailLabel')}
-          aria-label={t('settings.emailLabel')}
-          className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder={t('settings.passwordPlaceholder')}
-          aria-label={t('settings.passwordLabel')}
-          className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-        />
-        <input
-          type="password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          placeholder={t('settings.confirmPasswordLabel')}
-          aria-label={t('settings.confirmPasswordLabel')}
-          className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-        />
-        {error && <p className="text-[12px] text-catFail">{error}</p>}
-        <Button
-          variant="primary"
-          size="lg"
-          className="w-full"
-          disabled={busy}
-          onClick={() => void onSubmit()}
-        >
-          {busy ? t('settings.upgrading') : t('settings.upgrade')}
-        </Button>
-      </div>
-    </Sheet>
+    <AnimatePresence>
+      {open && (
+        <Sheet title={t('settings.upgradeToNetwork')} onClose={onClose}>
+          <div className="space-y-2 py-1">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder={t('settings.emailLabel')}
+              aria-label={t('settings.emailLabel')}
+              className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={t('settings.passwordPlaceholder')}
+              aria-label={t('settings.passwordLabel')}
+              className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            />
+            <input
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              placeholder={t('settings.confirmPasswordLabel')}
+              aria-label={t('settings.confirmPasswordLabel')}
+              className="h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            />
+            {error && <p className="text-[12px] text-catFail">{error}</p>}
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              disabled={busy}
+              onClick={() => void onSubmit()}
+            >
+              {busy ? t('settings.upgrading') : t('settings.upgrade')}
+            </Button>
+          </div>
+        </Sheet>
+      )}
+    </AnimatePresence>
   )
 }
 

@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { Bell, LayoutGrid, ListTree, NotebookPen, Settings } from 'lucide-react'
+import { motion } from 'framer-motion'
 import { useT } from '@/app/i18n/useT'
 import type { I18nKey } from '@/app/i18n'
 import { cn } from './cn'
@@ -37,15 +38,24 @@ export function NavBottom() {
               <>
                 <span
                   className={cn(
-                    'relative flex h-8 w-14 items-center justify-center rounded-full transition-all duration-slow ease-out',
-                    isActive ? 'bg-priS shadow-sm' : 'bg-transparent group-active:bg-page',
+                    'relative flex h-8 w-14 items-center justify-center rounded-full transition-colors duration-slow ease-out',
+                    !isActive && 'group-active:bg-page',
                   )}
                 >
+                  {/* 共享指示器：layoutId 跨 tab 滑动（M3 active-indicator）。reduced-motion
+                      由根部 MotionConfig reducedMotion="user" 自动降级为瞬切。 */}
+                  {isActive && (
+                    <motion.span
+                      layoutId="nav-active-pill"
+                      className="absolute inset-0 rounded-full bg-priS shadow-sm"
+                      transition={{ type: 'spring', stiffness: 500, damping: 40 }}
+                    />
+                  )}
                   <Icon
                     size={20}
                     strokeWidth={isActive ? 2.2 : 2}
                     className={cn(
-                      'transition-all duration-slow ease-out',
+                      'relative transition-all duration-slow ease-out',
                       isActive ? 'scale-105 text-pri' : 'text-t3 group-active:text-t2',
                     )}
                   />

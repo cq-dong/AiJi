@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Capacitor } from '@capacitor/core'
+import { MotionConfig } from 'framer-motion'
 import './index.css'
 import App from './App.tsx'
 import { queryClient } from '@/app/query'
@@ -55,10 +56,14 @@ window.addEventListener('offline', () => useUiStore.getState().setOnline(false))
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </QueryClientProvider>
+    {/* reducedMotion="user"：OS 减动效时全局禁用 framer transform/layout 动画
+        （NavBottom pill 滑动 / Sheet spring 等），opacity 淡入淡出保留。 */}
+    <MotionConfig reducedMotion="user">
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </MotionConfig>
   </StrictMode>,
 )

@@ -6,8 +6,8 @@ import { useT } from '@/app/i18n/useT'
 // 底部 sheet：编辑 AI 面板 / 手动编辑 parts 共用。fixed 覆盖整视口（含 statusbar，
 // iOS sheet 惯例），backdrop 点击 = 关闭 + 毛玻璃虚化背景。内容超高可滚。
 // framer-motion：进场 spring 上滑、面板可下拉关闭（过阈值/快速下甩触发）、回弹。
-// 保留可见 Close 按钮（NN/g bottom-sheet 红线）。退出动画未做——需调用方用
-// AnimatePresence 包裹条件渲染，属后续 batch。
+// 退出动画：root 是 motion.div（exit 淡出）+ 面板 exit 下滑——需调用方用
+// AnimatePresence 包裹条件渲染（退出完才卸载）。保留可见 Close 按钮（NN/g bottom-sheet 红线）。
 const DISMISS_Y = 90
 const DISMISS_VELOCITY = 600
 
@@ -39,7 +39,15 @@ export function Sheet({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end" role="dialog" aria-modal="true">
+    <motion.div
+      className="fixed inset-0 z-50 flex flex-col justify-end"
+      role="dialog"
+      aria-modal="true"
+      // root exit 只做整体淡出（面板自身 exit 下滑同时进行）；
+      // AnimatePresence 等所有 exit 完成后才卸载。initial={false} 防双重入场。
+      initial={false}
+      exit={{ opacity: 0, transition: { duration: reduce ? 0 : 0.22 } }}
+    >
       <motion.button
         type="button"
         aria-label={t('common.close')}
@@ -55,6 +63,7 @@ export function Sheet({
         style={{ y }}
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
+        exit={{ y: '100%', transition: reduce ? { duration: 0 } : { type: 'tween', duration: 0.24, ease: [0.32, 0.72, 0, 1] } }}
         transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 38 }}
         drag="y"
         dragDirectionLock
@@ -78,6 +87,6 @@ export function Sheet({
         <div className="flex flex-col gap-3 overflow-y-auto px-4 pb-2">{children}</div>
         {footer && <div className="flex items-center gap-2 px-4 pt-1">{footer}</div>}
       </motion.div>
-    </div>
+    </motion.div>
   )
 }

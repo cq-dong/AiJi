@@ -1,14 +1,16 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Mic } from 'lucide-react'
-import { Button, EmptyState } from '@/ui/components'
+import { AnimatePresence, motion, useTransform } from 'framer-motion'
+import { Mic, Trash2 } from 'lucide-react'
+import { Button, EmptyState, SwipeableCard } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import type { Entry } from '@/domain/types'
 import { dateKey, groupLabel, todayKeyFrom, topDateLabel } from './helpers'
 import { HomeHeader } from './HomeHeader'
-import { JustSavedToast, OfflineBanner } from './Banners'
+import { JustSavedToast, OfflineBanner, RefreshIndicator } from './Banners'
 import { TimelineCard } from './TimelineCard'
+import { usePullToRefresh } from './usePullToRefresh'
 
 export default function Home() {
   const navigate = useNavigate()
@@ -19,6 +21,13 @@ export default function Home() {
   const clearJustSaved = useUiStore((s) => s.clearJustSaved)
   const categories = useUiStore((s) => s.categories)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
+  const rehydrate = useUiStore((s) => s.rehydrate)
+  const trashEntry = useUiStore((s) => s.trashEntry)
+
+  // 下拉刷新：重读 Dexie（local-first 语义下的 refresh）。指示器高度=pull 手势值。
+  const handleRefresh = useCallback(() => rehydrate(), [rehydrate])
+  const { ref: ptrRef, pull, refreshing } = usePullToRefresh(handleRefresh)
+  const indicatorOpacity = useTransform(pull, [0, 40], [0, 1])
 
   // 空库时 todayKeyFrom 返 ''，topDateLabel('') 会渲出「NaN月undefined日」——回落系统今天。
   const todayKey = todayKeyFrom(entries) || dateKey(new Date().toISOString())
@@ -57,7 +66,19 @@ export default function Home() {
   const hasTop = banner !== null
 
   return (
-    <div className="px-4 pt-4 pb-6">
+    <div ref={ptrRef} className="px-4 pt-4 pb-6">
+      {/* 下拉刷新指示器：高度随手势 pull 生长（0→阈值），refreshing 时停驻 48px。 */}
+      <motion.div
+        style={{ height: pull, opacity: indicatorOpacity }}
+        className="overflow-hidden"
+        aria-live="polite"
+        aria-busy={refreshing}
+      >
+        <div className="flex h-12 w-full flex-col justify-center">
+          <RefreshIndicator />
+        </div>
+      </motion.div>
+
       <HomeHeader topDateLabel={topDateLabel(todayKey)} todayCount={todayCount} />
 
       {hasTop && (
@@ -91,20 +112,37 @@ export default function Home() {
                   <span className="h-px flex-1 bg-gradient-to-r from-brd to-transparent" aria-hidden="true" />
                 </h2>
                 <div className="flex flex-col gap-2.5">
-                  {g.entries.map((e, ei) => {
-                    const ai = aiMap.get(e.id)
-                    const cat = ai ? catMap.get(ai.category) : undefined
-                    return (
-                      <TimelineCard
-                        key={e.id}
-                        entry={e}
-                        ai={ai}
-                        catLabel={cat?.label}
-                        catAccent={cat?.accent}
-                        index={gi * 3 + ei}
-                      />
-                    )
-                  })}
+                  {/* 左滑删除（软删进回收站，30 天可恢复——非不可逆，swipe+点按两段确认）。
+                      AnimatePresence 收移除退场（SwipeableCard 外层高度收拢+淡出）。 */}
+                  <AnimatePresence initial={false}>
+                    {g.entries.map((e, ei) => {
+                      const ai = aiMap.get(e.id)
+                      const cat = ai ? catMap.get(ai.category) : undefined
+                      return (
+                        <SwipeableCard
+                          key={e.id}
+                          rightActions={[
+                            {
+                              key: 'trash',
+                              label: t('common.delete'),
+                              icon: <Trash2 size={16} />,
+                              color: 'bg-catFail',
+                              hapticStyle: 'warning',
+                              onAction: () => trashEntry(e.id),
+                            },
+                          ]}
+                        >
+                          <TimelineCard
+                            entry={e}
+                            ai={ai}
+                            catLabel={cat?.label}
+                            catAccent={cat?.accent}
+                            index={gi * 3 + ei}
+                          />
+                        </SwipeableCard>
+                      )
+                    })}
+                  </AnimatePresence>
                 </div>
               </section>
             ))}

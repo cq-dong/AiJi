@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
+import { AnimatePresence } from 'framer-motion'
 import { Button, Card, EmptyState, ReminderCreator, Sheet, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
@@ -852,23 +853,30 @@ export default function Detail() {
       {/* D5: 地点标签——entry.location 存在时显示地址（或 lat/lng 回落），否则提示未记录。 */}
       <LocationBadge location={entry.location} />
 
-      {editingAi && ai && (
-        <AiEditSheet ai={ai} onSave={handleSaveAi} onClose={() => setEditingAi(false)} />
-      )}
-      {editingParts && (
-        <PartsEditSheet parts={entry.parts} onSave={handleSaveParts} onClose={() => setEditingParts(false)} />
-      )}
+      {/* Sheet 退出动画：AnimatePresence 包裹条件渲染，退出（下滑+淡出）完成后才卸载。 */}
+      <AnimatePresence>
+        {editingAi && ai && (
+          <AiEditSheet ai={ai} onSave={handleSaveAi} onClose={() => setEditingAi(false)} />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {editingParts && (
+          <PartsEditSheet parts={entry.parts} onSave={handleSaveParts} onClose={() => setEditingParts(false)} />
+        )}
+      </AnimatePresence>
       {confirmingDelete && (
         <ConfirmDeleteDialog onConfirm={handleConfirmDelete} onClose={() => setConfirmingDelete(false)} />
       )}
-      {moreOpen && id && (
-        <MoreSheet
-          entryId={id}
-          mediaCount={mediaCount}
-          onClose={() => setMoreOpen(false)}
-          onExportResult={(msg, ok) => setExportToast({ msg, ok })}
-        />
-      )}
+      <AnimatePresence>
+        {moreOpen && id && (
+          <MoreSheet
+            entryId={id}
+            mediaCount={mediaCount}
+            onClose={() => setMoreOpen(false)}
+            onExportResult={(msg, ok) => setExportToast({ msg, ok })}
+          />
+        )}
+      </AnimatePresence>
       {exportToast && (
         <Toast
           message={exportToast.msg}

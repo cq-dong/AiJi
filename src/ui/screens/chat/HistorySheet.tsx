@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Trash2 } from 'lucide-react'
+import { AnimatePresence } from 'framer-motion'
 import { Sheet } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { t } from '@/app/i18n'
@@ -10,7 +11,7 @@ import type { Conversation } from '@/domain/types'
 // （无则 chat.untitled）；副行=相对时间 + 消息数；点项→loadConversation+关 sheet；
 // 当前会话项 bg-priS 高亮；Trash2 删除带 confirm。空态 chat.historyEmpty。
 // helpers 走模块 t()，组件 useT() 订阅重渲（与 chat/index.tsx 的 citeLabel 同构）。
-// Sheet 原语无 open prop → 内部 if (!open) return null；hooks 必须在 early-return 之前。
+// AnimatePresence 常驻 + open 条件渲染 → Sheet 退出动画（下滑淡出）完成后才卸载。
 
 function conversationTitle(conv: Conversation): string {
   const firstUser = conv.messages.find((m) => m.role === 'user')
@@ -48,8 +49,6 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
     if (useUiStore.getState().chatList.length === 0) void refreshChatList()
   }, [open, refreshChatList])
 
-  if (!open) return null
-
   const currentId = conversation?.id
 
   async function onSelect(id: string) {
@@ -62,51 +61,55 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
   }
 
   return (
-    <Sheet title={t('chat.history')} onClose={onClose}>
-      {chatList.length === 0 ? (
-        <div className="py-8 text-center text-[13px] text-t3">{t('chat.historyEmpty')}</div>
-      ) : (
-        <div className="space-y-2 py-1">
-          {chatList.map((conv) => {
-            const isCurrent = conv.id === currentId
-            return (
-              <div
-                key={conv.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => void onSelect(conv.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    void onSelect(conv.id)
-                  }
-                }}
-                className={`flex cursor-pointer items-center gap-3 rounded-card border border-brd/80 p-3 transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 ${
-                  isCurrent ? 'bg-priS' : 'bg-card hover:bg-page'
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[14px] font-medium text-ink">{conversationTitle(conv)}</p>
-                  <p className="mt-0.5 truncate text-[12px] text-t3">
-                    {ago(conv.updatedAt)} · {t('chat.msgCount', { count: conv.messages.length })}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onDelete(conv.id)
-                  }}
-                  aria-label={t('chat.aria.delete')}
-                  className="flex size-9 shrink-0 items-center justify-center rounded-btn text-t3 transition duration-base ease-out hover:bg-page hover:text-catFail active:scale-[0.95] focus-visible:ring-2 focus-visible:ring-pri/40"
-                >
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            )
-          })}
-        </div>
+    <AnimatePresence>
+      {open && (
+        <Sheet title={t('chat.history')} onClose={onClose}>
+          {chatList.length === 0 ? (
+            <div className="py-8 text-center text-[13px] text-t3">{t('chat.historyEmpty')}</div>
+          ) : (
+            <div className="space-y-2 py-1">
+              {chatList.map((conv) => {
+                const isCurrent = conv.id === currentId
+                return (
+                  <div
+                    key={conv.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => void onSelect(conv.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        void onSelect(conv.id)
+                      }
+                    }}
+                    className={`flex cursor-pointer items-center gap-3 rounded-card border border-brd/80 p-3 transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 ${
+                      isCurrent ? 'bg-priS' : 'bg-card hover:bg-page'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[14px] font-medium text-ink">{conversationTitle(conv)}</p>
+                      <p className="mt-0.5 truncate text-[12px] text-t3">
+                        {ago(conv.updatedAt)} · {t('chat.msgCount', { count: conv.messages.length })}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onDelete(conv.id)
+                      }}
+                      aria-label={t('chat.aria.delete')}
+                      className="flex size-9 shrink-0 items-center justify-center rounded-btn text-t3 transition duration-base ease-out hover:bg-page hover:text-catFail active:scale-[0.95] focus-visible:ring-2 focus-visible:ring-pri/40"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </Sheet>
       )}
-    </Sheet>
+    </AnimatePresence>
   )
 }
