@@ -6,6 +6,8 @@ import { cn } from '@/ui/components'
 interface SearchBarProps {
   value: string
   onChange: (v: string) => void
+  /** Enter 提交（移动键盘搜索键）——记入最近搜索。 */
+  onSubmit?: () => void
 }
 
 function SearchIcon({ className }: { className?: string }) {
@@ -17,7 +19,7 @@ function SearchIcon({ className }: { className?: string }) {
   )
 }
 
-export function SearchBar({ value, onChange }: SearchBarProps) {
+export function SearchBar({ value, onChange, onSubmit }: SearchBarProps) {
   const t = useT()
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -35,8 +37,12 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
       <input
         ref={ref}
         type="text"
+        enterKeyHint="search"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onSubmit?.()
+        }}
         placeholder={t('search.placeholder')}
         className="min-w-0 flex-1 bg-transparent text-[14px] text-ink outline-none placeholder:text-t3"
       />

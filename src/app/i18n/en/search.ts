@@ -5,6 +5,7 @@ export const search = {
   'search.clearAria': 'Clear',
   'search.recentTitle': 'Recent searches',
   'search.recentEmpty': 'No search history yet',
+  'search.recentClear': 'Clear',
   'search.tryLabel': 'Try',
   'search.filter.all': 'All',
   'search.filter.category': 'Category',

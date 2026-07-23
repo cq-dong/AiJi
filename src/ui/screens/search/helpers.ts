@@ -233,3 +233,45 @@ export function searchEntries(
       return { entry: e, ai, category: ai ? catBySlug.get(ai.category) : undefined }
     })
 }
+
+// 关键词高亮：把 text 按 query（多词、大小写不敏感）切成段，命中段 match=true。
+// 纯函数（给 SearchResultCard 渲染用）。词按长度降序匹配防短词遮蔽长词；
+// 已命中区间不再二次命中（首个词优先）。
+export type HighlightSegment = { text: string; match: boolean }
+
+export function highlightParts(text: string, query: string): HighlightSegment[] {
+  const terms = query
+    .trim()
+    .split(/\s+/)
+    .filter((x) => x.length > 0)
+    .sort((a, b) => b.length - a.length)
+  if (terms.length === 0 || text.length === 0) return [{ text, match: false }]
+
+  const lower = text.toLowerCase()
+  // 标记命中区间
+  const ranges: [number, number][] = []
+  for (const term of terms) {
+    const t = term.toLowerCase()
+    let from = 0
+    for (;;) {
+      const i = lower.indexOf(t, from)
+      if (i === -1) break
+      const end = i + t.length
+      const covered = ranges.some(([s, e]) => i >= s && i < e)
+      if (!covered) ranges.push([i, end])
+      from = end
+    }
+  }
+  if (ranges.length === 0) return [{ text, match: false }]
+  ranges.sort((a, b) => a[0] - b[0])
+
+  const segs: HighlightSegment[] = []
+  let pos = 0
+  for (const [s, e] of ranges) {
+    if (s > pos) segs.push({ text: text.slice(pos, s), match: false })
+    segs.push({ text: text.slice(s, e), match: true })
+    pos = e
+  }
+  if (pos < text.length) segs.push({ text: text.slice(pos), match: false })
+  return segs
+}

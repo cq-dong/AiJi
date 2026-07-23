@@ -6,6 +6,7 @@ export const search = {
   'search.clearAria': '清除',
   'search.recentTitle': '最近搜索',
   'search.recentEmpty': '还没有搜索记录',
+  'search.recentClear': '清除',
   'search.tryLabel': '试试',
   'search.filter.all': '全部',
   'search.filter.category': '类别',

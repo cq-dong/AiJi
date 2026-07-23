@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { cn, EmptyState } from '@/ui/components'
+import { Clock } from 'lucide-react'
+import { cn, EmptyState, Skeleton } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import { SearchBar } from './SearchBar'
 import { SearchResultCard } from './SearchResultCard'
+import { useRecentSearches } from './useRecentSearches'
 import {
   EMPTY_FILTERS,
   filterResults,
@@ -29,12 +31,49 @@ function DocIcon() {
   )
 }
 
-function EmptySearch({ onPick, suggestions }: { onPick: (s: string) => void; suggestions: string[] }) {
+function EmptySearch({
+  onPick,
+  suggestions,
+  recents,
+  onClearRecents,
+}: {
+  onPick: (s: string) => void
+  suggestions: string[]
+  recents: string[]
+  onClearRecents: () => void
+}) {
   const t = useT()
   return (
     <div className="mt-2 animate-fade-in-up">
-      <p className="text-[13px] font-semibold text-ink">{t('search.recentTitle')}</p>
-      <p className="mt-3 text-[12px] text-t3">{t('search.recentEmpty')}</p>
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] font-semibold text-ink">{t('search.recentTitle')}</p>
+        {recents.length > 0 && (
+          <button
+            type="button"
+            onClick={onClearRecents}
+            className="min-h-8 cursor-pointer px-2 text-[11px] font-medium text-t3 transition duration-base ease-out hover:text-t2 active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+          >
+            {t('search.recentClear')}
+          </button>
+        )}
+      </div>
+      {recents.length === 0 ? (
+        <p className="mt-3 text-[12px] text-t3">{t('search.recentEmpty')}</p>
+      ) : (
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          {recents.map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => onPick(r)}
+              className="flex min-h-10 cursor-pointer items-center gap-1.5 rounded-chip border border-brd/80 bg-card px-3.5 text-[12px] font-medium text-t2 shadow-sm transition-all duration-base ease-out hover:border-pri/30 hover:text-pri active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            >
+              <Clock size={12} strokeWidth={2.2} className="text-t3" />
+              {r}
+            </button>
+          ))}
+        </div>
+      )}
       <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.06em] text-t3">{t('search.tryLabel')}</p>
       <div className="mt-2.5 flex flex-wrap gap-2">
         {suggestions.map((s) => (
@@ -102,6 +141,7 @@ export default function Search() {
   const t = useT()
   const [query, setQuery] = useState('')
   const [filters, setFilters] = useState<SearchFilters>(EMPTY_FILTERS)
+  const { recents, addRecent, clearRecents } = useRecentSearches()
 
   const hasQuery = query.trim().length > 0
 
@@ -138,10 +178,21 @@ export default function Search() {
   const todayRef = useMemo(() => todayRefFrom(entries), [entries])
   const now = useMemo(() => new Date(), [])
 
+  // useDeferredValue：输入即时回显，搜索计算延迟到空闲帧——长列表连续击键不卡输入。
+  // deferred 滞后期间（pending）结果区显骨架/降透明，替代手写 debounce。
+  const deferredQuery = useDeferredValue(query)
+  const searchPending = deferredQuery.trim() !== query.trim()
+
   const results = useMemo<SearchResult[]>(() => {
-    const all = searchEntries(query, entries, categories, tags, aiByEntry)
+    const all = searchEntries(deferredQuery, entries, categories, tags, aiByEntry)
     return filterResults(all, filters, aiByEntry, now)
-  }, [query, filters, entries, categories, tags, aiByEntry, now])
+  }, [deferredQuery, filters, entries, categories, tags, aiByEntry, now])
+
+  // 点结果 = 强搜索意图 → 记入最近搜索再跳详情
+  const openResult = (r: SearchResult) => {
+    addRecent(query)
+    navigate(`/detail/${r.entry.id}`)
+  }
 
   const setFilter = (key: keyof SearchFilters) => (slug: string) => {
     setFilters((prev) => ({ ...prev, [key]: slug }))
@@ -157,6 +208,10 @@ export default function Search() {
   }
   const clearFilters = () => setFilters(EMPTY_FILTERS)
 
+  // stagger 入场：每张卡延迟 45ms，封顶 8 张（与 home TimelineCard 同律）。
+  const staggerStyle = (i: number): CSSProperties | undefined =>
+    i < 8 ? { animationDelay: `${i * 45}ms` } : undefined
+
   // Modality / date chip labels are i18n keys on the static arrays; resolve them
   // here each render so they follow the active language (helpers can't, they
   // run before the store hydrates and `t` would freeze the first-seen language).
@@ -165,7 +220,7 @@ export default function Search() {
 
   return (
     <div className="px-4 pb-6 pt-4">
-      <SearchBar value={query} onChange={setQuery} />
+      <SearchBar value={query} onChange={setQuery} onSubmit={() => addRecent(query)} />
 
       {hasQuery && (
         <div className="mt-3 flex flex-col gap-2">
@@ -232,9 +287,25 @@ export default function Search() {
       )}
 
       <div className="mt-4 flex flex-col gap-3">
-        {!hasQuery && <EmptySearch onPick={setQuery} suggestions={suggestions} />}
+        {!hasQuery && (
+          <EmptySearch
+            onPick={setQuery}
+            suggestions={suggestions}
+            recents={recents}
+            onClearRecents={clearRecents}
+          />
+        )}
 
-        {hasQuery && results.length === 0 && (
+        {/* 输入在飞（deferred 滞后）且暂无结果 → 骨架占位；已有结果则降透明保显示。 */}
+        {hasQuery && searchPending && results.length === 0 && (
+          <>
+            <Skeleton className="h-[76px]" />
+            <Skeleton className="h-[76px]" />
+            <Skeleton className="h-[76px]" />
+          </>
+        )}
+
+        {hasQuery && !searchPending && results.length === 0 && (
           <EmptyState
             icon={<DocIcon />}
             title={t('search.emptyTitle')}
@@ -242,17 +313,27 @@ export default function Search() {
           />
         )}
 
-        {hasQuery &&
-          results.map((r) => (
-            <SearchResultCard
-              key={r.entry.id}
-              entry={r.entry}
-              ai={r.ai}
-              category={r.category}
-              now={todayRef}
-              onClick={() => navigate(`/detail/${r.entry.id}`)}
-            />
-          ))}
+        {hasQuery && (
+          <div
+            className={cn(
+              'flex flex-col gap-3 transition-opacity duration-fast',
+              searchPending && 'opacity-50',
+            )}
+          >
+            {results.map((r, i) => (
+              <div key={r.entry.id} style={staggerStyle(i)} className="animate-fade-in-up">
+                <SearchResultCard
+                  entry={r.entry}
+                  ai={r.ai}
+                  category={r.category}
+                  now={todayRef}
+                  query={query}
+                  onClick={() => openResult(r)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
