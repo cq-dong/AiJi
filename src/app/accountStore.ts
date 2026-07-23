@@ -1,3 +1,8 @@
+// accountSlots 必须是本文件第一个 import——ESM 按 import 序深度优先求值依赖模块，
+// 若排在 di 之后，di 链上的 quotaStore 顶层 registerQuotaReset 会撞上 accountSlots
+// 未求值的 TDZ（与当初槽放本文件 `let` 时的白屏同机理）。放首位：零依赖槽模块先于
+// 一切求值完，环上来电时绑定必然已初始化。
+import { accountSlots } from '@/app/accountSlots'
 import { create } from 'zustand'
 import type { Account, AuthSession } from '@/domain/account'
 import { localAccount } from '@/adapters/localAccount'
@@ -40,19 +45,22 @@ async function setKeySourceBuiltin(): Promise<void> {
 // 破环，但 Vite dev 给动态 import 加 `?t=<hmr>` query → 解析成与 UI 不同的 useUiStore 实例，
 // rehydrate 跑在空实例上、真 store 不动（dev 下隔离仍失效；prod 无 `?t=` 才正常）。
 // 改用 store→accountStore 单向依赖（store 已 import accountStore）：store 模块加载时把
-// rehydrate 注册进 accountStore 的可变槽，accountStore 调槽函数。零动态 import、零环、零实例分裂。
-let storeRehydrateFn: (() => Promise<void>) | null = null
-
+// rehydrate 注册进共享槽，accountStore 调槽函数。零动态 import、零环、零实例分裂。
+//
+// 槽本体在零依赖模块 `@/app/accountSlots`——曾放本文件（`let storeRehydrateFn`），dev 原生
+// ESM 下若本模块先开始求值、停在 import di 行，链上 quotaStore 顶层注册会撞上 TDZ
+// （Cannot access before initialization，白屏）；prod Rollup 提升遮掩。移槽后与本文件
+// 求值序彻底解耦。
 /** store.ts 模块加载时注册：rehydrate 仅当 store 已 hydrated 时执行（boot 期 store 未 hydrated
  * 时跳过——store.hydrate 后续会自读 adopt 后数据，不重复加载）。 */
 export function registerStoreRehydrate(fn: () => Promise<void>): void {
-  storeRehydrateFn = fn
+  accountSlots.storeRehydrate = fn
 }
 
 async function triggerStoreRehydrate(): Promise<void> {
-  if (!storeRehydrateFn) return
+  if (!accountSlots.storeRehydrate) return
   try {
-    await storeRehydrateFn()
+    await accountSlots.storeRehydrate()
   } catch (e) {
     console.error('[accountStore] store rehydrate failed', e)
   }
@@ -61,17 +69,15 @@ async function triggerStoreRehydrate(): Promise<void> {
 // quotaStore 的配额快照是内存单例（同 store），hydrate 守卫只跑一次。账号切换不刷新 → 新账号
 // 看到旧账号「今日 LLM 4 次」。同槽模式：quotaStore 模块加载时把 reset+refresh 注册进本槽，
 // accountStore 在 postNetworkLogin/logout 调用。零反向 import 成环。
-let quotaResetFn: (() => Promise<void>) | null = null
-
 /** quotaStore 模块加载时注册：账号切换时清旧账号配额快照 + 拉新账号配额。 */
 export function registerQuotaReset(fn: () => Promise<void>): void {
-  quotaResetFn = fn
+  accountSlots.quotaReset = fn
 }
 
 async function triggerQuotaReset(): Promise<void> {
-  if (!quotaResetFn) return
+  if (!accountSlots.quotaReset) return
   try {
-    await quotaResetFn()
+    await accountSlots.quotaReset()
   } catch (e) {
     // 静默：logout 场景 refresh 无 session 会失败，不应打扰账号切换主流程。
     console.error('[accountStore] quota reset failed', e)
