@@ -2,6 +2,12 @@
 export const settings = {
   // 页面 / 通用
   'settings.title': 'Profile',
+  // 分组标签（2026-07-23 分组列表重构）
+  'settings.groupGeneral': 'General',
+  'settings.groupAi': 'AI',
+  'settings.groupCapture': 'Capture',
+  'settings.groupData': 'Data',
+  'settings.groupAbout': 'About',
   'settings.appearance': 'Appearance',
   'settings.themeHelp': 'Theme (light/dark)',
   'settings.themeLight': 'Light',

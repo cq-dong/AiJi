@@ -3,6 +3,12 @@
 export const settings = {
   // 页面 / 通用
   'settings.title': '个人中心',
+  // 分组标签（2026-07-23 分组列表重构）
+  'settings.groupGeneral': '通用',
+  'settings.groupAi': 'AI',
+  'settings.groupCapture': '记录',
+  'settings.groupData': '数据',
+  'settings.groupAbout': '关于',
   'settings.appearance': '外观',
   'settings.themeHelp': '主题（亮/暗切换）',
   'settings.themeLight': '亮色',

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Brain, Check, ChevronDown, ChevronRight, Download, Info, MapPin, MessageSquare, Plus, Trash2, X } from 'lucide-react'
+import { Archive, Brain, Check, ChevronDown, ChevronRight, Download, Eye, FileDown, FileInput, Film, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, Plus, Share2, Sparkles, Timer, Trash2, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
-import { Button, Card, cn } from '@/ui/components'
+import { Button, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import { t } from '@/app/i18n'
@@ -16,6 +16,7 @@ import { importSampleData } from '@/adapters/dexieStorage'
 import { BUILTIN_VLM_URL, BUILTIN_VLM_MODEL, BUILTIN_STT_URL_STREAM, BUILTIN_STT_URL_WHISPER, BUILTIN_STT_MODEL_STREAM, BUILTIN_STT_MODEL_WHISPER } from '@/adapters/builtinDefaults'
 import { Toggle } from './Toggle'
 import { AccountSection } from './AccountSection'
+import { RowDivider, RowIcon, SettingsGroup, SettingsRow } from './group'
 import type { UpdateInfo, DownloadProgress } from '@/ports'
 import type { EntryPart, Settings as SettingsType } from '@/domain/types'
 
@@ -386,58 +387,14 @@ function Toast({ message, ok, onDismiss }: { message: string; ok: boolean; onDis
   )
 }
 
-function ChevronRow({
-  label,
-  value,
-  icon,
-  onClick,
-}: {
-  label: string
-  value?: string
-  icon?: React.ReactNode
-  onClick?: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex w-full items-center justify-between rounded-card border border-brd/80 bg-card p-4 text-left shadow-card transition-all duration-base ease-out cursor-pointer hover:border-t3/30 hover:shadow-cardHover active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-    >
-      <span className="flex items-center gap-3">
-        {icon && (
-          <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-priS text-pri">
-            {icon}
-          </span>
-        )}
-        <span className="text-[14px] font-medium text-ink">{label}</span>
-      </span>
-      <span className="flex items-center gap-2">
-        {value && <span className="text-[11px] text-t3">{value}</span>}
-        <ChevronRight size={17} strokeWidth={2.2} className="text-t3" />
-      </span>
-    </button>
-  )
-}
-
-// 使用反馈入口：跳 /feedback（裸路由，多建议 + 可选图片，提交建 GitHub Issue）。
-function FeedbackRow() {
-  const navigate = useNavigate()
-  const t = useT()
-  return (
-    <ChevronRow
-      label={t('settings.feedback')}
-      icon={<MessageSquare size={15} strokeWidth={2.2} />}
-      onClick={() => navigate('/feedback')}
-    />
-  )
-}
-
 function ModelRow({
+  icon,
   label,
   value,
   hasKey,
   onClick,
 }: {
+  icon: React.ReactNode
   label: string
   value: string
   hasKey: boolean
@@ -447,15 +404,24 @@ function ModelRow({
   // 真实值在 SecretStorePort；这里只反映 ref 是否存在，让用户一眼看到 Key 配置情况。
   const t = useT()
   return (
-    <button type="button" onClick={onClick} className="flex w-full items-center justify-between text-left transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
-      <span className="text-[13px] font-medium text-ink">{label}</span>
-      <span className="flex items-center gap-2">
-        <span className="flex items-center gap-1">
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors duration-base ease-out cursor-pointer active:bg-page/70 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-pri/40"
+    >
+      <RowIcon>{icon}</RowIcon>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] font-medium text-ink">{label}</span>
+        <span className="mt-0.5 flex items-center gap-1">
           <span className={cn('h-1.5 w-1.5 rounded-full', hasKey ? 'bg-catProject' : 'bg-t3')} />
-          <span className="text-[11px] text-t3">{hasKey ? t('settings.keyConfigured') : t('settings.keyNotConfigured')}</span>
+          <span className="text-[11px] text-t3">
+            {hasKey ? t('settings.keyConfigured') : t('settings.keyNotConfigured')}
+          </span>
         </span>
-        <span className="max-w-[120px] truncate text-[11px] text-t3">{value}</span>
-        <ChevronRight size={18} className="text-t2" />
+      </span>
+      <span className="ml-3 flex shrink-0 items-center gap-1.5">
+        <span className="max-w-[110px] truncate text-[12px] text-t3">{value}</span>
+        <ChevronRight size={16} strokeWidth={2.2} className="text-t3" />
       </span>
     </button>
   )
@@ -1199,7 +1165,8 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
   )
 }
 
-function VisionSection({
+// 视觉设置两行（嵌入 AI 分组卡，无独立 Card）：视觉理解开关 + 抽帧间隔。
+function VisionRows({
   settings,
   setSettings,
 }: {
@@ -1212,41 +1179,41 @@ function VisionSection({
   // 同步防显错（10 vs 60）+ 防 onBlur 用 stale 值静默回退已存值。
   useEffect(() => setFrameInput(String(settings.videoFrameIntervalSec)), [settings.videoFrameIntervalSec])
   return (
-    <Card className="mt-3">
-      <p className="text-[14px] font-bold text-ink">{t('settings.visionTitle')}</p>
-      <p className="mt-1 text-[11px] text-t3">{t('settings.visionHelp')}</p>
-
-      <div className="mt-3 flex items-center justify-between">
-        <div className="pr-3">
-          <p className="text-[13px] font-medium text-ink">{t('settings.visionUnderstanding')}</p>
-          <p className="mt-0.5 text-[11px] text-t3">
-            {t('settings.visionHelpDetail')}
-          </p>
-        </div>
-        <Toggle
-          checked={settings.videoVisionEnabled}
-          onChange={(v) => setSettings({ videoVisionEnabled: v })}
-        />
-      </div>
-
-      <div className={cn('mt-3', !settings.videoVisionEnabled && 'opacity-40')}>
-        <label className="text-[11px] text-t2">{t('settings.videoFrameIntervalLabel')}</label>
-        <input
-          type="number"
-          min={1}
-          max={60}
-          value={frameInput}
-          onChange={(e) => setFrameInput(e.target.value)}
-          onBlur={() => {
-            const n = Math.min(60, Math.max(1, parseInt(frameInput, 10) || 10))
-            setFrameInput(String(n))
-            setSettings({ videoFrameIntervalSec: n })
-          }}
-          disabled={!settings.videoVisionEnabled}
-          className={inputCls}
-        />
-      </div>
-    </Card>
+    <>
+      <SettingsRow
+        icon={<Film size={15} strokeWidth={2.2} />}
+        label={t('settings.visionUnderstanding')}
+        help={t('settings.visionHelpDetail')}
+        right={
+          <Toggle
+            checked={settings.videoVisionEnabled}
+            onChange={(v) => setSettings({ videoVisionEnabled: v })}
+          />
+        }
+      />
+      <RowDivider />
+      <SettingsRow
+        icon={<Timer size={15} strokeWidth={2.2} />}
+        label={t('settings.videoFrameIntervalLabel')}
+        disabled={!settings.videoVisionEnabled}
+        right={
+          <input
+            type="number"
+            min={1}
+            max={60}
+            value={frameInput}
+            onChange={(e) => setFrameInput(e.target.value)}
+            onBlur={() => {
+              const n = Math.min(60, Math.max(1, parseInt(frameInput, 10) || 10))
+              setFrameInput(String(n))
+              setSettings({ videoFrameIntervalSec: n })
+            }}
+            disabled={!settings.videoVisionEnabled}
+            className="w-16 rounded-btn border border-brd bg-card px-2 py-1 text-right text-[13px] text-ink outline-none focus:border-pri disabled:opacity-50"
+          />
+        }
+      />
+    </>
   )
 }
 
@@ -1299,6 +1266,7 @@ function LanguageSheet({ onClose }: { onClose: () => void }) {
 export default function Settings() {
   const settings = useUiStore((s) => s.settings)
   const setSettings = useUiStore((s) => s.setSettings)
+  const navigate = useNavigate()
   const t = useT()
   const theme = settings.theme
   const recordLocation = settings.recordLocation
@@ -1378,192 +1346,182 @@ export default function Settings() {
     }
   }
 
+  // 数据组页脚：空库提示 + 导入反馈（都无则不渲染 footer，SettingsGroup 判空隐藏）。
+  const dataFooter =
+    !hasEntries || importMsg ? (
+      <>
+        {!hasEntries && <p>{t('settings.noEntriesToExport')}</p>}
+        {importMsg && (
+          <p className={cn(importOk ? 'text-catProject' : 'text-catFail')}>
+            {importOk ? '✓ ' : '✗ '}
+            {importMsg}
+          </p>
+        )}
+      </>
+    ) : undefined
+
   return (
-    <div className="px-4 pb-4 pt-4">
+    <div className="px-4 pb-8 pt-4">
       <h1 className="text-[24px] font-bold text-ink">{t('settings.title')}</h1>
 
-      {/* 账号 */}
+      {/* 账号（hero 卡，独立成区） */}
       <AccountSection />
 
-      {/* 外观 */}
-      <Card className="mt-4">
-        <p className="text-[14px] font-bold text-ink">{t('settings.appearance')}</p>
-        <p className="mt-1 text-[11px] text-t3">{t('settings.themeHelp')}</p>
-        <div className="mt-3 grid grid-cols-3 gap-1 rounded-[14px] border border-brd/60 bg-page p-1 shadow-inner">
-          {THEMES.map((th) => {
-            const active = th === theme
-            return (
-              <button
-                key={th}
-                type="button"
-                onClick={() => setSettings({ theme: th })}
-                className={cn(
-                  'h-10 cursor-pointer rounded-[10px] text-[12px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
-                  active
-                    ? 'bg-card font-semibold text-ink shadow-sm'
-                    : 'font-medium text-t3 hover:text-t2 active:scale-95',
-                )}
-              >
-                {themeLabel(th)}
-              </button>
-            )
-          })}
+      {/* 通用 */}
+      <SettingsGroup label={t('settings.groupGeneral')}>
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-3">
+            <RowIcon>
+              <Palette size={15} strokeWidth={2.2} />
+            </RowIcon>
+            <span className="text-[14px] font-medium text-ink">{t('settings.appearance')}</span>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-1 rounded-[14px] border border-brd/60 bg-page p-1 shadow-inner">
+            {THEMES.map((th) => {
+              const active = th === theme
+              return (
+                <button
+                  key={th}
+                  type="button"
+                  onClick={() => setSettings({ theme: th })}
+                  className={cn(
+                    'h-10 cursor-pointer rounded-[10px] text-[12px] transition-all duration-base ease-out focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                    active
+                      ? 'bg-card font-semibold text-ink shadow-sm'
+                      : 'font-medium text-t3 hover:text-t2 active:scale-95',
+                  )}
+                >
+                  {themeLabel(th)}
+                </button>
+              )
+            })}
+          </div>
         </div>
-      </Card>
-
-      {/* 语言 */}
-      <div className="mt-3">
-        <ChevronRow
+        <RowDivider />
+        <SettingsRow
+          icon={<Languages size={15} strokeWidth={2.2} />}
           label={t('settings.language')}
           value={settings.language === 'en' ? t('settings.language.en') : t('settings.language.zh')}
           onClick={() => setEditingLanguage(true)}
         />
-      </div>
+      </SettingsGroup>
 
-      {/* 记录地点 */}
-      <div className="mt-3 flex items-center justify-between rounded-card border border-brd/80 bg-card p-4 shadow-card">
-        <div className="flex items-center gap-3">
-          <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-priS text-pri">
-            <MapPin size={15} strokeWidth={2.2} />
-          </span>
-          <div>
-            <p className="text-[14px] font-medium text-ink">{t('settings.recordLocation')}</p>
-            <p className="mt-0.5 text-[11px] text-t3">
-              {t('settings.recordLocationHelp')}
-            </p>
-          </div>
-        </div>
-        <Toggle checked={recordLocation} onChange={(v) => setSettings({ recordLocation: v })} />
-      </div>
-      {/* D24: 地点编码 Key——高德 BYOK。未自配时：network 账号由服务端内置 Key 反查（随账号）；
-          用户自配 Key 优先。 */}
-      <div className="mt-2">
-        <ChevronRow
-          label={t('settings.geocodingKey')}
-          value={settings.geocodingKeyRef ? t('settings.geocodingValueConfigured') : t('settings.geocodingValueBuiltin')}
-          onClick={() => setEditingGeo(true)}
+      {/* AI：三模型 + 视觉 + 记忆。footer 保留 VLM 回落说明（唯一非显然行为）。 */}
+      <SettingsGroup label={t('settings.groupAi')} footer={t('settings.vlmFallbackHelp')}>
+        <ModelRow
+          icon={<Sparkles size={15} strokeWidth={2.2} />}
+          label={t('settings.llmModelTitle')}
+          value={settings.llmModel || settings.llmProvider}
+          hasKey={settings.apiKeyRef === 'llm:key'}
+          onClick={() => setEditing(true)}
         />
-      </div>
-
-      {/* AI 模型 */}
-      <Card className="mt-3">
-        <p className="text-[14px] font-bold text-ink">{t('settings.aiModels')}</p>
-        <p className="mt-1 text-[11px] text-t3">
-          {t('settings.aiModelsHelp')}
-        </p>
-        <div className="mt-3">
-          <ModelRow
-            label={t('settings.llmModelTitle')}
-            value={settings.llmModel || settings.llmProvider}
-            hasKey={settings.apiKeyRef === 'llm:key'}
-            onClick={() => setEditing(true)}
-          />
-          <div className="my-3 h-px bg-brd" />
-          <ModelRow
-            label={t('settings.sttModelTitle')}
-            value={settings.sttModel || settings.sttProvider}
-            hasKey={settings.sttKeyRef === 'stt:key'}
-            onClick={() => setEditingStt(true)}
-          />
-          <div className="my-3 h-px bg-brd" />
-          <ModelRow
-            label={t('settings.vlmModelTitle')}
-            value={settings.vlmModel || settings.vlmProvider}
-            hasKey={settings.vlmKeyRef === 'vlm:key'}
-            onClick={() => setEditingVlm(true)}
-          />
-        </div>
-        <p className="mt-3 text-[11px] text-t3">
-          {t('settings.vlmFallbackHelp')}
-        </p>
-      </Card>
-
-      {/* 视觉 */}
-      <VisionSection settings={settings} setSettings={setSettings} />
-
-      {/* AI 记忆（2026-07-22）：用户明确记忆/偏好，classify 与 answerChat 注入 prompt */}
-      <div className="mt-3">
-        <ChevronRow
-          label={t('settings.memoryTitle')}
-          value={enabledMemoryCount > 0 ? t('settings.memoryActiveCount', { count: enabledMemoryCount }) : t('settings.memoryNotSet')}
+        <RowDivider />
+        <ModelRow
+          icon={<Mic size={15} strokeWidth={2.2} />}
+          label={t('settings.sttModelTitle')}
+          value={settings.sttModel || settings.sttProvider}
+          hasKey={settings.sttKeyRef === 'stt:key'}
+          onClick={() => setEditingStt(true)}
+        />
+        <RowDivider />
+        <ModelRow
+          icon={<Eye size={15} strokeWidth={2.2} />}
+          label={t('settings.vlmModelTitle')}
+          value={settings.vlmModel || settings.vlmProvider}
+          hasKey={settings.vlmKeyRef === 'vlm:key'}
+          onClick={() => setEditingVlm(true)}
+        />
+        <RowDivider />
+        <VisionRows settings={settings} setSettings={setSettings} />
+        <RowDivider />
+        <SettingsRow
           icon={<Brain size={15} strokeWidth={2.2} />}
+          label={t('settings.memoryTitle')}
+          value={
+            enabledMemoryCount > 0
+              ? t('settings.memoryActiveCount', { count: enabledMemoryCount })
+              : t('settings.memoryNotSet')
+          }
           onClick={() => setEditingMemory(true)}
         />
-      </div>
+      </SettingsGroup>
 
-      {/* 导出与分享 */}
-      <Card className="mt-3">
-        <p className="text-[14px] font-bold text-ink">{t('settings.exportShare')}</p>
-        {!hasEntries && (
-          <p className="mt-2 text-[11px] text-t3">{t('settings.noEntriesToExport')}</p>
-        )}
-        <div className="mt-3 flex gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-[38px] flex-1 rounded-btn"
-            disabled={!hasEntries || mdExporting}
-            onClick={() => void handleMarkdownExport()}
-          >
-            {mdExporting ? t('settings.exporting') : t('settings.exportMarkdown')}
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="h-[38px] flex-1 rounded-btn"
-            disabled={!hasEntries || zipExporting}
-            onClick={() => setZipConfirm(true)}
-          >
-            {zipExporting ? t('settings.exporting') : t('settings.exportZip')}
-          </Button>
-        </div>
-        <p className="mt-3 text-[11px] text-t3">{t('common.share')}</p>
-        <div className="mt-2">
-          <Button
-            size="sm"
-            className="h-[38px] w-full rounded-btn"
-            disabled={!hasEntries || !canShare}
-            onClick={() => void handleShare()}
-          >
-            {t('common.share')}
-          </Button>
-        </div>
+      {/* 记录 */}
+      <SettingsGroup label={t('settings.groupCapture')}>
+        <SettingsRow
+          icon={<MapPin size={15} strokeWidth={2.2} />}
+          label={t('settings.recordLocation')}
+          help={t('settings.recordLocationHelp')}
+          right={
+            <Toggle checked={recordLocation} onChange={(v) => setSettings({ recordLocation: v })} />
+          }
+        />
+        <RowDivider />
+        {/* D24: 地点编码 Key——高德 BYOK。未自配时：network 账号由服务端内置 Key 反查（随账号）；
+            用户自配 Key 优先。 */}
+        <SettingsRow
+          icon={<KeyRound size={15} strokeWidth={2.2} />}
+          label={t('settings.geocodingKey')}
+          value={
+            settings.geocodingKeyRef
+              ? t('settings.geocodingValueConfigured')
+              : t('settings.geocodingValueBuiltin')
+          }
+          onClick={() => setEditingGeo(true)}
+        />
+      </SettingsGroup>
 
+      {/* 数据 */}
+      <SettingsGroup label={t('settings.groupData')} footer={dataFooter}>
+        <SettingsRow
+          icon={<FileDown size={15} strokeWidth={2.2} />}
+          label={t('settings.exportMarkdown')}
+          value={mdExporting ? t('settings.exporting') : undefined}
+          disabled={!hasEntries || mdExporting}
+          onClick={() => void handleMarkdownExport()}
+        />
+        <RowDivider />
+        <SettingsRow
+          icon={<Archive size={15} strokeWidth={2.2} />}
+          label={t('settings.exportZip')}
+          value={zipExporting ? t('settings.exporting') : undefined}
+          disabled={!hasEntries || zipExporting}
+          onClick={() => setZipConfirm(true)}
+        />
+        <RowDivider />
+        <SettingsRow
+          icon={<Share2 size={15} strokeWidth={2.2} />}
+          label={t('common.share')}
+          disabled={!hasEntries || !canShare}
+          onClick={() => void handleShare()}
+        />
+        <RowDivider />
         {/* D9: 示例数据导入——空库时可主动导入 12 条原型记录了解 App。 */}
-        <div className="mt-4 border-t border-brd pt-3">
-          <p className="text-[11px] text-t3">{t('settings.sampleData')}</p>
-          <p className="mt-0.5 text-[11px] text-t3">{t('settings.sampleDataHelp')}</p>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="mt-2 h-[38px] w-full rounded-btn"
-            disabled={importing}
-            onClick={() => void handleImportSample()}
-          >
-            {importing ? t('settings.importing') : t('settings.importSample')}
-          </Button>
-          {importMsg && (
-            <p className={cn('mt-2 text-[11px]', importOk ? 'text-catProject' : 'text-catFail')}>
-              {importOk ? '✓ ' : '✗ '}{importMsg}
-            </p>
-          )}
-        </div>
-      </Card>
-
-      {/* 使用反馈 */}
-      <div className="mt-3">
-        <FeedbackRow />
-      </div>
+        <SettingsRow
+          icon={<FileInput size={15} strokeWidth={2.2} />}
+          label={t('settings.importSample')}
+          help={t('settings.sampleDataHelp')}
+          value={importing ? t('settings.importing') : undefined}
+          disabled={importing}
+          onClick={() => void handleImportSample()}
+        />
+      </SettingsGroup>
 
       {/* 关于 */}
-      <div className="mt-3">
-        <ChevronRow
+      <SettingsGroup label={t('settings.groupAbout')}>
+        <SettingsRow
+          icon={<MessageSquare size={15} strokeWidth={2.2} />}
+          label={t('settings.feedback')}
+          onClick={() => navigate('/feedback')}
+        />
+        <RowDivider />
+        <SettingsRow
+          icon={<Info size={15} strokeWidth={2.2} />}
           label={t('settings.aboutTitle')}
           value={`v${__APP_VERSION__}`}
-          icon={<Info size={15} strokeWidth={2.2} />}
           onClick={() => setEditingAbout(true)}
         />
-      </div>
+      </SettingsGroup>
 
       {editing && <ByokSheet onClose={() => setEditing(false)} />}
       {editingStt && <SttSheet onClose={() => setEditingStt(false)} />}
