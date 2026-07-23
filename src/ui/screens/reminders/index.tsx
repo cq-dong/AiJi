@@ -1,9 +1,9 @@
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight } from 'lucide-react'
-import { Button } from '@/ui/components'
+import { Check, ChevronRight, Clock, Trash2 } from 'lucide-react'
+import { SwipeableCard } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
-import type { ReminderStatus } from '@/domain/types'
+import type { Reminder, ReminderStatus } from '@/domain/types'
 
 // 本地 helper：格式化到期时间为「M/D HH:MM」（月/日不补零，时分补零）。
 function pad2(n: number): string {
@@ -52,20 +52,19 @@ export default function Reminders() {
     missed: t('reminders.status.missed'),
   }
 
+  const byDueAsc = (a: Reminder, b: Reminder) =>
+    new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime()
+  const byDueDesc = (a: Reminder, b: Reminder) =>
+    new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime()
+
   // 待提醒：pending + snoozed，按到期时间升序（最近到期的在前）。
-  const pending = reminders
-    .filter((r) => r.status === 'pending' || r.status === 'snoozed')
-    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime())
-
+  const pending = reminders.filter((r) => r.status === 'pending' || r.status === 'snoozed').sort(byDueAsc)
   // 已提醒：fired，按到期时间降序（最新触发的在前）。
-  const fired = reminders
-    .filter((r) => r.status === 'fired')
-    .sort((a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime())
-
+  const fired = reminders.filter((r) => r.status === 'fired').sort(byDueDesc)
   // 已错过：missed，按到期时间降序。
-  const missed = reminders
-    .filter((r) => r.status === 'missed')
-    .sort((a, b) => new Date(b.dueAt).getTime() - new Date(a.dueAt).getTime())
+  const missed = reminders.filter((r) => r.status === 'missed').sort(byDueDesc)
+
+  const open = (entryId: string) => navigate(`/detail/${entryId}`)
 
   return (
     <div className="px-4 pt-4 pb-6">
@@ -74,7 +73,7 @@ export default function Reminders() {
         {t('reminders.subtitle', { count: reminders.length })}
       </p>
 
-      {/* 待提醒 */}
+      {/* 待提醒：右滑「稍后」，左滑「完成」 */}
       <section className="mt-6">
         <SectionHeader title={t('reminders.section.pending')} count={pending.length} />
         <div className="mt-2 space-y-2">
@@ -82,35 +81,46 @@ export default function Reminders() {
             <EmptyPlaceholder text={t('reminders.empty.pending')} />
           ) : (
             pending.map((r) => (
-              <div key={r.id} className="rounded-card border border-brd/80 bg-card p-3.5 shadow-card animate-fade-in-up">
-                <div className="flex items-center justify-between">
-                  <span className="text-[12px] tabular-nums text-t3">{formatDueAt(r.dueAt)}</span>
-                  <span className="rounded-chip border border-pri/10 bg-priS px-2 py-0.5 text-[11px] font-medium text-pri">
-                    {STATUS_LABELS[r.status]}
-                  </span>
+              <SwipeableCard
+                key={r.id}
+                className="shadow-card"
+                onClick={() => open(r.entryId)}
+                leftActions={[
+                  {
+                    key: 'snooze',
+                    label: t('reminders.action.snooze'),
+                    icon: <Clock size={16} />,
+                    color: 'bg-amber-500',
+                    onAction: () => snoozeReminder(r.id, 10),
+                  },
+                ]}
+                rightActions={[
+                  {
+                    key: 'done',
+                    label: t('common.done'),
+                    icon: <Check size={16} />,
+                    color: 'bg-emerald-500',
+                    hapticStyle: 'success',
+                    onAction: () => dismissReminder(r.id),
+                  },
+                ]}
+              >
+                <div className="p-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] tabular-nums text-t3">{formatDueAt(r.dueAt)}</span>
+                    <span className="rounded-chip border border-pri/10 bg-priS px-2 py-0.5 text-[11px] font-medium text-pri">
+                      {STATUS_LABELS[r.status]}
+                    </span>
+                  </div>
+                  <p className="mt-2 min-h-11 py-2 text-[13px] text-ink">{r.label}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/detail/${r.entryId}`)}
-                  className="mt-2 block min-h-11 py-2 text-left text-[13px] text-ink underline transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-                >
-                  {r.label}
-                </button>
-                <div className="mt-3 flex gap-2">
-                  <Button variant="secondary" size="sm" onClick={() => void snoozeReminder(r.id, 10)}>
-                    {t('reminders.action.snooze')}
-                  </Button>
-                  <Button variant="secondary" size="sm" onClick={() => void dismissReminder(r.id)}>
-                    {t('common.cancel')}
-                  </Button>
-                </div>
-              </div>
+              </SwipeableCard>
             ))
           )}
         </div>
       </section>
 
-      {/* 已提醒 */}
+      {/* 已提醒：左滑「清除」 */}
       <section className="mt-6">
         <SectionHeader title={t('reminders.section.fired')} count={fired.length} />
         <div className="mt-2 space-y-2">
@@ -118,15 +128,21 @@ export default function Reminders() {
             <EmptyPlaceholder text={t('reminders.empty.fired')} />
           ) : (
             fired.map((r) => (
-              <div
+              <SwipeableCard
                 key={r.id}
-                className="flex w-full items-center justify-between rounded-card border border-brd/80 bg-card p-3 shadow-card animate-fade-in-up"
+                className="shadow-card"
+                onClick={() => open(r.entryId)}
+                rightActions={[
+                  {
+                    key: 'clear',
+                    label: t('reminders.action.clear'),
+                    icon: <Trash2 size={16} />,
+                    color: 'bg-t3',
+                    onAction: () => dismissReminder(r.id),
+                  },
+                ]}
               >
-                <button
-                  type="button"
-                  onClick={() => navigate(`/detail/${r.entryId}`)}
-                  className="flex flex-1 items-center justify-between text-left transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-                >
+                <div className="flex items-center justify-between p-3">
                   <div className="flex flex-col items-start gap-1">
                     <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
                     <span className="text-[13px] text-ink">{r.label}</span>
@@ -137,17 +153,14 @@ export default function Reminders() {
                     </span>
                     <ChevronRight size={16} className="text-t3" />
                   </div>
-                </button>
-                <Button variant="ghost" size="sm" className="ml-2 text-t3" onClick={() => void dismissReminder(r.id)}>
-                  {t('reminders.action.clear')}
-                </Button>
-              </div>
+                </div>
+              </SwipeableCard>
             ))
           )}
         </div>
       </section>
 
-      {/* 已错过 */}
+      {/* 已错过：左滑「清除」（危险色） */}
       <section className="mt-6">
         <SectionHeader title={t('reminders.section.missed')} count={missed.length} />
         <div className="mt-2 space-y-2">
@@ -155,15 +168,22 @@ export default function Reminders() {
             <EmptyPlaceholder text={t('reminders.empty.missed')} />
           ) : (
             missed.map((r) => (
-              <div
+              <SwipeableCard
                 key={r.id}
-                className="flex w-full items-center justify-between rounded-card border border-brd/80 bg-card p-3 shadow-card animate-fade-in-up"
+                className="shadow-card"
+                onClick={() => open(r.entryId)}
+                rightActions={[
+                  {
+                    key: 'clear',
+                    label: t('reminders.action.clear'),
+                    icon: <Trash2 size={16} />,
+                    color: 'bg-catFail',
+                    hapticStyle: 'warning',
+                    onAction: () => dismissReminder(r.id),
+                  },
+                ]}
               >
-                <button
-                  type="button"
-                  onClick={() => navigate(`/detail/${r.entryId}`)}
-                  className="flex flex-1 items-center justify-between text-left transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
-                >
+                <div className="flex items-center justify-between p-3">
                   <div className="flex flex-col items-start gap-1">
                     <span className="text-[12px] text-t3">{formatDueAt(r.dueAt)}</span>
                     <span className="text-[13px] text-ink">{r.label}</span>
@@ -174,11 +194,8 @@ export default function Reminders() {
                     </span>
                     <ChevronRight size={16} className="text-t3" />
                   </div>
-                </button>
-                <Button variant="ghost" size="sm" className="ml-2 text-t3" onClick={() => void dismissReminder(r.id)}>
-                  {t('reminders.action.clear')}
-                </Button>
-              </div>
+                </div>
+              </SwipeableCard>
             ))
           )}
         </div>

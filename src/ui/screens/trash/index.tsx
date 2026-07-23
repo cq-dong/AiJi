@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, RotateCcw, Trash2 } from 'lucide-react'
-import { Button, Card, EmptyState, cn } from '@/ui/components'
+import { Button, EmptyState, SwipeableCard, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import type { Entry, EntryAi } from '@/domain/types'
@@ -74,6 +74,7 @@ function ConfirmHardDeleteDialog({
   )
 }
 
+// 右滑「恢复」（直接生效，清 deletedAt 移回活动列表）；左滑「删除」→ 开不可逆确认对话框。
 function TrashedCard({
   entry,
   ai,
@@ -86,7 +87,6 @@ function TrashedCard({
   onRequestHardDelete: () => void
 }) {
   const t = useT()
-  const [recovering, setRecovering] = useState(false)
   // Countdown anchored at deletedAt (the trash time), not createdAt.
   const days = daysSince(entry.deletedAt ?? entry.createdAt)
   const remaining = Math.max(0, 30 - days)
@@ -96,53 +96,46 @@ function TrashedCard({
   const title = entryTitle(ai, entry.parts)
   const preview = entryPreview(entry.parts)
 
-  const handleRecover = async () => {
-    setRecovering(true)
-    try {
-      await onRecover()
-    } finally {
-      setRecovering(false)
-    }
-  }
-
   return (
-    <Card className="flex flex-col gap-2 shadow-card animate-fade-in-up">
-      <p className="line-clamp-1 text-[14px] font-medium text-ink">{title}</p>
-      <p className="line-clamp-2 text-[13px] leading-relaxed text-t2">
-        {preview || t('trash.mediaOnly')}
-      </p>
-      <div className="flex items-center gap-2">
-        <span className={cn('text-[11px]', urgent ? 'text-catFail' : 'text-t3')}>
-          {countdownText}
-        </span>
-        <span className="text-[11px] text-t3">·</span>
-        <span className="text-[11px] text-t3">
-          {t('trash.originalDate', { date: mmdd(entry.createdAt) })}
-        </span>
+    <SwipeableCard
+      className="shadow-card"
+      leftActions={[
+        {
+          key: 'recover',
+          label: t('trash.recover'),
+          icon: <RotateCcw size={16} />,
+          color: 'bg-pri',
+          hapticStyle: 'success',
+          onAction: () => onRecover(),
+        },
+      ]}
+      rightActions={[
+        {
+          key: 'hardDelete',
+          label: t('common.delete'),
+          icon: <Trash2 size={16} />,
+          color: 'bg-catFail',
+          hapticStyle: 'warning',
+          onAction: onRequestHardDelete,
+        },
+      ]}
+    >
+      <div className="flex flex-col gap-2 p-3">
+        <p className="line-clamp-1 text-[14px] font-medium text-ink">{title}</p>
+        <p className="line-clamp-2 text-[13px] leading-relaxed text-t2">
+          {preview || t('trash.mediaOnly')}
+        </p>
+        <div className="flex items-center gap-2">
+          <span className={cn('text-[11px]', urgent ? 'text-catFail' : 'text-t3')}>
+            {countdownText}
+          </span>
+          <span className="text-[11px] text-t3">·</span>
+          <span className="text-[11px] text-t3">
+            {t('trash.originalDate', { date: mmdd(entry.createdAt) })}
+          </span>
+        </div>
       </div>
-      <div className="flex items-center gap-2 pt-1">
-        <Button
-          type="button"
-          size="sm"
-          variant="primary"
-          disabled={recovering}
-          onClick={handleRecover}
-        >
-          <RotateCcw size={14} strokeWidth={2} />
-          {t('trash.recover')}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="text-catFail border-catFail/30"
-          onClick={onRequestHardDelete}
-        >
-          <Trash2 size={14} strokeWidth={2} />
-          {t('common.delete')}
-        </Button>
-      </div>
-    </Card>
+    </SwipeableCard>
   )
 }
 

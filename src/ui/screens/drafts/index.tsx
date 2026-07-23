@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, Bookmark, Trash2 } from 'lucide-react'
-import { Button, Card, EmptyState } from '@/ui/components'
+import { Button, EmptyState, SwipeableCard } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import type { Draft } from '@/domain/types'
@@ -25,8 +25,8 @@ function TopBar({ onBack }: { onBack: () => void }) {
   )
 }
 
-// 单条草稿卡：主体按钮点 → loadDraft(id) 后跳 /capture 续记；
-// 右侧删除按钮（Trash2）→ confirm 后 deleteDraft(id)。两按钮平级，不嵌套。
+// 单条草稿卡：点主体 → loadDraft(id) 后跳 /capture 续记；左滑露出「删除」再点按确认
+// （swipe+tap 两段确认，替代 window.confirm）。
 function DraftRow({
   draft,
   onResume,
@@ -42,6 +42,7 @@ function DraftRow({
   const preview = draftPreview(draft)
 
   const handleResume = async () => {
+    if (resuming) return
     setResuming(true)
     try {
       await onResume(draft.id)
@@ -50,37 +51,31 @@ function DraftRow({
     }
   }
 
-  const handleDelete = () => {
-    if (window.confirm(t('drafts.deleteConfirm'))) void onDelete(draft.id)
-  }
-
   return (
-    <Card padded={false} className="overflow-hidden shadow-card animate-fade-in-up">
-      <div className="flex items-stretch">
-        <button
-          type="button"
-          onClick={handleResume}
-          disabled={resuming}
-          className="flex-1 cursor-pointer px-3 py-3 text-left transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:opacity-50"
-        >
-          <p className="line-clamp-1 text-[14px] font-medium text-ink">{title}</p>
-          {preview && (
-            <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-t2">{preview}</p>
-          )}
-          <p className="mt-1.5 text-[11px] text-t3">
-            {t('drafts.partsCount', { n: draft.parts.length })} · {relTime(draft.updatedAt)}
-          </p>
-        </button>
-        <button
-          type="button"
-          onClick={handleDelete}
-          aria-label={t('drafts.deleteAria')}
-          className="flex size-11 cursor-pointer items-center justify-center text-t3 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card active:text-catFail"
-        >
-          <Trash2 size={16} />
-        </button>
+    <SwipeableCard
+      className="shadow-card"
+      onClick={() => void handleResume()}
+      rightActions={[
+        {
+          key: 'delete',
+          label: t('common.delete'),
+          icon: <Trash2 size={16} />,
+          color: 'bg-catFail',
+          hapticStyle: 'warning',
+          onAction: () => onDelete(draft.id),
+        },
+      ]}
+    >
+      <div className="px-3 py-3">
+        <p className="line-clamp-1 text-[14px] font-medium text-ink">{title}</p>
+        {preview && (
+          <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-t2">{preview}</p>
+        )}
+        <p className="mt-1.5 text-[11px] text-t3">
+          {t('drafts.partsCount', { n: draft.parts.length })} · {relTime(draft.updatedAt)}
+        </p>
       </div>
-    </Card>
+    </SwipeableCard>
   )
 }
 

@@ -34,6 +34,8 @@ video/
 .remember/
 # E2E acceptance screenshots (regenerable artifacts)
 .e2e_shots/
+# Local generated design artifacts
+.generated/
 # Verification/acceptance screenshots dropped in repo root by review subagents
 /*.png
 # Claude Code session + browser automation artifacts (throwaway, not for repo)
