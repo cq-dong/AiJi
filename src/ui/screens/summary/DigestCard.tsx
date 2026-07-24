@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import type { Aggregate, Category, EntryAi } from '@/domain/types'
 import { Button, Card, Chip, Skeleton, Spinner, cn } from '@/ui/components'
 import { useT } from '@/app/i18n/useT'
@@ -41,6 +42,7 @@ export function DigestCard({
   empty = false,
 }: DigestCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const reduce = useReducedMotion()
   const t = useT()
   const scopeInfo = scopeDisplay(aggregate)
   const cardLabel = label ?? scopeInfo.label
@@ -81,9 +83,13 @@ export function DigestCard({
         </div>
       ) : (
         <>
-          <div
-            className="overflow-hidden transition-[max-height] duration-300 ease-out"
-            style={{ maxHeight: expanded ? 640 : 60 }}
+          {/* height:auto 实测内容高，替代 max-height 640 硬顶（长内容不再被裁、
+              短内容展开收合不再先冲后回）。reduce 时瞬切。 */}
+          <motion.div
+            initial={false}
+            animate={{ height: expanded ? 'auto' : 60 }}
+            transition={reduce ? { duration: 0 } : { duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+            className="overflow-hidden"
           >
             {hasSummary ? (
               <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-t2">
@@ -105,7 +111,7 @@ export function DigestCard({
                 ))}
               </ul>
             )}
-          </div>
+          </motion.div>
 
           {canExpand && (
             <button

@@ -4,7 +4,8 @@ import { Archive, Brain, Check, ChevronDown, ChevronRight, Download, Eye, FileDo
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
-import { Button, cn } from '@/ui/components'
+import { AnimatePresence } from 'framer-motion'
+import { Button, Toast, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import { t } from '@/app/i18n'
@@ -361,27 +362,6 @@ function ExportConfirmSheet({
             {t('settings.confirmExport')}
           </Button>
         </div>
-      </div>
-    </div>
-  )
-}
-
-// D10: 轻量 toast——3 秒后自动消失。成功/失败用颜色区分。
-function Toast({ message, ok, onDismiss }: { message: string; ok: boolean; onDismiss: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 3500)
-    return () => clearTimeout(t)
-  }, [onDismiss])
-  return (
-    <div className="fixed inset-x-0 bottom-24 z-[60] flex justify-center px-4 pointer-events-none">
-      <div
-        className={cn(
-          'pointer-events-auto max-w-[360px] rounded-btn px-4 py-2.5 text-[12px] font-medium shadow-sheet animate-slide-up',
-          ok ? 'bg-ink text-card' : 'bg-catFail text-card',
-        )}
-        role="status"
-      >
-        {message}
       </div>
     </div>
   )
@@ -1540,20 +1520,22 @@ export default function Settings() {
           onConfirm={() => void handleZipExport()}
         />
       )}
-      {zipToast && (
-        <Toast
-          message={zipToast.msg}
-          ok={zipToast.ok}
-          onDismiss={() => setZipToast(null)}
-        />
-      )}
-      {mdToast && (
-        <Toast
-          message={mdToast.msg}
-          ok={mdToast.ok}
-          onDismiss={() => setMdToast(null)}
-        />
-      )}
+      <AnimatePresence>
+        {zipToast && (
+          <Toast
+            message={zipToast.msg}
+            ok={zipToast.ok}
+            onDismiss={() => setZipToast(null)}
+          />
+        )}
+        {mdToast && (
+          <Toast
+            message={mdToast.msg}
+            ok={mdToast.ok}
+            onDismiss={() => setMdToast(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

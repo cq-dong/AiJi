@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
 import { AnimatePresence } from 'framer-motion'
-import { Button, Card, EmptyState, ReminderCreator, Sheet, cn } from '@/ui/components'
+import { Button, Card, EmptyState, ReminderCreator, Sheet, Toast, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { di } from '@/app/di'
 import { t } from '@/app/i18n'
@@ -502,27 +502,6 @@ function ExportConfirmSheet({
   )
 }
 
-// D10: 轻量 toast——3.5s 后自动消失。成功/失败用颜色区分（与 settings/categories 一致）。
-function Toast({ message, ok, onDismiss }: { message: string; ok: boolean; onDismiss: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 3500)
-    return () => clearTimeout(t)
-  }, [onDismiss])
-  return (
-    <div className="fixed inset-x-0 bottom-24 z-[60] flex justify-center px-4 pointer-events-none">
-      <div
-        className={cn(
-          'pointer-events-auto max-w-[360px] rounded-btn px-4 py-2.5 text-[12px] font-medium shadow-sheet animate-slide-up',
-          ok ? 'bg-ink text-card' : 'bg-catFail text-card',
-        )}
-        role="status"
-      >
-        {message}
-      </div>
-    </div>
-  )
-}
-
 // D4: 已设提醒卡片——展示 label + dueAt，带「编辑」入口唤起 ReminderCreator 编辑模式。
 // 视觉与 ReminderCreator 同源（bg-priS 圆角卡），让创建→编辑卡之间切换不跳样式。
 function ExistingReminderCard({
@@ -877,13 +856,15 @@ export default function Detail() {
           />
         )}
       </AnimatePresence>
-      {exportToast && (
-        <Toast
-          message={exportToast.msg}
-          ok={exportToast.ok}
-          onDismiss={() => setExportToast(null)}
-        />
-      )}
+      <AnimatePresence>
+        {exportToast && (
+          <Toast
+            message={exportToast.msg}
+            ok={exportToast.ok}
+            onDismiss={() => setExportToast(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   )
 }

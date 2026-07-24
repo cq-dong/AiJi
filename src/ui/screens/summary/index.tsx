@@ -200,9 +200,9 @@ export default function Summary() {
         </div>
       </div>
 
-      {/* reverse-chrono period list (newest-on-top) */}
+      {/* reverse-chrono period list (newest-on-top)。stagger 入场 45ms/张封顶 8 张（与 home/search 同律）。 */}
       <div className="mt-4 flex flex-col gap-3">
-        {periods.map((p) => {
+        {periods.map((p, periodIdx) => {
           const key = `${scope}:${p.range}`
           const current = aggregates.find(
             (a) => a.scope.type === scope && a.scope.range === p.range,
@@ -238,10 +238,20 @@ export default function Summary() {
 
           const showSkeleton = !display && (isRecalculating || hasEntries)
 
+          // stagger 外壳：key 与 delay 只挂外壳，DigestCard 内部状态不受包/拆影响。
+          const stagger = (card: React.ReactNode) => (
+            <div
+              key={key}
+              className="animate-fade-in-up"
+              style={periodIdx < 8 ? { animationDelay: `${periodIdx * 45}ms` } : undefined}
+            >
+              {card}
+            </div>
+          )
+
           if (display) {
-            return (
+            return stagger(
               <DigestCard
-                key={key}
                 aggregate={display}
                 entryAi={entryAi}
                 categories={categories}
@@ -249,13 +259,12 @@ export default function Summary() {
                 onRegen={() => onRegen(p.range)}
                 label={p.label}
                 rangeLabel={p.dateLabel}
-              />
+              />,
             )
           }
           if (showSkeleton) {
-            return (
+            return stagger(
               <DigestCard
-                key={key}
                 aggregate={placeholderAggregate(scope, p.range)}
                 entryAi={entryAi}
                 categories={categories}
@@ -263,19 +272,18 @@ export default function Summary() {
                 onRegen={() => onRegen(p.range)}
                 label={p.label}
                 rangeLabel={p.dateLabel}
-              />
+              />,
             )
           }
-          return (
+          return stagger(
             <DigestCard
-              key={key}
               aggregate={placeholderAggregate(scope, p.range)}
               entryAi={entryAi}
               categories={categories}
               empty
               label={p.label}
               rangeLabel={p.dateLabel}
-            />
+            />,
           )
         })}
       </div>

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ChevronLeft, Download, X } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
+import { AnimatePresence } from 'framer-motion'
 import type { Category, Entry, EntryAi, Facets, Tag } from '@/domain/types'
-import { Button, Card, EmptyState, cn } from '@/ui/components'
+import { Button, Card, EmptyState, Toast, cn } from '@/ui/components'
 import { useT } from '@/app/i18n/useT'
 import { t, type I18nKey } from '@/app/i18n'
 import { exportCategoryZip } from '@/adapters/zipExport'
@@ -131,26 +132,6 @@ function ExportConfirmSheet({
   )
 }
 
-function Toast({ message, ok, onDismiss }: { message: string; ok: boolean; onDismiss: () => void }) {
-  useEffect(() => {
-    const t = setTimeout(onDismiss, 3500)
-    return () => clearTimeout(t)
-  }, [onDismiss])
-  return (
-    <div className="fixed inset-x-0 bottom-24 z-[60] flex justify-center px-4 pointer-events-none">
-      <div
-        className={cn(
-          'pointer-events-auto max-w-[360px] rounded-btn px-4 py-2.5 text-[12px] font-medium shadow-sheet animate-slide-up',
-          ok ? 'bg-ink text-card' : 'bg-catFail text-card',
-        )}
-        role="status"
-      >
-        {message}
-      </div>
-    </div>
-  )
-}
-
 // Inline category-detail view: lists entries whose AI category === category.slug,
 // with a group-by toggle (时间 / 项目 / 人物 / 地点). Default 时间 = newest-first flat.
 export function CategoryDetail({
@@ -208,9 +189,11 @@ export function CategoryDetail({
           title={t('categories.detail.empty.title')}
           subtitle={t('categories.detail.empty.subtitle')}
         />
-        {zipToast && (
-          <Toast message={zipToast.msg} ok={zipToast.ok} onDismiss={() => setZipToast(null)} />
-        )}
+        <AnimatePresence>
+          {zipToast && (
+            <Toast message={zipToast.msg} ok={zipToast.ok} onDismiss={() => setZipToast(null)} />
+          )}
+        </AnimatePresence>
       </div>
     )
   }
@@ -270,9 +253,11 @@ export function CategoryDetail({
           onConfirm={() => void handleExport()}
         />
       )}
-      {zipToast && (
-        <Toast message={zipToast.msg} ok={zipToast.ok} onDismiss={() => setZipToast(null)} />
-      )}
+      <AnimatePresence>
+        {zipToast && (
+          <Toast message={zipToast.msg} ok={zipToast.ok} onDismiss={() => setZipToast(null)} />
+        )}
+      </AnimatePresence>
     </div>
   )
 }
