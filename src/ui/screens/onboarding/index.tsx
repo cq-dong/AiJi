@@ -7,6 +7,7 @@ import { useUiStore } from '@/app/store'
 import { importSampleData } from '@/adapters/dexieStorage'
 import { useT } from '@/app/i18n/useT'
 import { detectLang } from '@/app/currentLang'
+import { deviceOnboarded } from '@/app/onboardedFlag'
 
 // Batch 7（调研 #12）：单页堆叠改三步向导——欢迎/特性 → BYOK → 权限+示例数据。
 // 步间 AnimatePresence 方向感知滑切；进度点可点；「跳过」直达末步（全部可选配置）。
@@ -83,7 +84,10 @@ export default function Onboarding() {
 
   const onStart = async () => {
     // A2: 标记已 onboarding —— 之后再开不再重定向到这里（router OnboardingGate 据此放行）。
+    // 双写：settings.onboarded（per-owner）+ 设备级 deviceOnboarded（防游客/新账号 rehydrate
+    // 重置 per-owner 标志后重复弹引导）。
     useUiStore.getState().setSettings({ onboarded: true })
+    deviceOnboarded.set()
     const key = apiKey.trim()
     if (key) {
       useUiStore.getState().setLlmConfig(
