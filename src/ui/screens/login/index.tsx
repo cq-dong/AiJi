@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { AnimatePresence, motion, useAnimationControls } from 'framer-motion'
 import { Button, Card, Spinner } from '@/ui/components'
 import { useAccountStore } from '@/app/accountStore'
 import { useUiStore } from '@/app/store'
@@ -18,17 +19,24 @@ export default function Login() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // Batch 7（调研 #13）：提交失败整卡抖动（macOS 登录窗同律）——controls 驱动不重挂载、不丢焦点。
+  const shake = useAnimationControls()
 
   const onGuestStart = () => {
     useAccountStore.getState().registerGuest(nickname)
     navigate('/onboarding')
   }
 
+  const fail = (msg: string) => {
+    setError(msg)
+    void shake.start({ x: [0, -9, 9, -6, 6, -3, 3, 0], transition: { duration: 0.4, ease: 'easeInOut' } })
+  }
+
   async function onNetworkSubmit() {
     setError(null)
-    if (!EMAIL_RE.test(email)) { setError(t('login.errorEmail')); return }
-    if (password.length < 8) { setError(t('login.errorPasswordShort')); return }
-    if (mode === 'register' && password !== confirmPassword) { setError(t('login.errorPasswordMismatch')); return }
+    if (!EMAIL_RE.test(email)) { fail(t('login.errorEmail')); return }
+    if (password.length < 8) { fail(t('login.errorPasswordShort')); return }
+    if (mode === 'register' && password !== confirmPassword) { fail(t('login.errorPasswordMismatch')); return }
     setLoading(true)
     try {
       if (mode === 'register') await useAccountStore.getState().register(email, password)
@@ -39,8 +47,8 @@ export default function Login() {
       // startsWith('AUTH_409') 是控制流分支（翻到登录 tab），用原 e.message；
       // 其余展示层走 localizeError（AUTH_* 已有中英映射，未知码回落原文）。
       const msg = e instanceof Error ? e.message : String(e)
-      if (msg.startsWith('AUTH_409')) { setError(t('login.errorAuth409Hint')); setMode('login') }
-      else setError(localizeError(e))
+      if (msg.startsWith('AUTH_409')) { fail(t('login.errorAuth409Hint')); setMode('login') }
+      else fail(localizeError(e))
     } finally {
       setLoading(false)
     }
@@ -79,30 +87,56 @@ export default function Login() {
         </Button>
       </Card>
 
-      {/* 网络账号（次要，视觉从属） */}
-      <Card className="mt-3 shadow-card">
-        <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-brd/60 bg-page p-1 shadow-inner">
-          <button type="button" onClick={() => { setMode('register'); setError(null) }}
-            className={`rounded-[8px] py-2 text-[13px] font-medium transition-all duration-base ease-out ${mode === 'register' ? 'bg-card text-pri shadow-sm font-semibold' : 'text-t3 active:scale-95'}`}>{t('login.tabRegister')}</button>
-          <button type="button" onClick={() => { setMode('login'); setError(null) }}
-            className={`rounded-[8px] py-2 text-[13px] font-medium transition-all duration-base ease-out ${mode === 'login' ? 'bg-card text-pri shadow-sm font-semibold' : 'text-t3 active:scale-95'}`}>{t('login.tabLogin')}</button>
-        </div>
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('login.emailPlaceholder')}
-          aria-label={t('login.aria.email')} aria-invalid={!!error}
-          className="mt-3 h-11 w-full rounded-btn border border-brd/80 bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('login.passwordPlaceholder')}
-          aria-label={t('login.aria.password')} aria-invalid={!!error}
-          className="mt-2 h-11 w-full rounded-btn border border-brd/80 bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
-        {mode === 'register' && (
-          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder={t('login.confirmPasswordPlaceholder')}
-            aria-label={t('login.aria.confirmPassword')}
+      {/* 网络账号（次要，视觉从属）。motion 壳接提交失败抖动。 */}
+      <motion.div animate={shake}>
+        <Card className="mt-3 shadow-card">
+          <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-brd/60 bg-page p-1 shadow-inner">
+            <button type="button" onClick={() => { setMode('register'); setError(null) }}
+              className={`rounded-[8px] py-2 text-[13px] font-medium transition-all duration-base ease-out ${mode === 'register' ? 'bg-card text-pri shadow-sm font-semibold' : 'text-t3 active:scale-95'}`}>{t('login.tabRegister')}</button>
+            <button type="button" onClick={() => { setMode('login'); setError(null) }}
+              className={`rounded-[8px] py-2 text-[13px] font-medium transition-all duration-base ease-out ${mode === 'login' ? 'bg-card text-pri shadow-sm font-semibold' : 'text-t3 active:scale-95'}`}>{t('login.tabLogin')}</button>
+          </div>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('login.emailPlaceholder')}
+            aria-label={t('login.aria.email')} aria-invalid={!!error}
+            className="mt-3 h-11 w-full rounded-btn border border-brd/80 bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('login.passwordPlaceholder')}
+            aria-label={t('login.aria.password')} aria-invalid={!!error}
             className="mt-2 h-11 w-full rounded-btn border border-brd/80 bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
-        )}
-        {error && <p className="mt-2 rounded-btn bg-catFail/10 px-3 py-2 text-[12px] text-catFail animate-scale-in" role="alert">{error}</p>}
-        <Button variant="primary" size="lg" className="mt-3 w-full" onClick={onNetworkSubmit} disabled={loading}>
-          {loading ? <Spinner size={16} /> : mode === 'register' ? t('login.tabRegister') : t('login.tabLogin')}
-        </Button>
-      </Card>
+          {/* 确认密码：注册/登录切换时高度+淡入展开（原来硬切 pop-in） */}
+          <AnimatePresence initial={false}>
+            {mode === 'register' && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="overflow-hidden"
+              >
+                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder={t('login.confirmPasswordPlaceholder')}
+                  aria-label={t('login.aria.confirmPassword')}
+                  className="mt-2 h-11 w-full rounded-btn border border-brd/80 bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <AnimatePresence initial={false}>
+            {error && (
+              <motion.p
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, transition: { duration: 0.12 } }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="mt-2 rounded-btn bg-catFail/10 px-3 py-2 text-[12px] text-catFail"
+                role="alert"
+              >
+                {error}
+              </motion.p>
+            )}
+          </AnimatePresence>
+          <Button variant="primary" size="lg" className="mt-3 w-full" onClick={onNetworkSubmit} disabled={loading}>
+            {loading ? <Spinner size={16} /> : mode === 'register' ? t('login.tabRegister') : t('login.tabLogin')}
+          </Button>
+        </Card>
+      </motion.div>
 
       {/* 底部说明 */}
       <p className="mt-auto pt-8 text-center text-[11px] text-t3">{t('login.footerNote')}</p>

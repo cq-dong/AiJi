@@ -40,6 +40,12 @@ export const onboarding = {
   // CTA
   'onboarding.start': 'Start',
 
+  // 多步向导（Batch 7：单页堆叠改分步轮播）
+  'onboarding.step.next': 'Next',
+  'onboarding.step.back': 'Back',
+  'onboarding.step.skip': 'Skip',
+  'onboarding.aria.stepDot': 'Step {n}',
+
   // reminders 屏
   'reminders.title': 'Reminders & tasks',
   'reminders.subtitle': 'View and manage reminders · {count} items',

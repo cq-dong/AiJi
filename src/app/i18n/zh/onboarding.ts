@@ -38,6 +38,12 @@ export const onboarding = {
   // CTA
   'onboarding.start': '开始记',
 
+  // 多步向导（Batch 7：单页堆叠改分步轮播）
+  'onboarding.step.next': '下一步',
+  'onboarding.step.back': '上一步',
+  'onboarding.step.skip': '跳过',
+  'onboarding.aria.stepDot': '第 {n} 步',
+
   // reminders 屏
   'reminders.title': '提醒与待办',
   'reminders.subtitle': '查看与管理提醒事项 · 共 {count} 条',
