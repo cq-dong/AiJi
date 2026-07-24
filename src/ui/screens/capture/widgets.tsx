@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Capacitor } from '@capacitor/core'
+import { motion } from 'framer-motion'
 import {
   Bookmark,
   Camera,
@@ -15,6 +16,8 @@ import {
 } from 'lucide-react'
 import { cn, Spinner } from '@/ui/components'
 import { di } from '@/app/di'
+import { getMicAnalyser } from '@/adapters/webCapture'
+import { haptic } from '@/ui/lib/haptics'
 import { useT } from '@/app/i18n/useT'
 import type { EntryPart, GeoPoint } from '@/domain/types'
 
@@ -49,22 +52,9 @@ export function MiniWaveform() {
 
 // ── Live waveform: 7 pri bars, animated — shown while voice-recording ──
 const LIVE_HEIGHTS = [18, 40, 26, 54, 30, 46, 20]
+// 与 RealtimeWave 同律（7 大条版）；当前无调用方，保留给全屏录音态复用。
 export function LiveWaveform() {
-  return (
-    <span className="flex items-center justify-center" style={{ gap: 15 }}>
-      {LIVE_HEIGHTS.map((h, i) => (
-        <span
-          key={i}
-          className="w-[5px] rounded-[2.5px] bg-pri"
-          style={{
-            height: h,
-            transformOrigin: 'center',
-            animation: 'aji-wave 1s ease-in-out ' + i * 0.12 + 's infinite',
-          }}
-        />
-      ))}
-    </span>
-  )
+  return <RealtimeWave bars={7} barWidth={5} gap={15} maxHeight={54} />
 }
 
 // ── Header: close + editable title + part-count + location chip ──
@@ -549,6 +539,90 @@ export function SaveBar({
   )
 }
 
+// ── Realtime waveform: canvas bars driven by AnalyserNode 频谱（真实采样）。
+// analyser 不可得（Capacitor 适配器 / AudioContext 失败）→ 回退 CSS 假条。
+// 语音能量集中在低频段，取 bin 1..~60 均分 N 桶；lerp 平滑避免视觉跳动。
+function RealtimeWave({ bars, barWidth, gap, maxHeight }: { bars: number; barWidth: number; gap: number; maxHeight: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [analyser, setAnalyser] = useState<AnalyserNode | null>(() => getMicAnalyser())
+
+  // startAudio 异步——VoiceBar 挂载时 analyser 可能尚未就绪，轮询几次再放弃。
+  useEffect(() => {
+    if (analyser) return
+    let tries = 0
+    const timer = setInterval(() => {
+      const a = getMicAnalyser()
+      if (a || ++tries >= 10) {
+        clearInterval(timer)
+        if (a) setAnalyser(a)
+      }
+    }, 150)
+    return () => clearInterval(timer)
+  }, [analyser])
+
+  useEffect(() => {
+    if (!analyser) return
+    const canvas = canvasRef.current
+    const ctx = canvas?.getContext('2d')
+    if (!canvas || !ctx) return
+    const dpr = window.devicePixelRatio || 1
+    const width = bars * barWidth + (bars - 1) * gap
+    canvas.width = width * dpr
+    canvas.height = maxHeight * dpr
+    ctx.scale(dpr, dpr)
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    const levels = new Array<number>(bars).fill(0)
+    let raf = 0
+    const draw = () => {
+      analyser.getByteFrequencyData(data)
+      ctx.clearRect(0, 0, width, maxHeight)
+      ctx.fillStyle = '#4f46e5'
+      for (let i = 0; i < bars; i++) {
+        // 桶映射：跳过 DC bin，语音能量区（约 bin 1-60）均分。
+        const from = 1 + Math.floor((i * 59) / bars)
+        const to = 1 + Math.floor(((i + 1) * 59) / bars)
+        let sum = 0
+        for (let b = from; b <= to && b < data.length; b++) sum += data[b]
+        const avg = sum / Math.max(1, to - from + 1) / 255
+        // 平方曲线压小噪声、保留峰值动态；下限 0.08 让静默时仍有微小呼吸条。
+        const target = Math.max(0.08, avg * avg * 1.4)
+        levels[i] += (Math.min(1, target) - levels[i]) * 0.35
+        const h = Math.max(2, levels[i] * maxHeight)
+        const x = i * (barWidth + gap)
+        const y = (maxHeight - h) / 2
+        ctx.beginPath()
+        ctx.roundRect(x, y, barWidth, h, barWidth / 2)
+        ctx.fill()
+      }
+      raf = requestAnimationFrame(draw)
+    }
+    raf = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(raf)
+  }, [analyser, bars, barWidth, gap, maxHeight])
+
+  if (!analyser) {
+    // CSS 假条回退（与原 aji-wave 动画一致）
+    return (
+      <span className="flex items-center" style={{ gap }}>
+        {LIVE_HEIGHTS.slice(0, bars).map((h, i) => (
+          <span
+            key={i}
+            className="rounded-[2px] bg-pri"
+            style={{
+              width: barWidth,
+              height: Math.min(h, maxHeight),
+              transformOrigin: 'center',
+              animation: 'aji-wave 1s ease-in-out ' + i * 0.12 + 's infinite',
+            }}
+          />
+        ))}
+      </span>
+    )
+  }
+  const cssWidth = bars * barWidth + (bars - 1) * gap
+  return <canvas ref={canvasRef} style={{ width: cssWidth, height: maxHeight }} aria-hidden="true" />
+}
+
 // ── Compact voice recording bar (footer, non-fullscreen) ──
 // Wave 3 #2: recording no longer takes over main. Parts list + interim
 // bubble stay visible/scrollable; this compact bar sits at the footer with
@@ -563,19 +637,7 @@ export function VoiceBar({
   const t = useT()
   return (
     <div className="flex h-16 shrink-0 items-center gap-3 border-t border-brd/70 bg-card/90 px-4 backdrop-blur-lg animate-slide-up">
-      <span className="flex items-center" style={{ gap: 3 }}>
-        {LIVE_HEIGHTS.slice(0, 5).map((h, i) => (
-          <span
-            key={i}
-            className="w-[3px] rounded-[2px] bg-pri"
-            style={{
-              height: Math.min(h, 28),
-              transformOrigin: 'center',
-              animation: 'aji-wave 1s ease-in-out ' + i * 0.12 + 's infinite',
-            }}
-          />
-        ))}
-      </span>
+      <RealtimeWave bars={5} barWidth={3} gap={3} maxHeight={28} />
       <span className="flex items-center gap-1.5 whitespace-nowrap text-[13px] font-medium text-pri">
         <span
           className="inline-block size-2 rounded-full bg-pri"
@@ -676,6 +738,8 @@ export function CameraView({
   // stream) but recording will be silent. User should switch to photo or grant mic.
   const [micDeniedForVideo, setMicDeniedForVideo] = useState(false)
   const [busy, setBusy] = useState(false)
+  // 快门白闪：key 递增触发一次性 fade-out 覆盖层（模拟系统相机快门反馈）。
+  const [flashKey, setFlashKey] = useState(0)
   const t = useT()
 
   // Start camera on mount / facing switch / mode switch; release on unmount +
@@ -734,13 +798,19 @@ export function CameraView({
     setBusy(true)
     try {
       if (mode === 'photo') {
+        // 快门反馈先行（不等抓帧 await）——白闪+触感即时，感知零延迟。
+        haptic('medium')
+        setFlashKey((k) => k + 1)
         const r = await di.capture.capturePhoto()
         // D7: mark mediaType='image' so LLM prompt can chunk "以下图片内容：".
         if (r) onPart({ type: 'video', ref: r.ref, durationSec: 0, mime: r.mime, mediaType: 'image' }, r.blob)
+        // 白闪 250ms 播完再关视图——否则 CameraView 秒卸，闪根本不可见。
+        await new Promise((res) => setTimeout(res, 220))
         void di.capture.stopCamera()
         onClose()
       } else {
         if (!recording) {
+          haptic('light')
           await di.capture.startVideo()
           setRecording(true)
         } else {
@@ -847,6 +917,17 @@ export function CameraView({
               'h-full w-full object-cover',
               facing === 'user' && '-scale-x-100',
             )}
+          />
+        )}
+        {/* 快门白闪：只在预览区闪（不盖顶栏/快门钮），250ms 消隐对齐系统相机。 */}
+        {flashKey > 0 && (
+          <motion.div
+            key={flashKey}
+            initial={{ opacity: 0.85 }}
+            animate={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            onAnimationComplete={() => setFlashKey(0)}
+            className="pointer-events-none absolute inset-0 z-10 bg-white"
           />
         )}
       </div>

@@ -10,6 +10,10 @@ import type { GeoPoint } from '@/domain/types'
 
 let stream: MediaStream | null = null
 let recorder: MediaRecorder | null = null
+// 录音波形抽头：AudioContext + AnalyserNode 挂在 mic stream 上（不接 destination，
+// 只读频谱），供 UI 画真实采样波形。PWA-only 增强，失败不影响录音主链路。
+let audioCtx: AudioContext | null = null
+let micAnalyser: AnalyserNode | null = null
 let recognition: SpeechRecognitionLike | null = null
 let chunks: Blob[] = []
 let startedAt = 0
@@ -37,6 +41,13 @@ interface SpeechRecognitionLike {
 function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
   const w = window as unknown as { SpeechRecognition?: (new () => SpeechRecognitionLike); webkitSpeechRecognition?: (new () => SpeechRecognitionLike) }
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
+}
+
+// PWA-only 增强出口：录音中的频谱 analyser（startAudio 建立 / stopAudio 释放）。
+// 不进 CapturePort——波形是 PWA 适配器的附加能力，Capacitor 适配器无此概念；
+// UI 层判空降级（null → CSS 假条波形），port 契约保持干净。
+export function getMicAnalyser(): AnalyserNode | null {
+  return micAnalyser
 }
 
 export const webCapture: CapturePort = {
@@ -94,6 +105,22 @@ export const webCapture: CapturePort = {
     }
     startedAt = Date.now()
 
+    // 波形抽头：建立 analyser 供 getMicAnalyser() 读取。失败静默——波形降级为 CSS 假条。
+    // （stream 可能因上方 MediaRecorder 降级路径被置 null，此时跳过抽头。）
+    try {
+      if (stream) {
+        audioCtx = new AudioContext()
+        const source = audioCtx.createMediaStreamSource(stream)
+        micAnalyser = audioCtx.createAnalyser()
+        micAnalyser.fftSize = 256
+        micAnalyser.smoothingTimeConstant = 0.75
+        source.connect(micAnalyser)
+      }
+    } catch {
+      audioCtx = null
+      micAnalyser = null
+    }
+
     const Ctor = getSpeechRecognitionCtor()
     if (Ctor) {
       recognition = new Ctor()
@@ -137,6 +164,9 @@ export const webCapture: CapturePort = {
     recorder = null
     stream = null
     chunks = []
+    micAnalyser = null
+    void audioCtx?.close().catch(() => { /* noop */ })
+    audioCtx = null
     return { ref, durationSec, blob, mime }
   },
 
