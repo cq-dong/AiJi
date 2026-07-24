@@ -34,7 +34,7 @@ function TopBar() {
 // 页面转场：按 pathname key 重挂内容，入场 fade+rise（enter-only）。
 // 无 exit——旧屏瞬切新屏淡入，换来 main 滚动语义不变（tab 往返不丢滚动位）；
 // 跨 layout（主↔裸）整树重挂，新 layout 入场动画同样生效。reduced-motion 瞬切。
-function PageTransition() {
+function PageTransition({ bottomPad }: { bottomPad: string }) {
   const location = useLocation()
   const outlet = useOutlet()
   const reduce = useReducedMotion()
@@ -50,6 +50,12 @@ function PageTransition() {
       className="h-full"
     >
       {outlet}
+      {/* 底部垫层承重（必须在 motion.div 内、跟随内容流）：main 的 padding-bottom
+          在「h-full 包裹 + 内容溢出传播」路径下被 Chrome 从 scrollable overflow
+          丢弃（实测 scrollHeight 不含 padding）→ 长内容最后一块沉到 NavBottom 下。
+          垫层在内容流末尾占位，滚到底时最后真实内容恰好停在导航上方；h-full 屏
+          （capture/chat/detail）root=内容盒高，垫层+root 恰填满 main，不多出滚动。 */}
+      <div aria-hidden style={{ height: bottomPad }} />
     </motion.div>
   )
 }
@@ -72,7 +78,7 @@ export function MainLayout() {
         className="aji-frame-main flex-1 overflow-y-auto overscroll-behavior-y-contain"
         style={{ paddingBottom: 'calc(79px + var(--safe-bottom, 0px))' }}
       >
-        <PageTransition />
+        <PageTransition bottomPad="calc(79px + var(--safe-bottom, 0px))" />
       </main>
       <Fab />
       <NavBottom />
@@ -96,7 +102,7 @@ export function BareLayout() {
         className="flex-1 overflow-y-auto overscroll-behavior-y-contain"
         style={{ paddingBottom: 'var(--safe-bottom, 0px)' }}
       >
-        <PageTransition />
+        <PageTransition bottomPad="var(--safe-bottom, 0px)" />
       </main>
       {/* D20: 到点弹窗在裸路由也生效（用户可能在采集/详情页时提醒到点） */}
       <FiringReminderPopup />
