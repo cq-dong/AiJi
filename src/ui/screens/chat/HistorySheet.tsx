@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { AnimatePresence } from 'framer-motion'
 import { Sheet } from '@/ui/components'
@@ -41,11 +41,15 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
   const loadConversation = useUiStore((s) => s.loadConversation)
   const deleteChatConversation = useUiStore((s) => s.deleteChatConversation)
   const refreshChatList = useUiStore((s) => s.refreshChatList)
+  // 行内两段删除确认（替代 window.confirm）：点 Trash2 行变确认态（删除/取消）。
+  // NN/g 破坏性操作需确认，但不打断——行内展开不遮罩、可撤销误点。
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   // 打开时若 chatList 为空兜底刷新一次（hydrate 通常已载，此为失忆兜底）。
   // 读 getState 避免 chatList.length 入依赖致空列表下循环刷新。
   useEffect(() => {
     if (!open) return
+    setConfirmingId(null)
     if (useUiStore.getState().chatList.length === 0) void refreshChatList()
   }, [open, refreshChatList])
 
@@ -54,10 +58,6 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
   async function onSelect(id: string) {
     await loadConversation(id)
     onClose()
-  }
-
-  function onDelete(id: string) {
-    if (window.confirm(t('chat.deleteConfirm'))) void deleteChatConversation(id)
   }
 
   return (
@@ -70,6 +70,36 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
             <div className="space-y-2 py-1">
               {chatList.map((conv) => {
                 const isCurrent = conv.id === currentId
+                if (confirmingId === conv.id) {
+                  // 行内确认态：与 trash 屏 ConfirmDialog 同语义，但就地展开不遮罩。
+                  return (
+                    <div
+                      key={conv.id}
+                      className="flex items-center gap-2 rounded-card border border-catFail/30 bg-catFail/5 p-3 animate-fade-in"
+                    >
+                      <p className="min-w-0 flex-1 text-[12px] leading-snug text-catFail">
+                        {t('chat.deleteConfirm')}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingId(null)}
+                        className="min-h-9 shrink-0 cursor-pointer rounded-btn border border-brd bg-card px-3 text-[12px] font-medium text-t2 transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmingId(null)
+                          void deleteChatConversation(conv.id)
+                        }}
+                        className="min-h-9 shrink-0 cursor-pointer rounded-btn bg-catFail px-3 text-[12px] font-medium text-white transition duration-base ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-catFail/40"
+                      >
+                        {t('common.delete')}
+                      </button>
+                    </div>
+                  )
+                }
                 return (
                   <div
                     key={conv.id}
@@ -96,7 +126,7 @@ export function HistorySheet({ open, onClose }: { open: boolean; onClose: () => 
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
-                        onDelete(conv.id)
+                        setConfirmingId(conv.id)
                       }}
                       aria-label={t('chat.aria.delete')}
                       className="flex size-9 shrink-0 items-center justify-center rounded-btn text-t3 transition duration-base ease-out hover:bg-page hover:text-catFail active:scale-[0.95] focus-visible:ring-2 focus-visible:ring-pri/40"

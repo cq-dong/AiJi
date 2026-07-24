@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Square, SquarePen } from 'lucide-react'
-import { Chip, Spinner } from '@/ui/components'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Chip, Spinner, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { t } from '@/app/i18n'
 import { useT } from '@/app/i18n/useT'
@@ -57,7 +58,7 @@ function citeLabel(id: string, entries: Entry[], aiByEntry: ReturnType<typeof us
   return { label, gone: false }
 }
 
-function CitationChips({ ids }: { ids: string[] }) {
+function CitationChips({ ids, fresh }: { ids: string[]; fresh: boolean }) {
   const navigate = useNavigate()
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
@@ -66,7 +67,7 @@ function CitationChips({ ids }: { ids: string[] }) {
   if (ids.length === 0) return null
   return (
     <div className="mt-1.5 flex flex-wrap gap-1.5">
-      {ids.map((id) => {
+      {ids.map((id, i) => {
         const { label, gone } = citeLabel(id, entries, aiByEntry)
         return (
           <button
@@ -74,7 +75,8 @@ function CitationChips({ ids }: { ids: string[] }) {
             type="button"
             disabled={gone}
             onClick={() => navigate(`/detail/${id}`)}
-            className="disabled:cursor-default"
+            className={cn('disabled:cursor-default', fresh && 'animate-fade-in-up')}
+            style={fresh ? { animationDelay: `${Math.min(i, 6) * 40 + 150}ms` } : undefined}
           >
             <Chip tone="idea">{gone ? label : `#${label}`}</Chip>
           </button>
@@ -191,7 +193,9 @@ function TracePanel({ trace }: { trace: ChatTrace }) {
 }
 
 // AI 气泡：左对齐。解析 markdown 加粗/列表；引用 id 替换为条目名链接。
-function AiBubble({ msg }: { msg: ChatMessage }) {
+// fresh（本会话新到）→ 整泡 fade+rise 入场 + 行级渐进显现（≤320ms 入场动画，非假流式）；
+// 历史消息（seenIds 命中）→ initial={false} 瞬显不播动画。
+function AiBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
   const navigate = useNavigate()
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
@@ -205,6 +209,11 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
     const lines = text.split('\n')
     const elements: React.ReactNode[] = []
     let i = 0
+    // 行渐显：每行延迟 40ms，封顶 8 行（≈320ms 全部显现——入场动画，不拖阅读）。
+    const lineCls = fresh ? 'animate-fade-in-up' : undefined
+    let lineIdx = 0
+    const nextDelay = (): CSSProperties | undefined =>
+      fresh ? { animationDelay: `${Math.min(lineIdx++, 7) * 40}ms` } : undefined
     while (i < lines.length) {
       const line = lines[i]
       const trimmed = line.trim()
@@ -216,7 +225,7 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
         }
         i--
         elements.push(
-          <ul key={i} className="list-disc pl-4 my-1 space-y-0.5">
+          <ul key={i} className={cn('list-disc pl-4 my-1 space-y-0.5', lineCls)} style={nextDelay()}>
             {items.map((item, idx) => (
               <li key={idx} className="leading-relaxed">
                 {renderRichText(item, getLabel, isValidId, navigate)}
@@ -225,10 +234,10 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
           </ul>,
         )
       } else if (trimmed === '') {
-        elements.push(<div key={i} className="h-2" />)
+        elements.push(<div key={i} className={cn('h-2', lineCls)} style={nextDelay()} />)
       } else {
         elements.push(
-          <p key={i} className="my-0.5">
+          <p key={i} className={cn('my-0.5', lineCls)} style={nextDelay()}>
             {renderRichText(line, getLabel, isValidId, navigate)}
           </p>,
         )
@@ -239,27 +248,39 @@ function AiBubble({ msg }: { msg: ChatMessage }) {
   }
 
   return (
-    <div className="flex justify-start">
-        <div className="max-w-[85%]">
-          <div
-            className={`rounded-card px-3 py-2 text-[13px] leading-relaxed whitespace-normal break-words shadow-sm ${msg.error ? 'bg-page text-t3' : 'bg-card text-ink border border-brd/80'}`}
-          >
+    <motion.div
+      className="flex justify-start"
+      initial={fresh ? { opacity: 0, y: 8 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+    >
+      <div className="max-w-[85%]">
+        <div
+          className={`rounded-card px-3 py-2 text-[13px] leading-relaxed whitespace-normal break-words shadow-sm ${msg.error ? 'bg-page text-t3' : 'bg-card text-ink border border-brd/80'}`}
+        >
           {renderMarkdown(msg.content)}
         </div>
-        {msg.citedEntryIds && msg.citedEntryIds.length > 0 && <CitationChips ids={msg.citedEntryIds} />}
+        {msg.citedEntryIds && msg.citedEntryIds.length > 0 && (
+          <CitationChips ids={msg.citedEntryIds} fresh={fresh} />
+        )}
         {msg.trace && <TracePanel trace={msg.trace} />}
       </div>
-    </div>
+    </motion.div>
   )
 }
 
-function UserBubble({ msg }: { msg: ChatMessage }) {
+function UserBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
   return (
-    <div className="flex justify-end">
+    <motion.div
+      className="flex justify-end"
+      initial={fresh ? { opacity: 0, y: 8 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+    >
       <div className="max-w-[85%] rounded-card bg-gradient-to-b from-pri to-pri/90 px-3 py-2 text-[13px] leading-relaxed text-white shadow-glowPriSm whitespace-pre-wrap break-words">
         {msg.content}
       </div>
-    </div>
+    </motion.div>
   )
 }
 
@@ -306,6 +327,12 @@ export default function Chat() {
   const [text, setText] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  // 入场动画的 fresh 判定：首个非空会话快照其全部消息 id 为「已见」——历史消息瞬显；
+  // 之后到达的消息（id 不在快照）按 fresh 播入场动画。用户消息因会话创建即入快照，瞬显。
+  const seenIds = useRef<Set<string> | null>(null)
+  if (seenIds.current === null && conversation) {
+    seenIds.current = new Set(conversation.messages.map((m) => m.id))
+  }
 
   // 新消息 / loading 阶段变化 → 滚到底。
   useEffect(() => {
@@ -364,10 +391,28 @@ export default function Chat() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="space-y-3">
           {!hasMessages && !loading && <EmptyTalk />}
-          {messages.map((m) =>
-            m.role === 'user' ? <UserBubble key={m.id} msg={m} /> : <AiBubble key={m.id} msg={m} />,
-          )}
-          {loading && <LoadingBubble phase={chatLoading as 'intent' | 'recall' | 'answer'} />}
+          {messages.map((m) => {
+            const fresh = !seenIds.current?.has(m.id)
+            return m.role === 'user' ? (
+              <UserBubble key={m.id} msg={m} fresh={fresh} />
+            ) : (
+              <AiBubble key={m.id} msg={m} fresh={fresh} />
+            )
+          })}
+          {/* Loading 阶段切换：crossfade 过渡（intent→recall→answer 不硬切文案）。 */}
+          <AnimatePresence mode="wait" initial={false}>
+            {loading && (
+              <motion.div
+                key={chatLoading}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.15, ease: 'easeOut' }}
+              >
+                <LoadingBubble phase={chatLoading as 'intent' | 'recall' | 'answer'} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
