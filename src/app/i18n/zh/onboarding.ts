@@ -7,10 +7,32 @@ export const onboarding = {
 
   // 欢迎区
   'onboarding.brandMark': '记',
-  'onboarding.subtitle': '随手记，AI 帮你整理，数据留在本地',
+  'onboarding.tagline': '什么都能记的 AI 速记本',
+  'onboarding.welcomeSub': '生活片段 / 跳脱想法 / 项目进展——随手记，AI 帮你理',
   'onboarding.feature.multimodal': '多模态随手记',
   'onboarding.feature.autocategorize': 'AI 自动涌现分类',
   'onboarding.feature.localfirst': '本地优先 + BYOK',
+
+  // 功能宣传页（营销轮播：捕捉 / 整理 / 找回）
+  'onboarding.slide.capture.title': '想到就记，三秒搞定',
+  'onboarding.slide.capture.desc':
+    '长按麦克风说话，自动转成文字；拍照、贴图、打字也随你。灵感不等人，记录零门槛。',
+  'onboarding.slide.organize.title': '不用整理，交给 AI',
+  'onboarding.slide.organize.desc':
+    '类别从你的内容里自动涌现，每条记录附 AI 摘要和标签。你只管记，整理交给 AI。',
+  'onboarding.slide.recall.title': '找得到，还会提醒你',
+  'onboarding.slide.recall.desc':
+    '按意思搜索，不只匹配关键词；AI 从记录里识别待办、到点提醒；定期摘要帮你回顾。',
+
+  // 宣传页插画 mock 文案
+  'onboarding.mock.transcribing': '语音 → 文字',
+  'onboarding.mock.catIdea': '想法',
+  'onboarding.mock.catProject': '项目',
+  'onboarding.mock.tags': '#灵感 #效率',
+  'onboarding.mock.summary': 'AI 摘要',
+  'onboarding.mock.searchPh': '按意思搜索…',
+  'onboarding.mock.todo': '周五前交方案',
+  'onboarding.mock.reminderSet': '已设提醒',
 
   // 免责声明（首屏可见）
   'onboarding.disclaimer':
