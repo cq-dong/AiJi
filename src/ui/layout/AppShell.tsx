@@ -39,11 +39,15 @@ function PageTransition() {
   const outlet = useOutlet()
   const reduce = useReducedMotion()
   return (
+    // h-full 承重：无高包裹会让下游 h-full/min-h-full 屏（capture/chat/detail/
+    // onboarding/login）高度链断裂——footer 漂中、absolute 全屏层塌 0、内部滚动失效。
+    // 对流式长内容屏（home 等），h-full+overflow:visible 不影响 main 滚动。
     <motion.div
       key={location.pathname}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={reduce ? { duration: 0 } : { duration: 0.22, ease: 'easeOut' }}
+      className="h-full"
     >
       {outlet}
     </motion.div>
