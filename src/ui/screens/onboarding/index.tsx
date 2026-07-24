@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Check } from 'lucide-react'
+import { Mic, ShieldCheck, Sparkles } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/ui/components'
 import { useUiStore } from '@/app/store'
@@ -8,12 +8,14 @@ import { importSampleData } from '@/adapters/dexieStorage'
 import { useT } from '@/app/i18n/useT'
 import { detectLang } from '@/app/currentLang'
 import { deviceOnboarded } from '@/app/onboardedFlag'
+import { FeatureSlide } from './slides'
 
-// Batch 7（调研 #12）：单页堆叠改三步向导——欢迎/特性 → BYOK → 权限+示例数据。
-// 步间 AnimatePresence 方向感知滑切；进度点可点；「跳过」直达末步（全部可选配置）。
-// 所有状态（apiKey/perm/sample）挂组件顶层，切步不丢。
+// Batch 9（2026-07-24）：营销轮播重做——原「欢迎+3 行特性」太单薄，用户看不懂 App 干嘛。
+// 现 5 步：欢迎(定位+mini 特性) → 捕捉 → AI 整理 → 找回/提醒（各带产品 mock 插画）→
+// 快速设置(BYOK+权限+示例数据合并)。步间方向感知滑切；「跳过」直达设置步（全部可选配置）。
 
-const STEP_COUNT = 3
+const STEP_COUNT = 5
+const STEP_SETUP = STEP_COUNT - 1
 
 const stepVariants = {
   enter: (dir: number) => ({ opacity: 0, x: dir * 48 }),
@@ -37,11 +39,11 @@ export default function Onboarding() {
   // 首启语言分段控件：点击即写 settings.language，store 同步 currentLang + useT 重渲。
   const setLang = (next: 'zh' | 'en') => useUiStore.getState().setSettings({ language: next })
 
-  // 特性三条（组件内用 t() 构建，切语言随渲染更新）。
-  const FEATURES = [
-    t('onboarding.feature.multimodal'),
-    t('onboarding.feature.autocategorize'),
-    t('onboarding.feature.localfirst'),
+  // 欢迎页 mini 特性（icon + 短语，随语言切换）。
+  const MINI_FEATURES = [
+    { icon: Mic, label: t('onboarding.feature.multimodal') },
+    { icon: Sparkles, label: t('onboarding.feature.autocategorize') },
+    { icon: ShieldCheck, label: t('onboarding.feature.localfirst') },
   ]
 
   const goTo = (next: number) => {
@@ -60,7 +62,7 @@ export default function Onboarding() {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
-      stream.getTracks().forEach((t) => t.stop())
+      stream.getTracks().forEach((track) => track.stop())
       setPermGranted(true)
     } catch {
       setPermGranted(false)
@@ -103,7 +105,7 @@ export default function Onboarding() {
     navigate('/')
   }
 
-  const isLast = step === STEP_COUNT - 1
+  const isLast = step === STEP_SETUP
 
   return (
     <div className="flex min-h-full flex-col px-4 pb-4 pt-6">
@@ -118,10 +120,11 @@ export default function Onboarding() {
             animate="center"
             exit="exit"
             transition={{ duration: 0.24, ease: 'easeOut' }}
+            className="h-full"
           >
             {step === 0 && (
-              <div>
-                {/* 首启语言选择控件（welcome 之上） */}
+              <div className="flex h-full flex-col">
+                {/* 首启语言选择控件 */}
                 <div className="flex justify-center">
                   <div className="flex w-[176px] items-center rounded-chip bg-priS p-1" role="group">
                     <button
@@ -147,36 +150,61 @@ export default function Onboarding() {
                   </div>
                 </div>
 
-                {/* welcome */}
-                <div className="flex flex-col items-center pt-6 text-center">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-card bg-gradient-to-b from-priS to-priS/50 text-[44px] font-bold text-pri shadow-glowPriSm ring-1 ring-pri/10 animate-scale-in">
+                {/* 品牌 + 定位 */}
+                <div className="flex flex-1 flex-col items-center justify-center text-center">
+                  <div className="flex h-24 w-24 items-center justify-center rounded-screen bg-gradient-to-b from-priS to-priS/40 text-[52px] font-bold text-pri shadow-glowPriSm ring-1 ring-pri/10 animate-scale-in">
                     {t('onboarding.brandMark')}
                   </div>
-                  <h1 className="mt-4 text-[28px] font-bold text-ink">AiJi</h1>
-                  <p className="mt-1 text-[13px] text-t2">{t('onboarding.subtitle')}</p>
-                  <ul className="mt-4 space-y-1.5 text-[12px] text-t3">
-                    {FEATURES.map((f, i) => (
-                      <li
-                        key={f}
-                        className="flex items-center gap-1.5 animate-fade-in-up"
-                        style={{ animationDelay: `${150 + i * 80}ms` }}
+                  <h1 className="mt-5 text-[32px] font-bold text-ink">AiJi</h1>
+                  <p className="mt-1.5 text-[15px] font-medium text-ink">{t('onboarding.tagline')}</p>
+                  <p className="mx-auto mt-2 max-w-[280px] text-[12px] leading-relaxed text-t3">
+                    {t('onboarding.welcomeSub')}
+                  </p>
+                  <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                    {MINI_FEATURES.map((f, i) => (
+                      <span
+                        key={f.label}
+                        className="flex items-center gap-1.5 rounded-chip border border-brd bg-card px-2.5 py-1.5 text-[11px] font-medium text-t2 shadow-card animate-fade-in-up"
+                        style={{ animationDelay: `${200 + i * 90}ms` }}
                       >
-                        <span className="flex size-4 items-center justify-center rounded-full bg-pri/10 text-pri">
-                          <Check size={10} strokeWidth={2.5} />
-                        </span>
-                        <span>{f}</span>
-                      </li>
+                        <f.icon size={12} className="text-pri" />
+                        {f.label}
+                      </span>
                     ))}
-                  </ul>
+                  </div>
                 </div>
 
                 {/* D12: 免责声明（首屏可见） */}
-                <p className="mt-4 text-[11px] leading-relaxed text-t3">{t('onboarding.disclaimer')}</p>
+                <p className="pb-2 text-center text-[10px] leading-relaxed text-t3">
+                  {t('onboarding.disclaimer')}
+                </p>
               </div>
             )}
 
             {step === 1 && (
-              <div className="pt-8">
+              <FeatureSlide
+                kind="capture"
+                title={t('onboarding.slide.capture.title')}
+                desc={t('onboarding.slide.capture.desc')}
+              />
+            )}
+            {step === 2 && (
+              <FeatureSlide
+                kind="organize"
+                title={t('onboarding.slide.organize.title')}
+                desc={t('onboarding.slide.organize.desc')}
+              />
+            )}
+            {step === 3 && (
+              <FeatureSlide
+                kind="recall"
+                title={t('onboarding.slide.recall.title')}
+                desc={t('onboarding.slide.recall.desc')}
+              />
+            )}
+
+            {step === STEP_SETUP && (
+              <div className="pt-6">
                 {/* BYOK */}
                 <label className="text-[11px] font-medium uppercase tracking-[0.06em] text-t3">
                   {t('onboarding.byok.label')}
@@ -189,13 +217,9 @@ export default function Onboarding() {
                   className="mt-1 h-11 w-full cursor-text rounded-btn border border-brd/80 bg-card px-3 text-[13px] text-ink shadow-card placeholder:text-t3 transition-all duration-base ease-out focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
                 />
                 <p className="mt-1.5 text-[11px] leading-relaxed text-t3">{t('onboarding.byok.hint')}</p>
-              </div>
-            )}
 
-            {step === 2 && (
-              <div className="pt-8">
                 {/* permission */}
-                <div className="flex items-center justify-between rounded-card border border-brd/80 bg-card p-3 shadow-card">
+                <div className="mt-4 flex items-center justify-between rounded-card border border-brd/80 bg-card p-3 shadow-card">
                   <div>
                     <p className="text-[13px] font-medium text-ink">{t('onboarding.permission.title')}</p>
                     <p className="mt-0.5 text-[11px] text-t3">{t('onboarding.permission.desc')}</p>
@@ -214,8 +238,8 @@ export default function Onboarding() {
                   </Button>
                 </div>
 
-                {/* D9: 示例数据导入（可选）——首启空库，用户可在此导入 12 条原型记录了解 App。 */}
-                <div className="mt-4 flex items-center justify-between rounded-card border border-brd/80 bg-card p-3 shadow-card">
+                {/* D9: 示例数据导入（可选） */}
+                <div className="mt-3 flex items-center justify-between rounded-card border border-brd/80 bg-card p-3 shadow-card">
                   <div>
                     <p className="text-[13px] font-medium text-ink">{t('onboarding.sample.title')}</p>
                     <p className="mt-0.5 text-[11px] text-t3">{t('onboarding.sample.desc')}</p>
@@ -276,7 +300,7 @@ export default function Onboarding() {
         {!isLast && (
           <button
             type="button"
-            onClick={() => goTo(STEP_COUNT - 1)}
+            onClick={() => goTo(STEP_SETUP)}
             className="mt-3 w-full cursor-pointer py-1 text-center text-[12px] font-medium text-t3 transition duration-base ease-out hover:text-t2 active:scale-[0.98]"
           >
             {t('onboarding.step.skip')}

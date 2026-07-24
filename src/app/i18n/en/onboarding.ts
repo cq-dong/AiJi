@@ -7,10 +7,32 @@ export const onboarding = {
 
   // 欢迎区
   'onboarding.brandMark': '记',
-  'onboarding.subtitle': 'Capture anytime, AI organizes, data stays local',
+  'onboarding.tagline': 'An AI notebook for everything',
+  'onboarding.welcomeSub': 'Life moments, stray ideas, project progress — jot it down, AI tidies up',
   'onboarding.feature.multimodal': 'Multimodal quick capture',
   'onboarding.feature.autocategorize': 'AI auto-emerges categories',
   'onboarding.feature.localfirst': 'Local-first + BYOK',
+
+  // 功能宣传页（营销轮播：捕捉 / 整理 / 找回）
+  'onboarding.slide.capture.title': 'Capture in seconds',
+  'onboarding.slide.capture.desc':
+    'Hold the mic and talk — speech becomes text. Photos, images, or plain typing work too. Ideas don’t wait; capture is effortless.',
+  'onboarding.slide.organize.title': 'No filing — AI organizes',
+  'onboarding.slide.organize.desc':
+    'Categories emerge from what you write, with an AI summary and tags on every entry. You just capture; AI does the rest.',
+  'onboarding.slide.recall.title': 'Find it. Get reminded.',
+  'onboarding.slide.recall.desc':
+    'Search by meaning, not just keywords. AI spots to-dos in your notes and reminds you. Periodic summaries help you look back.',
+
+  // 宣传页插画 mock 文案
+  'onboarding.mock.transcribing': 'Voice → text',
+  'onboarding.mock.catIdea': 'Ideas',
+  'onboarding.mock.catProject': 'Project',
+  'onboarding.mock.tags': '#ideas #work',
+  'onboarding.mock.summary': 'AI summary',
+  'onboarding.mock.searchPh': 'Search by meaning…',
+  'onboarding.mock.todo': 'Send the proposal by Fri',
+  'onboarding.mock.reminderSet': 'Reminder set',
 
   // 免责声明（首屏可见）
   'onboarding.disclaimer':
