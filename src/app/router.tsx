@@ -5,6 +5,7 @@ import { BareLayout, MainLayout } from '@/ui/layout/AppShell'
 import { Spinner } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useAccountStore } from '@/app/accountStore'
+import { deviceOnboarded } from '@/app/onboardedFlag'
 
 const Home = lazy(() => import('@/ui/screens/home'))
 const Categories = lazy(() => import('@/ui/screens/categories'))
@@ -29,27 +30,32 @@ function Loading() {
   )
 }
 
-// A2: 首次运行 gating。hydrate 完成后若未 onboarding 过且不在 /onboarding → 重定向。
-// hydrate 前不重定向（seed.onboarded=false 会误闪 onboarding，hydrate 后存量用户行 onboarded
-// 若缺也视作未完成——引入 gating 的预期是存量用户首次也见一次 onboarding）。
-// Slice A: 放过 /login —— 账号注册是 onboarding 前置页，无 account 时由 AccountGate 管，
-// 此处若也抢 /login→/onboarding 会与 AccountGate 形成死循环（/login↔/onboarding）致空白。
+// A2: 首次运行 gating（OnboardingGate 在最外层，先于 AccountGate）。hydrate 完成后若未
+// onboarding 过且不在 /onboarding → 重定向 /onboarding。意图：首次先看功能引导，完成后
+// 才轮到账号 gating。hydrate 前不重定向（seed.onboarded=false 会误闪）。
+// 放过 /login：onboarding 完成后若无 account，AccountGate 会导向 /login；此处若也把
+// /login→/onboarding 会与 AccountGate 形成死循环（/login↔/onboarding）致空白。
 function OnboardingGate({ children }: { children: ReactNode }) {
   const hydrated = useUiStore((s) => s.hydrated)
-  const onboarded = useUiStore((s) => s.settings.onboarded)
+  const storeOnboarded = useUiStore((s) => s.settings.onboarded)
   const location = useLocation()
+  // 设备级标志兜底：游客/新账号 rehydrate 重置 per-owner settings.onboarded 时，
+  // 设备已看过引导则不再重复弹 onboarding。
+  const onboarded = storeOnboarded || deviceOnboarded.get()
   if (hydrated && !onboarded && location.pathname !== '/onboarding' && location.pathname !== '/login') {
     return <Navigate to="/onboarding" replace />
   }
   return <>{children}</>
 }
 
-// Slice A: 账号 gating。hydrate 完成后若无 account 且不在 /login → 重定向 /login。
+// Slice A: 账号 gating（内层，OnboardingGate 之后）。hydrate 完成后若无 account 且不在
+// /login → 重定向 /login。放过 /onboarding：首次未 onboarding 时 OnboardingGate 已导向
+// /onboarding，此处须放行让 onboarding 页在无 account 下也能渲染，否则 /onboarding→/login 死循环。
 function AccountGate({ children }: { children: ReactNode }) {
   const hydrated = useAccountStore((s) => s.hydrated)
   const account = useAccountStore((s) => s.account)
   const location = useLocation()
-  if (hydrated && !account && location.pathname !== '/login') {
+  if (hydrated && !account && location.pathname !== '/login' && location.pathname !== '/onboarding') {
     return <Navigate to="/login" replace />
   }
   return <>{children}</>
@@ -58,8 +64,8 @@ function AccountGate({ children }: { children: ReactNode }) {
 export function AppRouter() {
   return (
     <Suspense fallback={<Loading />}>
-      <AccountGate>
-        <OnboardingGate>
+      <OnboardingGate>
+        <AccountGate>
           <Routes>
         <Route element={<MainLayout />}>
           <Route index element={<Home />} />
@@ -81,8 +87,8 @@ export function AppRouter() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        </OnboardingGate>
-      </AccountGate>
+        </AccountGate>
+      </OnboardingGate>
     </Suspense>
   )
 }

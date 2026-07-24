@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { AppRouter } from '@/app/router'
 import { useUiStore } from '@/app/store'
+import { SplashOverlay } from '@/ui/components'
 
 function App() {
   const theme = useUiStore((s) => s.settings.theme)
@@ -18,7 +19,13 @@ function App() {
     }
     apply(theme === 'dark')
   }, [theme])
-  return <AppRouter />
+  // SplashOverlay 挂在路由树之外、之上：冷启动盖住全屏显示开屏整图，hydrated+1s 后淡出。
+  return (
+    <>
+      <AppRouter />
+      <SplashOverlay />
+    </>
+  )
 }
 
 export default App
