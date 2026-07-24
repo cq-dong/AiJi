@@ -10,6 +10,8 @@ import { formatDateTime, formatDuration, partTypeLabel } from './helpers'
 const BAR_HEIGHTS = [4, 11, 6, 13, 8, 15, 10, 5, 12, 7, 14, 9, 4, 11, 6, 13, 8, 15, 10, 5, 12, 7, 14, 9]
 
 // 点击图片 → 显示边框 + 右下角拖拽手柄；拖手柄沿对角线自由缩放（30%~160%）。
+// Batch 8（调研 #20）补移动端标准手势：双指 pinch 缩放（30%~200%）+ 双击复位 100%。
+// touch-action: pan-y —— 纵向滚动不挡，浏览器 pinch-zoom 默认行为禁用、事件全归我们。
 // 外层 overflow-x-auto：放大超过容器宽时可横向滚动看全图，缩小则居中无留白。
 function ImageZoomable({ src }: { src: string }) {
   const t = useT()
@@ -17,6 +19,14 @@ function ImageZoomable({ src }: { src: string }) {
   const [active, setActive] = useState(false)
   const dragRef = useRef<{ x: number; start: number } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  // pinch：活指 Map + 起始指距/缩放比。pinch 结束后抑制 click（防误触 active 翻转）。
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>())
+  const pinchRef = useRef<{ dist: number; start: number } | null>(null)
+  const suppressClickRef = useRef(false)
+  // 双击复位：两次 tap 间隔 <350ms → pct 归 100。
+  const lastTapRef = useRef(0)
+
+  const clampPct = (v: number) => Math.min(200, Math.max(30, v))
 
   const onHandleDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     e.stopPropagation()
@@ -28,12 +38,52 @@ function ImageZoomable({ src }: { src: string }) {
     if (!dragRef.current) return
     const dx = e.clientX - dragRef.current.x
     const w = wrapRef.current?.getBoundingClientRect().width || 300
-    const next = Math.min(160, Math.max(30, dragRef.current.start + (dx / w) * 100))
-    setPct(next)
+    setPct(clampPct(dragRef.current.start + (dx / w) * 100))
   }
   const onHandleUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     dragRef.current = null
     try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* pointer already released */ }
+  }
+
+  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y)
+
+  const onImgPointerDown = (e: ReactPointerEvent<HTMLImageElement>) => {
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointersRef.current.size === 2) {
+      const [a, b] = [...pointersRef.current.values()]
+      pinchRef.current = { dist: dist(a, b), start: pct }
+      suppressClickRef.current = true
+    }
+  }
+  const onImgPointerMove = (e: ReactPointerEvent<HTMLImageElement>) => {
+    if (!pointersRef.current.has(e.pointerId)) return
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointersRef.current.size === 2 && pinchRef.current) {
+      const [a, b] = [...pointersRef.current.values()]
+      const ratio = dist(a, b) / Math.max(1, pinchRef.current.dist)
+      setPct(clampPct(pinchRef.current.start * ratio))
+    }
+  }
+  const onImgPointerUp = (e: ReactPointerEvent<HTMLImageElement>) => {
+    pointersRef.current.delete(e.pointerId)
+    if (pointersRef.current.size < 2) pinchRef.current = null
+  }
+  const onImgClick = (e: ReactPointerEvent<HTMLImageElement> | React.MouseEvent<HTMLImageElement>) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false
+      return
+    }
+    const now = e.timeStamp
+    const isDoubleTap = now - lastTapRef.current < 350
+    lastTapRef.current = now
+    if (isDoubleTap) {
+      // 双击复位（active chrome 随两次 click 翻转回原态，无需额外处理）。
+      setPct(100)
+      lastTapRef.current = 0
+      return
+    }
+    setActive((a) => !a)
   }
 
   return (
@@ -42,7 +92,12 @@ function ImageZoomable({ src }: { src: string }) {
         <img
           src={src}
           alt=""
-          onClick={() => setActive((a) => !a)}
+          onClick={onImgClick}
+          onPointerDown={onImgPointerDown}
+          onPointerMove={onImgPointerMove}
+          onPointerUp={onImgPointerUp}
+          onPointerCancel={onImgPointerUp}
+          style={{ touchAction: 'pan-y' }}
           className="block w-full cursor-pointer rounded-[12px] object-cover"
         />
         {active && (
@@ -53,7 +108,7 @@ function ImageZoomable({ src }: { src: string }) {
               aria-label={t('detail.aria.zoomImage')}
               aria-valuenow={Math.round(pct)}
               aria-valuemin={30}
-              aria-valuemax={160}
+              aria-valuemax={200}
               onPointerDown={onHandleDown}
               onPointerMove={onHandleMove}
               onPointerUp={onHandleUp}

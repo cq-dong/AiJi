@@ -8,7 +8,7 @@ import { useT } from '@/app/i18n/useT'
 import type { Entry } from '@/domain/types'
 import { dateKey, groupLabel, todayKeyFrom, topDateLabel } from './helpers'
 import { HomeHeader } from './HomeHeader'
-import { JustSavedToast, OfflineBanner, RefreshIndicator } from './Banners'
+import { JustSavedToast, OfflineBanner, PullIndicator } from './Banners'
 import { TimelineCard } from './TimelineCard'
 import { usePullToRefresh } from './usePullToRefresh'
 
@@ -75,7 +75,7 @@ export default function Home() {
         aria-busy={refreshing}
       >
         <div className="flex h-12 w-full flex-col justify-center">
-          <RefreshIndicator />
+          <PullIndicator pull={pull} refreshing={refreshing} />
         </div>
       </motion.div>
 

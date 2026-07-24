@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
 import { useUiStore } from '@/app/store'
 import { useAccountStore } from '@/app/accountStore'
@@ -322,6 +322,26 @@ export default function Capture() {
       setActionToast({ message: t('capture.captureFailedRetry') })
     }
   }
+
+  // Batch 8（调研 #18）：FAB 长按菜单直达 ?mode=text|voice|camera|gallery——
+  // 挂载后一次性消费（ref 守卫防 StrictMode/重渲重复触发）。
+  const [searchParams] = useSearchParams()
+  const modeHandledRef = useRef(false)
+  useEffect(() => {
+    if (modeHandledRef.current) return
+    const mode = searchParams.get('mode')
+    if (!mode) return
+    modeHandledRef.current = true
+    if (mode === 'voice') handleVoice()
+    else if (mode === 'camera') openCamera()
+    else if (mode === 'gallery') void handleGallery()
+    else if (mode === 'text') {
+      wantFocusRef.current = true
+      composerRef.current?.focus()
+    }
+    // eslint 依赖数组写全会每渲染重跑——guard ref 已保证幂等，刻意只在挂载消费。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   // Wave 3 #3: title editing — update store.capture.title directly (no setTitle
   // action; UI-only field). Empty string on blur → set undefined (display "新条目").

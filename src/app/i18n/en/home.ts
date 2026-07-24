@@ -27,6 +27,10 @@ export const home = {
   'home.banner.offline': 'Offline · retry when online',
   'home.banner.refresh': 'AI done · refreshing',
 
+  // 下拉刷新指示器（Batch 8 进度环文案）
+  'home.ptr.pull': 'Pull to refresh',
+  'home.ptr.release': 'Release to refresh',
+
   // 5th nav tab (common has no nav.reminders)
   'nav.reminders': 'Reminders',
 

@@ -27,6 +27,10 @@ export const home = {
   'home.banner.offline': '离线 · 待联网补跑',
   'home.banner.refresh': 'AI 已分类 · 正在刷新',
 
+  // 下拉刷新指示器（Batch 8 进度环文案）
+  'home.ptr.pull': '下拉刷新',
+  'home.ptr.release': '松开刷新',
+
   // 底部导航第 5 tab（common 未收 nav.reminders，补在此屏片段）
   'nav.reminders': '提醒',
 
