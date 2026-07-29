@@ -92,7 +92,13 @@ export const webCapture: CapturePort = {
       try {
         recorder = new MediaRecorder(stream)
         recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
-        recorder.start()
+        // timeslice=1000ms：强制 dataavailable 周期性触发，产出合法多 Cluster webm。
+        // 不传 timeslice 时 MediaRecorder 只在 stop 时吐单个 Cluster，Segment/Cluster 尺寸
+        // 字段写成无效 EBML —— 短录音尚能解析，但 >~60s 的录音产出的 webm 容器结构性损坏，
+        // 后端 ffmpeg 报「invalid as first byte of an EBML number / exceeds containing master
+        // element」转码失败 → STT 空 → classify「条目无文本」→ 条目 failed（2026-07-29 实锤：
+        // 1:20 录音两次全挂、50s 成功）。timeslice 后每秒一个合法 Cluster，ffmpeg 稳定转码。
+        recorder.start(1000)
       } catch (e) {
         // L2: MediaRecorder 构造失败（Safari MIME 边界等）→ 释放已 getUserMedia 的 mic stream 免泄漏
         // （否则 throw 传播到 store catch 只设 recording:false，stopAudio 早返不发 track.stop → mic 灯长亮）。
@@ -224,7 +230,9 @@ export const webCapture: CapturePort = {
     const mimeType = candidates.find((t) => MediaRecorder.isTypeSupported?.(t)) ?? ''
     camRecorder = new MediaRecorder(camStream, mimeType ? { mimeType } : undefined)
     camRecorder.ondataavailable = (e) => { if (e.data.size > 0) camChunks.push(e.data) }
-    camRecorder.start()
+    // 同 audio：timeslice 防长视频容器结构性损坏（不传时 >~60s 的 mp4/webm 尺寸字段写坏，
+    // 后端/播放器解析失败）。每秒一个合法 fragment。
+    camRecorder.start(1000)
     camStartedAt = Date.now()
   },
 
