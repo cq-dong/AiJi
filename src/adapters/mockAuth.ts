@@ -1,4 +1,5 @@
 import type { AuthPort } from '@/ports'
+import { NotNetworkError } from '@/ports'
 import type { Account, AuthSession } from '@/domain/account'
 
 interface StoredUser {
@@ -60,6 +61,8 @@ export const mockAuth: AuthPort = {
     if (expired()) throw new Error('AUTH_401:refresh token 已失效')
     return { jwt: 'mockjwt.refreshed.' + now1h(), refreshToken: 'mockrefresh:new', expiresAt: now1h() }
   },
+  async changePassword() { throw new NotNetworkError('需网络账号') },
+  async deleteAccount() { throw new NotNetworkError('需网络账号') },
   async logout() {
     // mock 无服务端状态
   },

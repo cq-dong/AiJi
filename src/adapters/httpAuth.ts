@@ -88,6 +88,38 @@ export const httpAuth: AuthPort = {
     return inflightRefresh
   },
 
+  async changePassword(oldPassword, newPassword) {
+    const session = localSession.get()
+    let res: Response
+    try {
+      res = await fetch(`${BASE}/api/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.jwt ?? ''}` },
+        body: JSON.stringify({ oldPassword, newPassword }),
+      })
+    } catch {
+      throw new NotNetworkError('网络不可用')
+    }
+    const body = await parseBody(res)
+    if (!res.ok) throw parseAuthError(body, res.status)
+  },
+
+  async deleteAccount(password) {
+    const session = localSession.get()
+    let res: Response
+    try {
+      res = await fetch(`${BASE}/api/account/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.jwt ?? ''}` },
+        body: JSON.stringify({ password }),
+      })
+    } catch {
+      throw new NotNetworkError('网络不可用')
+    }
+    const body = await parseBody(res)
+    if (!res.ok) throw parseAuthError(body, res.status)
+  },
+
   async logout() {
     const cur = localSession.get()
     try {
