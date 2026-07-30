@@ -29,6 +29,9 @@ app.onError((err, c) => {
 app.use('*', corsMiddleware)
 
 app.route('/health', healthRoutes)
+// change-password 需鉴权；必须在 authRoutes 挂载之前注册（Hono 按注册顺序匹配，
+// 否则 sub-app 的 POST handler 先返回响应、中间件不触发）。
+app.use('/api/auth/change-password', authMiddleware)
 app.route('/api/auth', authRoutes)
 // 需鉴权的路由挂 authMiddleware。
 app.use('/api/quota/*', authMiddleware)
