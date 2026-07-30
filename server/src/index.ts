@@ -36,8 +36,9 @@ app.use('/api/llm/*', authMiddleware)
 app.use('/api/vlm/*', authMiddleware)
 app.use('/api/stt/*', authMiddleware)
 app.use('/api/geocode/*', authMiddleware)
-// plan: GET /api/plan 公开（前端未登录可拉套餐），仅 upgrade 需鉴权。
+// plan: GET /api/plan 公开（前端未登录可拉套餐），仅 upgrade/redeem 需鉴权。
 app.use('/api/plan/upgrade', authMiddleware)
+app.use('/api/plan/redeem', authMiddleware)
 app.route('/api/quota', quotaRoutes)
 app.route('/api/plan', planRoutes)
 app.route('/api/llm', llmRoutes)
