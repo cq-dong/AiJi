@@ -6,6 +6,7 @@ import { corsMiddleware } from './middleware/cors.js'
 import { authMiddleware } from './middleware/auth.js'
 import { startRateLimitCleaner } from './lib/rateLimit.js'
 import authRoutes from './routes/auth.js'
+import accountRoutes from './routes/account.js'
 import quotaRoutes from './routes/quota.js'
 import planRoutes from './routes/plan.js'
 import llmRoutes from './routes/llm.js'
@@ -39,6 +40,8 @@ app.use('/api/llm/*', authMiddleware)
 app.use('/api/vlm/*', authMiddleware)
 app.use('/api/stt/*', authMiddleware)
 app.use('/api/geocode/*', authMiddleware)
+// account: /api/account/delete 需鉴权（Hono 按注册顺序匹配，中间件须在 route 之前）。
+app.use('/api/account/*', authMiddleware)
 // plan: GET /api/plan 公开（前端未登录可拉套餐），仅 upgrade/redeem 需鉴权。
 app.use('/api/plan/upgrade', authMiddleware)
 app.use('/api/plan/redeem', authMiddleware)
@@ -48,6 +51,7 @@ app.route('/api/llm', llmRoutes)
 app.route('/api/vlm', vlmRoutes)
 app.route('/api/stt', sttRoutes)
 app.route('/api/geocode', geocodeRoutes)
+app.route('/api/account', accountRoutes)
 
 serve({ fetch: app.fetch, port: env.port }, (info) => {
   console.log(`[aiji-server] listening on http://localhost:${info.port}`)
