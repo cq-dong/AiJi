@@ -101,7 +101,11 @@ export const httpAuth: AuthPort = {
       throw new NotNetworkError('网络不可用')
     }
     const body = await parseBody(res)
-    if (!res.ok) throw parseAuthError(body, res.status)
+    if (!res.ok) {
+      // 后端 message 已是面向用户的中文（'旧密码错误'/'密码错误'）；走 AUTH_ code 映射会被
+      // error.AUTH_401='邮箱或密码错误' 顶包（登录语境串，与本场景不符）→ 直透 message。
+      throw new Error((body as { message?: string } | null)?.message ?? `HTTP ${res.status}`)
+    }
   },
 
   async deleteAccount(password) {
@@ -117,7 +121,11 @@ export const httpAuth: AuthPort = {
       throw new NotNetworkError('网络不可用')
     }
     const body = await parseBody(res)
-    if (!res.ok) throw parseAuthError(body, res.status)
+    if (!res.ok) {
+      // 后端 message 已是面向用户的中文（'旧密码错误'/'密码错误'）；走 AUTH_ code 映射会被
+      // error.AUTH_401='邮箱或密码错误' 顶包（登录语境串，与本场景不符）→ 直透 message。
+      throw new Error((body as { message?: string } | null)?.message ?? `HTTP ${res.status}`)
+    }
   },
 
   async logout() {
