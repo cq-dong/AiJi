@@ -170,6 +170,105 @@ function NicknameSheet({
   )
 }
 
+// 邮箱脱敏：仅显首字符 + ••••@域名。仅 network 账号有邮箱。
+function maskEmail(email?: string): string {
+  if (!email) return ''
+  const [u, d] = email.split('@')
+  return `${u.slice(0, 1)}••••@${d ?? ''}`
+}
+
+// 修改密码 sheet：旧密码 + 新密码 + 确认。成功后后端作废全部 session，跳登录重登。
+// httpAuth.redeem/changePassword/deleteAccount 抛 Error(<中文 message>)，localizeError 原样透传。
+function ChangePasswordSheet({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
+  const changePassword = useAccountStore((s) => s.changePassword)
+  const t = useT()
+  const [oldPw, setOldPw] = useState('')
+  const [newPw, setNewPw] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const inputCls = 'h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
+  async function onSubmit() {
+    setError(null)
+    if (newPw.length < 8) { setError(t('settings.errPasswordShort')); return }
+    if (newPw !== confirm) { setError(t('settings.errPasswordMismatch')); return }
+    setBusy(true)
+    try { await changePassword(oldPw, newPw); onSuccess() } catch (e) { setError(localizeError(e)) } finally { setBusy(false) }
+  }
+  return (
+    <AnimatePresence>{open && (
+      <Sheet title={t('settings.changePassword')} onClose={onClose}>
+        <div className="space-y-2 py-1">
+          <input type="password" value={oldPw} onChange={(e) => setOldPw(e.target.value)} placeholder={t('settings.oldPasswordLabel')} aria-label={t('settings.oldPasswordLabel')} className={inputCls} />
+          <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder={t('settings.newPasswordLabel')} aria-label={t('settings.newPasswordLabel')} className={inputCls} />
+          <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={t('settings.confirmPasswordLabel')} aria-label={t('settings.confirmPasswordLabel')} className={inputCls} />
+          {error && <p className="text-[12px] text-catFail">{error}</p>}
+          <Button variant="primary" size="lg" className="w-full" disabled={busy} onClick={() => void onSubmit()}>{t('common.save')}</Button>
+        </div>
+      </Sheet>
+    )}</AnimatePresence>
+  )
+}
+
+// 注销账号 sheet：警示文案 + 密码确认。成功后 deleteAccount 已清库 + logout，跳登录。
+function DeleteAccountSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const deleteAccount = useAccountStore((s) => s.deleteAccount)
+  const navigate = useNavigate()
+  const t = useT()
+  const [pw, setPw] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const inputCls = 'h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
+  async function onSubmit() {
+    setError(null)
+    setBusy(true)
+    try { await deleteAccount(pw); navigate('/login') } catch (e) { setError(localizeError(e)); setBusy(false) }
+  }
+  return (
+    <AnimatePresence>{open && (
+      <Sheet title={t('settings.deleteAccount')} onClose={onClose}>
+        <div className="space-y-2 py-1">
+          <p className="text-[12px] leading-relaxed text-catFail">{t('settings.deleteAccountWarn')}</p>
+          <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t('settings.passwordLabel')} aria-label={t('settings.passwordLabel')} className={inputCls} />
+          {error && <p className="text-[12px] text-catFail">{error}</p>}
+          <Button variant="primary" size="lg" className="w-full bg-catFail" disabled={busy} onClick={() => void onSubmit()}>{t('settings.deleteAccountConfirm')}</Button>
+        </div>
+      </Sheet>
+    )}</AnimatePresence>
+  )
+}
+
+// 兑换码 sheet：输码激活付费档（interim，绕开真实支付）。成功后刷额度 + toast。
+function RedeemSheet({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
+  const redeemCode = useAccountStore((s) => s.redeemCode)
+  const t = useT()
+  const [code, setCode] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const inputCls = 'h-11 w-full rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card'
+  async function onSubmit() {
+    setError(null)
+    if (!code.trim()) { setError(t('settings.redeemCode')); return }
+    setBusy(true)
+    try {
+      await redeemCode(code.trim())
+      await useQuotaStore.getState().refresh()
+      onSuccess()
+    } catch (e) { setError(localizeError(e)) } finally { setBusy(false) }
+  }
+  return (
+    <AnimatePresence>{open && (
+      <Sheet title={t('settings.redeemCode')} onClose={onClose}>
+        <div className="space-y-2 py-1">
+          <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder={t('settings.redeemCodePlaceholder')} aria-label={t('settings.redeemCode')} className={inputCls} />
+          {error && <p className="text-[12px] text-catFail">{error}</p>}
+          <Button variant="primary" size="lg" className="w-full" disabled={busy} onClick={() => void onSubmit()}>{t('common.save')}</Button>
+        </div>
+      </Sheet>
+    )}</AnimatePresence>
+  )
+}
+
 // 游客升级为网络账号：绑邮箱+密码，account.id 不变（单池）。
 // bindNetwork 抛 'AUTH_<CODE>:<中文>'；成功后 onClose + toast。
 // AnimatePresence 常驻 + open 条件渲染 → Sheet 退出动画完成后才卸载。
@@ -274,6 +373,9 @@ export function AccountSection() {
   const [nickOpen, setNickOpen] = useState(false)
   const [plansOpen, setPlansOpen] = useState(false)
   const [bindOpen, setBindOpen] = useState(false)
+  const [pwOpen, setPwOpen] = useState(false)
+  const [delOpen, setDelOpen] = useState(false)
+  const [redeemOpen, setRedeemOpen] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -468,6 +570,40 @@ export function AccountSection() {
         </button>
       )}
 
+      {/* 账号信息：邮箱（脱敏）+ 注册时间。仅 network 账号有邮箱。 */}
+      {account.email && (
+        <div className="mt-1 flex w-full items-center justify-between rounded-btn py-1">
+          <span className="text-[13px] text-ink">{maskEmail(account.email)}</span>
+          <span className="text-[11px] text-t3">
+            {t('settings.registeredAt', { date: account.createdAt.slice(0, 10) })}
+          </span>
+        </div>
+      )}
+
+      {/* 输入兑换码（仅 network） */}
+      {!isGuest && (
+        <button type="button" onClick={() => setRedeemOpen(true)} className="mt-1 flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <span className="text-[13px] text-ink">{t('settings.redeemCode')}</span>
+          <ChevronRight size={18} className="text-t2" />
+        </button>
+      )}
+
+      {/* 修改密码（仅 network） */}
+      {!isGuest && (
+        <button type="button" onClick={() => setPwOpen(true)} className="mt-1 flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <span className="text-[13px] text-ink">{t('settings.changePassword')}</span>
+          <ChevronRight size={18} className="text-t2" />
+        </button>
+      )}
+
+      {/* 注销账号（仅 network），catFail 警示 */}
+      {!isGuest && (
+        <button type="button" onClick={() => setDelOpen(true)} className="mt-1 flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
+          <span className="text-[13px] text-catFail">{t('settings.deleteAccount')}</span>
+          <ChevronRight size={18} className="text-t2" />
+        </button>
+      )}
+
       {/* 退出登录：ghost 文字按钮，居中，更轻。 */}
       <button
         type="button"
@@ -493,6 +629,28 @@ export function AccountSection() {
         onSuccess={() => {
           setBindOpen(false)
           setToast(t('settings.upgradedToNetwork'))
+        }}
+      />
+      <ChangePasswordSheet
+        open={pwOpen}
+        onClose={() => setPwOpen(false)}
+        onSuccess={() => {
+          setPwOpen(false)
+          setToast(t('settings.changePasswordSuccess'))
+          // 后端已作废全部 session（changePassword 内 clearSession），跳登录重登。
+          window.setTimeout(() => navigate('/login'), 800)
+        }}
+      />
+      <DeleteAccountSheet open={delOpen} onClose={() => setDelOpen(false)} />
+      <RedeemSheet
+        open={redeemOpen}
+        onClose={() => setRedeemOpen(false)}
+        onSuccess={() => {
+          setRedeemOpen(false)
+          const a = useAccountStore.getState().account
+          const planName = a?.paidPlanId === 'yearly' ? t('settings.planYearly') : t('settings.planMonthly')
+          const date = a?.paidExpiresAt?.slice(0, 10) ?? ''
+          setToast(t('settings.redeemSuccess', { plan: planName, date }))
         }}
       />
       {nickOpen && (

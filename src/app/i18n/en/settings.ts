@@ -179,6 +179,20 @@ export const settings = {
   'settings.planYearly': 'Yearly plan',
   'settings.planMonthly': 'Monthly plan',
 
+  // 账号信息 / 修改密码 / 注销 / 兑换码（2026-07-29 账号中心）
+  'settings.accountInfo': 'Account info',
+  'settings.registeredAt': 'Joined {date}',
+  'settings.changePassword': 'Change password',
+  'settings.oldPasswordLabel': 'Current password',
+  'settings.newPasswordLabel': 'New password',
+  'settings.changePasswordSuccess': 'Password changed. Please sign in again',
+  'settings.deleteAccount': 'Delete account',
+  'settings.deleteAccountWarn': 'Deleting your account permanently removes the account and all data. Enter your password to confirm.',
+  'settings.deleteAccountConfirm': 'Delete permanently',
+  'settings.redeemCode': 'Enter redemption code',
+  'settings.redeemCodePlaceholder': 'AIJI-XXXX-XXXX-XXXX',
+  'settings.redeemSuccess': '{plan} activated until {date}',
+
   // 权益方案 / 配额
   'settings.plans': 'Plans',
   'settings.free': 'Free',

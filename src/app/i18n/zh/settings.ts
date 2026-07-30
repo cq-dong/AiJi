@@ -180,6 +180,20 @@ export const settings = {
   'settings.planYearly': '年度会员',
   'settings.planMonthly': '月度会员',
 
+  // 账号信息 / 修改密码 / 注销 / 兑换码（2026-07-29 账号中心）
+  'settings.accountInfo': '账号信息',
+  'settings.registeredAt': '注册 {date}',
+  'settings.changePassword': '修改密码',
+  'settings.oldPasswordLabel': '旧密码',
+  'settings.newPasswordLabel': '新密码',
+  'settings.changePasswordSuccess': '密码已修改，请重新登录',
+  'settings.deleteAccount': '注销账号',
+  'settings.deleteAccountWarn': '注销后账号与全部数据将被永久删除，不可恢复。请输入密码确认。',
+  'settings.deleteAccountConfirm': '确认注销',
+  'settings.redeemCode': '输入兑换码',
+  'settings.redeemCodePlaceholder': 'AIJI-XXXX-XXXX-XXXX',
+  'settings.redeemSuccess': '已激活{plan}，至 {date}',
+
   // 权益方案 / 配额
   'settings.plans': '权益方案',
   'settings.free': '免费',
