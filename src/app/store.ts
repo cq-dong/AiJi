@@ -542,6 +542,10 @@ export const useUiStore = create<UiState>((set, get) => ({
     void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
   },
   processEntry: async (entryId, isFresh) => {
+    // §4：STT 失败原因收集——per-part try/catch 默认吞错，classify 因「无文本」失败时，
+    // 外层 catch 据此顶用 STT 原始错误（额度/转码/超时）而非误导性的「无文本」。
+    // 在 try 之前声明：catch 块需读取；每次 processEntry 调用需 fresh 一份。
+    let sttFailedError: string | undefined
     try {
       // D13: 后置回填地点地址。capture 屏的 enrichLocation effect 只更新 Zustand
       // capture.location，保存后 navigate('/') → capture 卸载 → effect cleanup
@@ -583,11 +587,12 @@ export const useUiStore = create<UiState>((set, get) => ({
               if (!isFresh && p.transcript) return p
               try {
                 const text = await di.stt.transcribe(p.ref)
-                if (!text) return p
+                if (!text) { sttFailedError = sttFailedError ?? 'STT 转写为空'; return p }
                 changed = true
                 return { ...p, transcript: text }
               } catch (e) {
                 console.error('[store] stt failed for ' + p.ref, e)
+                sttFailedError = sttFailedError ?? (e instanceof Error ? e.message : String(e))
                 return p
               }
             }),
@@ -635,7 +640,10 @@ export const useUiStore = create<UiState>((set, get) => ({
       console.error('[store] processEntry failed', e)
       const entry = await di.storage.getEntry(entryId)
       if (entry) {
-        const errMsg = e instanceof Error ? e.message : String(e)
+        let errMsg = e instanceof Error ? e.message : String(e)
+        // §4：classify 抛「无文本」（含音频 part 但转写为空），若 STT 此前失败且无回退文本，
+        // 真实原因是 STT（额度/转码/超时）而非「无文本」——用 STT 原始错误，不再误导。
+        if (sttFailedError && /无文本|empty|无可用/.test(errMsg)) errMsg = sttFailedError
         const updated: Entry = { ...entry, status: 'failed', processError: errMsg, updatedAt: new Date().toISOString() }
         await di.storage.saveEntry(updated)
         set((s) => ({ entries: s.entries.map((e) => (e.id === entryId ? updated : e)) }))
