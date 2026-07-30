@@ -47,6 +47,24 @@ export function getDb(): Database.Database {
       agg_used INTEGER DEFAULT 0,
       PRIMARY KEY (user_id, date)
     );
+
+    CREATE TABLE IF NOT EXISTS redeem_codes (
+      code TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL,
+      duration_days INTEGER NOT NULL,
+      max_uses INTEGER NOT NULL DEFAULT 1,
+      used_count INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT,
+      note TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS redeem_logs (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      redeemed_at TEXT NOT NULL
+    );
   `)
   // 迁移：旧库 users 表无 trial_expires_at 列 → 补加。SQLite ADD COLUMN 无 IF NOT EXISTS，
   // 用 try/catch 容错（列已存在时抛 "duplicate column" → 忽略）。
@@ -88,4 +106,22 @@ export interface QuotaRow {
   llm_used: number
   stt_used_sec: number
   agg_used: number
+}
+
+export interface RedeemCodeRow {
+  code: string
+  plan_id: string
+  duration_days: number
+  max_uses: number
+  used_count: number
+  expires_at: string | null
+  note: string | null
+  created_at: string
+}
+
+export interface RedeemLogRow {
+  id: string
+  code: string
+  user_id: string
+  redeemed_at: string
 }
