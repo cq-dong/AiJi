@@ -18,10 +18,12 @@ export function PlansSheet({
   onClose: () => void
 }) {
   const upgradePlan = useAccountStore((s) => s.upgradePlan)
+  const redeemCode = useAccountStore((s) => s.redeemCode)
   const refreshQuota = useQuotaStore((s) => s.refresh)
   const t = useT()
   const [toast, setToast] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [redeemCodeInput, setRedeemCodeInput] = useState('')
 
   async function onUpgrade(id: string) {
     setBusy(true)
@@ -29,6 +31,24 @@ export function PlansSheet({
       await upgradePlan(id)
       await refreshQuota()
       setToast(t('settings.upgradeSuccessDemo'))
+    } catch (e) {
+      setToast(localizeError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onRedeem() {
+    if (!redeemCodeInput.trim()) return
+    setBusy(true)
+    try {
+      await redeemCode(redeemCodeInput.trim())
+      await refreshQuota()
+      const a = useAccountStore.getState().account
+      const planName = a?.paidPlanId === 'yearly' ? t('settings.planYearly') : t('settings.planMonthly')
+      const date = a?.paidExpiresAt?.slice(0, 10) ?? ''
+      setToast(t('settings.redeemSuccess', { plan: planName, date }))
+      setRedeemCodeInput('')
     } catch (e) {
       setToast(localizeError(e))
     } finally {
@@ -92,6 +112,22 @@ export function PlansSheet({
                 )}
               </div>
             ))}
+            {/* 兑换码：输码激活付费档（interim，绕开真实支付）。 */}
+            <div className="rounded-card border border-brd p-4">
+              <span className="text-[13px] font-medium text-ink">{t('settings.redeemCode')}</span>
+              <div className="mt-2 flex gap-2">
+                <input
+                  value={redeemCodeInput}
+                  onChange={(e) => setRedeemCodeInput(e.target.value.toUpperCase())}
+                  placeholder={t('settings.redeemCodePlaceholder')}
+                  aria-label={t('settings.redeemCode')}
+                  className="h-10 flex-1 rounded-btn border border-brd bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition duration-base ease-out focus:border-pri/50 focus:outline-none"
+                />
+                <Button variant="primary" size="sm" disabled={busy} onClick={() => void onRedeem()}>
+                  {t('common.save')}
+                </Button>
+              </div>
+            </div>
             {toast && <p className="text-center text-[12px] text-pri">{toast}</p>}
           </div>
         </Sheet>
