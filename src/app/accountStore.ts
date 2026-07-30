@@ -8,6 +8,7 @@ import type { Account, AuthSession } from '@/domain/account'
 import { localAccount } from '@/adapters/localAccount'
 import { localSession } from '@/app/session'
 import { di } from '@/app/di'
+import { db } from '@/data/db'
 import { SessionExpiredError } from '@/ports'
 import { setCurrentOwner } from '@/app/currentOwner'
 import { t } from '@/app/i18n'
@@ -104,6 +105,9 @@ interface AccountState {
   register: (email: string, password: string) => Promise<void>
   bindNetwork: (email: string, password: string) => Promise<void>
   upgradePlan: (planId: string) => Promise<void>
+  changePassword: (oldPassword: string, newPassword: string) => Promise<void>
+  deleteAccount: (password: string) => Promise<void>
+  redeemCode: (code: string) => Promise<void>
   clearSession: () => void
   logout: () => void
   setAvatar: (dataUrl: string) => void
@@ -211,15 +215,29 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     const r = await di.plan.upgrade(planId)
     const cur = get().account
     if (!cur) return
-    const next: Account = {
-      ...cur,
-      plan: 'paid',
-      paidPlanId: r.paidPlanId,
-      paidExpiresAt: r.paidExpiresAt,
-    }
+    // 后端现真落库并返 account（§2.4）：优先用，保证本地=后端；旧 stub 响应无 account → 手拼。
+    const next: Account = r.account ?? { ...cur, plan: 'paid', paidPlanId: r.paidPlanId, paidExpiresAt: r.paidExpiresAt }
     localAccount.set(next)
     set({ account: next })
     // quota refresh 由 UI 层 PlansSheet 调 useQuotaStore.getState().refresh()（单向依赖）
+  },
+  changePassword: async (oldPassword, newPassword) => {
+    await di.auth.changePassword(oldPassword, newPassword)
+    // 后端已作废全部 refresh token（含本机）→ 清 session，UI 跳登录页。
+    get().clearSession()
+  },
+  deleteAccount: async (password) => {
+    await di.auth.deleteAccount(password)
+    // 后端已硬删账号+数据。本地全清：localStorage + 整个 IndexedDB（db.delete 删全库）+ logout。
+    localStorage.clear()
+    await db.delete().catch((e) => console.error('[accountStore] db.delete failed', e))
+    get().logout()
+  },
+  redeemCode: async (code) => {
+    const r = await di.plan.redeem(code)
+    localAccount.set(r.account)
+    set({ account: r.account })
+    // quota refresh 由 UI 层调 useQuotaStore.getState().refresh()
   },
   clearSession: () => {
     localSession.clear()
