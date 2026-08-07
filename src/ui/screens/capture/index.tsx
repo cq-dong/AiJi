@@ -107,14 +107,16 @@ export default function Capture() {
   // builtin 且额度耗尽 → 采集入口降级（用户应切 byok 或等重置）。
   const quotaBlocked = keySource === 'builtin' && quotaExhausted
 
-  // Task 16: session 过期信号——accountStore hydrate 时 refresh 失败置 sessionStale=true。
+  // Task 16: session 过期信号——accountStore hydrate 时 refresh 失败置 sessionStale=true（网络
+  // 抖动）或 sessionExpired=true（确定性失效）。两者都提示；expired 时设置页额度行显重登 CTA。
   // 此处不自动 logout（spec: LLM 失败只伤 AI 层；让用户看到失败条目再手动登出）。
+  const sessionExpired = useAccountStore((s) => s.sessionExpired)
   useEffect(() => {
-    if (!sessionStale) return
+    if (!sessionStale && !sessionExpired) return
     setActionToast({
       message: t('capture.sessionStale'),
     })
-  }, [sessionStale])
+  }, [sessionStale, sessionExpired])
   // Wave 3 #4: draft hint banner — shows when parts are restored from a
   // persisted draft on hydrate. Initialized from current parts (common case:
   // hydrate completed before navigating to /capture). Also checks once more

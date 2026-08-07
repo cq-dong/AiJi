@@ -98,6 +98,9 @@ interface AccountState {
   account: Account | null
   session: AuthSession | null
   sessionStale: boolean
+  // 会话确定性失效（boot refresh 401/无 token）：与 sessionStale（网络抖动，可自愈）区分——
+  // UI 据此显「登录已过期·点击重新登录」而非无限「加载中」。login/register/logout 复位。
+  sessionExpired: boolean
   hydrated: boolean
   hydrate: () => void
   registerGuest: (nickname: string) => Account
@@ -118,6 +121,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   account: null,
   session: null,
   sessionStale: false,
+  sessionExpired: false,
   hydrated: false,
   hydrate: () => {
     if (get().hydrated) return
@@ -140,13 +144,14 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         .then((s) => {
           if (!get().account) return
           localSession.set(s)
-          set({ session: s, sessionStale: false })
+          set({ session: s, sessionStale: false, sessionExpired: false })
         })
         .catch((e) => {
-          // 分型：refresh 失效（401）→ 会话过期清 session；其他（网络）→ 标 stale 待重试。
+          // 分型：refresh 失效（401）→ 会话过期清 session + 置 sessionExpired（UI 引导重登）；
+          // 其他（网络）→ 标 stale 待重试（可自愈，不清 session）。
           if (e instanceof SessionExpiredError) {
             localSession.clear()
-            set({ session: null, sessionStale: false })
+            set({ session: null, sessionStale: false, sessionExpired: true })
           } else {
             set({ sessionStale: true })
           }
@@ -177,7 +182,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // 之后 listEntries 按 account.id 过滤即可看到收养来的历史数据。
     setCurrentOwner(account.id)
     await adoptLocalSafe(account.id)
-    set({ account, session, sessionStale: false })
+    set({ account, session, sessionStale: false, sessionExpired: false })
     // 内置 key 可达 + 清旧 owner 快照重载（隔离）。best-effort 不阻塞登录。
     void postNetworkLogin()
   },
@@ -187,7 +192,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     localSession.set(session)
     setCurrentOwner(account.id)
     await adoptLocalSafe(account.id)
-    set({ account, session, sessionStale: false })
+    set({ account, session, sessionStale: false, sessionExpired: false })
     void postNetworkLogin()
   },
   bindNetwork: async (email, password) => {
@@ -208,7 +213,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // 绑定即升级为 network 账号：guest 期间记的 'local' 数据收养到服务器 account.id。
     setCurrentOwner(next.id)
     await adoptLocalSafe(next.id)
-    set({ account: next, session, sessionStale: false })
+    set({ account: next, session, sessionStale: false, sessionExpired: false })
     void postNetworkLogin()
   },
   upgradePlan: async (planId) => {
@@ -250,7 +255,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // 登出 → 数据分区回到 'local'（未登录态）。已收养到旧 account.id 的数据保留在库中，
     // 下次该账号登录仍可见；新记的数据落到 'local'，待下次登录收养。
     setCurrentOwner('local')
-    set({ account: null, session: null, sessionStale: false })
+    set({ account: null, session: null, sessionStale: false, sessionExpired: false })
     void di.storage
       .getSettings()
       .then((s) => {

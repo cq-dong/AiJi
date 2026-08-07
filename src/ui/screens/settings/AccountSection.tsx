@@ -365,6 +365,7 @@ export function AccountSection() {
   const navigate = useNavigate()
   const account = useAccountStore((s) => s.account)
   const sessionStale = useAccountStore((s) => s.sessionStale)
+  const sessionExpired = useAccountStore((s) => s.sessionExpired)
   const settings = useUiStore((s) => s.settings)
   const quota = useQuotaStore((s) => s.quota)
   const t = useT()
@@ -524,18 +525,21 @@ export function AccountSection() {
         </button>
       )}
 
-      {/* 额度行：仅 keySource=builtin 显示。sessionStale 时灰色 + 提示重新登录。 */}
+      {/* 额度行：仅 keySource=builtin 显示。sessionExpired（会话确定性失效）→ 显重登 CTA 直达
+          /login，不再显无限「加载中」；sessionStale（网络抖动）时灰色 + 提示重新登录。 */}
       {showQuotaRow && (
         <button
           type="button"
-          onClick={() => setQuotaOpen(true)}
+          onClick={() => (sessionExpired ? navigate('/login') : setQuotaOpen(true))}
           className={cn(
             'mt-1 flex w-full items-center justify-between rounded-btn py-1 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card',
             sessionStale && 'opacity-50',
           )}
         >
           <span className="text-[13px] text-ink">
-            {quota === null ? (
+            {sessionExpired ? (
+              <span className="text-catPending">{t('settings.sessionExpiredRelogin')}</span>
+            ) : quota === null ? (
               t('common.loading')
             ) : (
               <>
