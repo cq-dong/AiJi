@@ -219,6 +219,20 @@ export const settings = {
   'settings.unitTimes': '次',
   'settings.unitSeconds': '秒',
 
+  // 云端同步（Phase 2）：network 账号可开，保存即推 + 打开即拉 + 5min 兜底。
+  'settings.cloudSync': '云端同步',
+  'settings.cloudSyncOff': '关闭中——数据仅保存在本机',
+  'settings.cloudSyncOn': '自动同步：保存即推 · 打开即拉 · 每 5 分钟兜底',
+  'settings.syncLastAt': '上次同步 {time}',
+  'settings.syncNever': '尚未同步',
+  'settings.syncPending': '待上传 {count} 条',
+  'settings.syncStorage': '云存储 {used} / {limit}',
+  'settings.syncStorageUnlimited': '云存储 {used}（不限量）',
+  'settings.syncMigrating': '首次同步中 {done}/{total}…',
+  'settings.syncStorageFull': '云存储已满，升级套餐后继续同步媒体',
+  'settings.syncRequireNetwork': '需先升级为网络账号',
+  'settings.syncError': '同步异常：{msg}',
+
   // 反馈
   'settings.feedback': '使用反馈',
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Archive, Brain, Check, ChevronDown, ChevronRight, Download, Eye, FileDown, FileInput, Film, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, Plus, Share2, Sparkles, Timer, Trash2, X } from 'lucide-react'
+import { AlertCircle, Archive, Brain, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, Plus, Share2, Sparkles, Timer, Trash2, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
@@ -11,6 +11,9 @@ import { useT } from '@/app/i18n/useT'
 import { t } from '@/app/i18n'
 import { getCurrentLang } from '@/app/currentLang'
 import { di } from '@/app/di'
+import { maybeStartSync, stopSync } from '@/app/syncEngine'
+import { useSyncStore } from '@/app/syncStore'
+import { useAccountStore } from '@/app/accountStore'
 import { exportZip } from '@/adapters/zipExport'
 import { canShareFiles, saveBlob, type SaveResult } from '@/adapters/fileShare'
 import { importSampleData } from '@/adapters/dexieStorage'
@@ -291,6 +294,23 @@ function countMedia(parts: EntryPart[]): number {
     if (p.type === 'audio' || p.type === 'video') n++
   }
   return n
+}
+
+// 云端同步：lastSyncAt ISO → HH:mm 本地时间（与 dateLocale 同则 zh-CN/en-US 分流）。
+function formatHM(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString(getCurrentLang() === 'zh' ? 'zh-CN' : 'en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return iso
+  }
+}
+
+// 字节数 → MB（一位小数）。模块级共用：云端同步存储用量 + AboutSheet 下载进度。
+function formatMB(bytes: number): string {
+  return (bytes / 1048576).toFixed(1)
 }
 
 // D10: 导出 .zip 确认对话框。说明范围 + 文件名 + 媒体数 + 保存位置，确认后执行。
@@ -1013,7 +1033,6 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const formatMB = (bytes: number): string => (bytes / 1048576).toFixed(1)
   const hasProgress = !!progress
   const showProgressBar = hasProgress && progress!.percent >= 0
   const percentClamped = hasProgress ? Math.max(0, Math.min(100, progress!.percent)) : 0
@@ -1250,6 +1269,27 @@ export default function Settings() {
   const t = useT()
   const theme = settings.theme
   const recordLocation = settings.recordLocation
+  // 云端同步（Phase 2）：network 账号可开。guest → toggle disabled + syncRequireNetwork 副标题。
+  const account = useAccountStore((s) => s.account)
+  const isNetwork = account?.type === 'network'
+  const syncEnabled = !!settings.syncEnabled
+  const {
+    migrating,
+    migrationTotal,
+    migrationRemaining,
+    lastSyncAt,
+    pendingCount,
+    usedBytes,
+    limitBytes,
+    storageFull,
+    lastError,
+    syncing,
+  } = useSyncStore()
+  // 云存储用量文案（limitBytes<0=不限；storageFull 时 label 染 catFail 色）。
+  const storageText =
+    limitBytes < 0
+      ? t('settings.syncStorageUnlimited', { used: formatMB(usedBytes) })
+      : t('settings.syncStorage', { used: formatMB(usedBytes), limit: formatMB(limitBytes) })
   const entries = useUiStore((s) => s.entries)
   const hasEntries = entries.length > 0
   const memories = useUiStore((s) => s.memories)
@@ -1449,6 +1489,82 @@ export default function Settings() {
           }
           onClick={() => setEditingGeo(true)}
         />
+      </SettingsGroup>
+
+      {/* 云端同步（Phase 2） */}
+      <SettingsGroup label={t('settings.cloudSync')}>
+        <SettingsRow
+          icon={<Cloud size={15} strokeWidth={2.2} />}
+          label={t('settings.cloudSync')}
+          help={
+            isNetwork
+              ? syncEnabled
+                ? t('settings.cloudSyncOn')
+                : t('settings.cloudSyncOff')
+              : t('settings.syncRequireNetwork')
+          }
+          right={
+            <Toggle
+              checked={syncEnabled}
+              onChange={(v) => {
+                if (!isNetwork) return
+                setSettings({ syncEnabled: v })
+                if (v) void maybeStartSync()
+                else stopSync()
+              }}
+            />
+          }
+          disabled={!isNetwork}
+        />
+        {syncEnabled && isNetwork && (
+          <>
+            <RowDivider />
+            {migrating ? (
+              <SettingsRow
+                icon={<Sparkles size={15} strokeWidth={2.2} />}
+                label={t('settings.syncMigrating', {
+                  done: migrationTotal - migrationRemaining,
+                  total: migrationTotal,
+                })}
+                right={
+                  <div className="h-1.5 w-16 overflow-hidden rounded-full bg-priS">
+                    <div
+                      className="h-full bg-pri transition-[width] duration-base ease-out"
+                      style={{
+                        width: `${migrationTotal ? ((migrationTotal - migrationRemaining) / migrationTotal) * 100 : 0}%`,
+                      }}
+                    />
+                  </div>
+                }
+              />
+            ) : (
+              <SettingsRow
+                icon={<Cloud size={15} strokeWidth={2.2} className={syncing ? 'animate-pulse' : ''} />}
+                label={
+                  lastSyncAt ? t('settings.syncLastAt', { time: formatHM(lastSyncAt) }) : t('settings.syncNever')
+                }
+                value={pendingCount > 0 ? t('settings.syncPending', { count: pendingCount }) : undefined}
+              />
+            )}
+            <RowDivider />
+            <SettingsRow
+              icon={<Archive size={15} strokeWidth={2.2} />}
+              label={
+                storageFull ? <span className="text-catFail">{storageText}</span> : storageText
+              }
+              value={storageFull ? t('settings.syncStorageFull') : undefined}
+            />
+            {lastError && (
+              <>
+                <RowDivider />
+                <SettingsRow
+                  icon={<AlertCircle size={15} strokeWidth={2.2} />}
+                  label={<span className="text-catFail">{t('settings.syncError', { msg: lastError })}</span>}
+                />
+              </>
+            )}
+          </>
+        )}
       </SettingsGroup>
 
       {/* 数据 */}

@@ -65,6 +65,18 @@ export function getDb(): Database.Database {
       user_id TEXT NOT NULL,
       redeemed_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS sync_rows (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      id TEXT NOT NULL,
+      payload TEXT,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT,
+      UNIQUE (user_id, kind, id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_sync_user_seq ON sync_rows(user_id, seq);
   `)
   // 迁移：旧库 users 表无 trial_expires_at 列 → 补加。SQLite ADD COLUMN 无 IF NOT EXISTS，
   // 用 try/catch 容错（列已存在时抛 "duplicate column" → 忽略）。
@@ -124,4 +136,14 @@ export interface RedeemLogRow {
   code: string
   user_id: string
   redeemed_at: string
+}
+
+export interface SyncRow {
+  seq: number
+  user_id: string
+  kind: string
+  id: string
+  payload: string | null
+  updated_at: string
+  deleted_at: string | null
 }
