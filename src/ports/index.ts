@@ -219,6 +219,12 @@ export class QuotaExhaustedError extends Error {
     this.name = 'QuotaExhaustedError'
   }
 }
+export class StorageFullError extends Error {
+  constructor(message = '云存储空间不足，请升级套餐') {
+    super(message)
+    this.name = 'StorageFullError'
+  }
+}
 
 export interface AuthPort {
   register(email: string, password: string): Promise<{ account: Account; session: AuthSession }>

@@ -11,6 +11,7 @@ import { di } from '@/app/di'
 import { db } from '@/data/db'
 import { SessionExpiredError } from '@/ports'
 import { setCurrentOwner } from '@/app/currentOwner'
+import { maybeStartSync, stopSync } from '@/app/syncEngine'
 import { t } from '@/app/i18n'
 
 // adoptLocal 包装：收养失败不让 login/register reject——登录本身已成功（session 已落），
@@ -87,11 +88,13 @@ async function triggerQuotaReset(): Promise<void> {
 
 // network 账号登录/绑定后的 best-effort 收尾：先写 keySource='builtin'（防 di 路由漂移到 BYOK），
 // 再 rehydrate（重载新 owner 数据）。顺序有意——rehydrate 内会读 settings，先落 builtin 再重载
-// 避免 race 读到旧 byok。两者均吞错不阻塞登录主流程。
+// 避免 race 读到旧 byok。两者均吞错不阻塞登录主流程。最后启动云端同步引擎（settings.syncEnabled
+// 开才真启，maybeStartSync 内自判；未开/已启均 no-op）。
 async function postNetworkLogin(): Promise<void> {
   await setKeySourceBuiltin()
   await triggerStoreRehydrate()
   await triggerQuotaReset()
+  void maybeStartSync()
 }
 
 interface AccountState {
@@ -255,6 +258,9 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // 登出 → 数据分区回到 'local'（未登录态）。已收养到旧 account.id 的数据保留在库中，
     // 下次该账号登录仍可见；新记的数据落到 'local'，待下次登录收养。
     setCurrentOwner('local')
+    // 停云端同步引擎（清 interval/listener/outbox 槽）。先停再置 state，避免引擎 tick
+    // 在 owner 已切 'local' 后还跑（getCurrentOwner 已返 'local'，tick 内 flush 空 no-op，但停干净）。
+    stopSync()
     set({ account: null, session: null, sessionStale: false, sessionExpired: false })
     void di.storage
       .getSettings()

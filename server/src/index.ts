@@ -14,6 +14,7 @@ import vlmRoutes from './routes/vlm.js'
 import sttRoutes from './routes/stt.js'
 import geocodeRoutes from './routes/geocode.js'
 import healthRoutes from './routes/health.js'
+import syncRoutes from './routes/sync.js'
 
 // 启动时建表 + 校验 env（env.ts 顶部已 throw on missing secret）。
 getDb()
@@ -52,6 +53,9 @@ app.route('/api/vlm', vlmRoutes)
 app.route('/api/stt', sttRoutes)
 app.route('/api/geocode', geocodeRoutes)
 app.route('/api/account', accountRoutes)
+// sync: 全部端点需鉴权（中间件须在 route 之前，Hono 按注册顺序匹配）。
+app.use('/api/sync/*', authMiddleware)
+app.route('/api/sync', syncRoutes)
 
 serve({ fetch: app.fetch, port: env.port }, (info) => {
   console.log(`[aiji-server] listening on http://localhost:${info.port}`)

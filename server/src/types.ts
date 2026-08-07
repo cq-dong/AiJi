@@ -40,33 +40,33 @@ export interface PlanTier {
   name: string
   price: number
   period: 'once' | 'monthly' | 'yearly'
-  limits: { llmLimit: number; sttLimitSec: number; aggLimit: number }
+  limits: { llmLimit: number; sttLimitSec: number; aggLimit: number; storageLimitBytes: number }
   features: string[]
 }
 
 export const PLAN_TIERS: PlanTier[] = [
   {
     id: 'free', name: '免费', price: 0, period: 'once',
-    limits: { llmLimit: 20, sttLimitSec: 120, aggLimit: 5 },
+    limits: { llmLimit: 20, sttLimitSec: 120, aggLimit: 5, storageLimitBytes: 209715200 },
     features: ['每日 20 次 LLM', '每日 120 秒 STT', '内置 Key'],
   },
   {
     id: 'monthly', name: '月度会员', price: 1800, period: 'monthly',
-    limits: { llmLimit: 300, sttLimitSec: 1800, aggLimit: 50 },
+    limits: { llmLimit: 300, sttLimitSec: 1800, aggLimit: 50, storageLimitBytes: 5368709120 },
     features: ['每日 300 次 LLM', '每日 30 分钟 STT', 'VLM 多模态（远期）'],
   },
   {
     id: 'yearly', name: '年度会员', price: 16800, period: 'yearly',
-    limits: { llmLimit: -1, sttLimitSec: -1, aggLimit: -1 },
+    limits: { llmLimit: -1, sttLimitSec: -1, aggLimit: -1, storageLimitBytes: 21474836480 },
     features: ['LLM 无限', 'STT 无限', '所有付费功能'],
   },
 ]
 
 // 按 account.plan + paidPlanId 解析今日额度。paid 且未过期 → 用付费档额度，否则 free。
 // 24h 试用期内（trialEndsAt 未过期）→ 全部 -1 无限，覆盖付费档（让新用户免费用内置 key）。
-export function resolveLimits(account: Account): { llmLimit: number; sttLimitSec: number; aggLimit: number } {
+export function resolveLimits(account: Account): { llmLimit: number; sttLimitSec: number; aggLimit: number; storageLimitBytes: number } {
   if (account.trialEndsAt && new Date(account.trialEndsAt).getTime() > Date.now()) {
-    return { llmLimit: -1, sttLimitSec: -1, aggLimit: -1 }
+    return { llmLimit: -1, sttLimitSec: -1, aggLimit: -1, storageLimitBytes: -1 }
   }
   if (account.plan === 'paid' && account.paidPlanId && account.paidExpiresAt) {
     if (new Date(account.paidExpiresAt).getTime() > Date.now()) {
@@ -75,4 +75,15 @@ export function resolveLimits(account: Account): { llmLimit: number; sttLimitSec
     }
   }
   return PLAN_TIERS[0].limits
+}
+
+// ── 云端同步（Phase 2）──
+export type SyncKind = 'entry' | 'category' | 'tag' | 'reminder' | 'draft' | 'media'
+
+export interface SyncChange {
+  kind: SyncKind
+  id: string
+  payload?: unknown
+  updatedAt: string
+  deletedAt?: string
 }

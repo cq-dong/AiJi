@@ -218,6 +218,20 @@ export const settings = {
   'settings.unitTimes': 'calls',
   'settings.unitSeconds': 's',
 
+  // 云端同步（Phase 2）：network 账号可开，保存即推 + 打开即拉 + 5min 兜底。
+  'settings.cloudSync': 'Cloud sync',
+  'settings.cloudSyncOff': 'Off — data stays on this device only',
+  'settings.cloudSyncOn': 'Auto sync: push on save · pull on open · 5-min fallback',
+  'settings.syncLastAt': 'Last synced {time}',
+  'settings.syncNever': 'Not synced yet',
+  'settings.syncPending': '{count} pending',
+  'settings.syncStorage': 'Cloud storage {used} / {limit}',
+  'settings.syncStorageUnlimited': 'Cloud storage {used} (unlimited)',
+  'settings.syncMigrating': 'First sync {done}/{total}…',
+  'settings.syncStorageFull': 'Cloud storage full — upgrade to keep syncing media',
+  'settings.syncRequireNetwork': 'Upgrade to a network account first',
+  'settings.syncError': 'Sync error: {msg}',
+
   // 反馈
   'settings.feedback': 'Feedback',
 

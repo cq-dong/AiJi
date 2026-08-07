@@ -44,7 +44,8 @@ video/
 # Throwaway STT/LLM probe scripts + test audio (exploration only, no keys)
 scripts/probe-*.mjs
 public/asr-test.wav
-# Backend (server/) — sqlite data + build output
+# Backend (server/) — sqlite data + build output + sync media blobs
 server/data/
 server/dist/
+server/media/
 # Contest demo video workspace (generated, not part of the app)
