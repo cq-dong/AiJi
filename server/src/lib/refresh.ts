@@ -30,18 +30,19 @@ export function issueRefreshToken(userId: string): string {
   return token
 }
 
-// 校验 refresh token：有效且未过期未作废 → 返回 user_id；已作废 → 返回 null（并触发重放保护作废该用户全部）。
-export function consumeRefreshToken(token: string): { userId: string } | { replay: true } | null {
+// 校验 refresh token：有效且未过期未作废 → 返回 user_id；否则返回 null。
+// 2026-08-07：移除「重放检测作废全部 token」——移动端弱网下轮换响应丢失后客户端持旧 token
+// 重试会误判为重放，把合法新 token 一并炸掉（自我 DoS，dcq 账号 8/6 实锤：最新 token 被
+// 作废且无后继 → 全端会话死亡）。旧 token 重放只 401 持有者本人，合法会话不受影响。
+export function consumeRefreshToken(token: string): { userId: string } | null {
   const db = getDb()
   const row = db
     .prepare(`SELECT * FROM refresh_tokens WHERE token_hash = ?`)
     .get(hashToken(token)) as RefreshTokenRow | undefined
   if (!row) return null
   if (row.revoked_at) {
-    // 重放检测：被盗用旧 token 再次出现 → 作废该用户全部 refresh（受害者踢下线，攻击者也失效）。
-    db.prepare(`UPDATE refresh_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`)
-      .run(new Date().toISOString(), row.user_id)
-    return { replay: true }
+    console.warn('[auth] revoked refresh token presented (replay or lost-rotation retry), user:', row.user_id)
+    return null
   }
   if (new Date(row.expires_at).getTime() <= Date.now()) return null
   // 单次轮换：作废当前 token。

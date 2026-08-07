@@ -88,13 +88,12 @@ auth.post('/login', async (c) => {
   return c.json({ account: rowToAccount(row), session })
 })
 
-// 刷新：单次轮换 + 重放检测。响应附带最新 account（前端 hydrate 可同步刷新 plan 状态）。
+// 刷新：单次轮换。响应附带最新 account（前端 hydrate 可同步刷新 plan 状态）。
 auth.post('/refresh', async (c) => {
   const body = await c.req.json().catch(() => null) as { refreshToken?: string } | null
   if (!body?.refreshToken) return errorJson(c, 401, 'AUTH_401', 'refresh token 缺失')
   const result = consumeRefreshToken(body.refreshToken)
   if (!result) return errorJson(c, 401, 'AUTH_401', 'refresh token 已失效')
-  if ('replay' in result) return errorJson(c, 401, 'AUTH_401', '检测到异常登录，请重新登录')
 
   const { userId } = result
   const session = await buildSession(userId)

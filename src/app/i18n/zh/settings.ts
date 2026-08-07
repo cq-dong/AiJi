@@ -157,6 +157,7 @@ export const settings = {
   'settings.upgradeToNetwork': '升级为网络账号',
   'settings.quotaSummary': '今日 LLM {llmUsed}/{llmLimit} 次，STT {sttUsedSec}/{sttLimitSec} 秒',
   'settings.sessionStaleHint': '登录状态可能已过期，重新登录',
+  'settings.sessionExpiredRelogin': '登录已过期，点击重新登录',
   'settings.logout': '退出登录',
   'settings.upgradedToNetwork': '已升级为网络账号',
   'settings.changeAvatar': '更换头像',

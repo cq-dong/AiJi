@@ -201,7 +201,8 @@ export interface FeedbackPort {
 // ── Slice B 端口 ──────────────────────────────────────────────
 // 错误类：适配器抛、UI/store catch 按 name 分流。erasableSyntaxOnly 禁 class 参数属性，手写 constructor。
 export class SessionExpiredError extends Error {
-  constructor(message = 'session expired') {
+  // 默认消息会原样落到条目 processError（store.ts processEntry catch），须用户可读的中文。
+  constructor(message = '登录已过期，请重新登录') {
     super(message)
     this.name = 'SessionExpiredError'
   }

@@ -78,7 +78,14 @@ export const httpAuth: AuthPort = {
         throw new NotNetworkError('网络不可用')
       }
       const body = await parseBody(res)
-      if (!res.ok) throw parseAuthError(body, res.status)
+      // refresh 401 = 会话确定性失效（token 被作废/过期/重放踢出），必须抛 SessionExpiredError——
+      // parseAuthError 会裹成普通 Error，hydrate 误判为网络抖动（sessionStale）导致
+      // 设置页额度行无限「加载中」、无重登引导（2026-08-07 实锤：兑换后一周 token 被重放
+      // 检测作废，用户只见「内置 key 加载中」+ AI 全失败）。
+      if (!res.ok) {
+        if (res.status === 401) throw new SessionExpiredError('AUTH_401:登录已过期')
+        throw parseAuthError(body, res.status)
+      }
       // 后端返 {account, session}；AuthPort.refresh 契约只返 session。
       const data = body as { account: Account; session: AuthSession }
       return data.session

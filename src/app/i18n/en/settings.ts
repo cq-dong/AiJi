@@ -156,6 +156,7 @@ export const settings = {
   'settings.upgradeToNetwork': 'Upgrade to network account',
   'settings.quotaSummary': 'Today: LLM {llmUsed}/{llmLimit}, STT {sttUsedSec}/{sttLimitSec}s',
   'settings.sessionStaleHint': 'Session may have expired, please sign in again',
+  'settings.sessionExpiredRelogin': 'Session expired — tap to sign in again',
   'settings.logout': 'Sign out',
   'settings.upgradedToNetwork': 'Upgraded to network account',
   'settings.changeAvatar': 'Change avatar',
