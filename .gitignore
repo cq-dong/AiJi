@@ -48,3 +48,4 @@ public/asr-test.wav
 server/data/
 server/dist/
 # Contest demo video workspace (generated, not part of the app)
+.env.ssh
