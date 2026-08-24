@@ -88,13 +88,12 @@ auth.post('/login', async (c) => {
   return c.json({ account: rowToAccount(row), session })
 })
 
-// 刷新：单次轮换 + 重放检测。响应附带最新 account（前端 hydrate 可同步刷新 plan 状态）。
+// 刷新：单次轮换。响应附带最新 account（前端 hydrate 可同步刷新 plan 状态）。
 auth.post('/refresh', async (c) => {
   const body = await c.req.json().catch(() => null) as { refreshToken?: string } | null
   if (!body?.refreshToken) return errorJson(c, 401, 'AUTH_401', 'refresh token 缺失')
   const result = consumeRefreshToken(body.refreshToken)
   if (!result) return errorJson(c, 401, 'AUTH_401', 'refresh token 已失效')
-  if ('replay' in result) return errorJson(c, 401, 'AUTH_401', '检测到异常登录，请重新登录')
 
   const { userId } = result
   const session = await buildSession(userId)
@@ -102,6 +101,23 @@ auth.post('/refresh', async (c) => {
   const row = db.prepare(`SELECT * FROM users WHERE id = ?`).get(userId) as UserRow | undefined
   if (!row) return errorJson(c, 401, 'AUTH_401', '账号不存在')
   return c.json({ account: rowToAccount(row), session })
+})
+
+// 修改密码：校验旧密码 → 换 hash → 作废全部 refresh token（强制各端重登）。
+auth.post('/change-password', async (c) => {
+  const userId = c.get('userId') as string
+  const body = await c.req.json().catch(() => null) as { oldPassword?: string; newPassword?: string } | null
+  if (!body?.oldPassword || !body?.newPassword) return errorJson(c, 400, 'AUTH_400', '旧密码和新密码必填')
+  if (!validatePassword(body.newPassword)) return errorJson(c, 400, 'AUTH_400', '新密码至少 8 位')
+  const db = getDb()
+  const row = db.prepare(`SELECT * FROM users WHERE id = ?`).get(userId) as UserRow | undefined
+  if (!row) return errorJson(c, 401, 'AUTH_401', '账号不存在')
+  const ok = await verifyPassword(body.oldPassword, row.password_hash)
+  if (!ok) return errorJson(c, 401, 'AUTH_401', '旧密码错误')
+  const hash = await hashPassword(body.newPassword)
+  db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(hash, userId)
+  revokeAllUserTokens(userId)
+  return c.json({ ok: true })
 })
 
 // 登出：作废该用户全部 refresh token。

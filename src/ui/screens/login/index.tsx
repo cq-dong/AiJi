@@ -6,6 +6,7 @@ import { useAccountStore } from '@/app/accountStore'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import { localizeError } from '@/app/i18n/errorText'
+import { deviceOnboarded } from '@/app/onboardedFlag'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -24,7 +25,9 @@ export default function Login() {
 
   const onGuestStart = () => {
     useAccountStore.getState().registerGuest(nickname)
-    navigate('/onboarding')
+    // 新流程下 onboarding 已在 login 前完成（设备级 flag 已设）→ 直接进 home。
+    // flag 未设时回落 /onboarding（安全降级，旧设备首次直接进 login 的情形）。
+    navigate(deviceOnboarded.get() ? '/' : '/onboarding')
   }
 
   const fail = (msg: string) => {
@@ -41,7 +44,7 @@ export default function Login() {
     try {
       if (mode === 'register') await useAccountStore.getState().register(email, password)
       else await useAccountStore.getState().login(email, password)
-      const onboarded = useUiStore.getState().settings.onboarded
+      const onboarded = useUiStore.getState().settings.onboarded || deviceOnboarded.get()
       navigate(onboarded ? '/' : '/onboarding')
     } catch (e) {
       // startsWith('AUTH_409') 是控制流分支（翻到登录 tab），用原 e.message；

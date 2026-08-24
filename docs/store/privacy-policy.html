@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 记 (AiJi) 隐私政策 | Privacy Policy</title>
+<style>
+  :root { --bg:#f7f7fa; --card:#fff; --ink:#14141a; --t2:#6b6b75; --pri:#4f46e5; }
+  body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif; background:var(--bg); color:var(--ink); line-height:1.7; padding:24px 16px; max-width:720px; margin:0 auto; }
+  h1 { font-size:24px; margin-bottom:8px; }
+  h2 { font-size:18px; margin-top:28px; margin-bottom:10px; color:var(--pri); }
+  .subtitle { color:var(--t2); font-size:14px; margin-bottom:24px; }
+  .card { background:var(--card); border-radius:16px; padding:20px; margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,0.04); }
+  ul { padding-left:20px; }
+  li { margin-bottom:6px; }
+  .badge { display:inline-block; background:#eeedfd; color:var(--pri); padding:2px 8px; border-radius:6px; font-size:12px; margin-right:6px; }
+  footer { text-align:center; color:var(--t2); font-size:12px; margin-top:32px; }
+  a { color:var(--pri); text-decoration:none; }
+  .lang-en { color:var(--t2); font-size:14px; margin-top:8px; }
+</style>
+</head>
+<body>
+<h1>AI 记 (AiJi) 隐私政策</h1>
+<p class="subtitle">最后更新：2026-08-24 · 适用于 Android 应用 v2.5.x</p>
+
+<div class="card">
+<h2>1. 我们是谁 / Who We Are</h2>
+<p>「AI 记」（AiJi）是由 董成麒（Chengqi Dong）独立开发的通用记录工具，面向个人用户提供本地优先的笔记、语音、照片与 AI 辅助整理服务。</p>
+<p class="lang-en">AiJi is a personal note-taking app developed by Chengqi Dong. It offers a local-first experience for capturing text, voice, photos, and AI-assisted organization.</p>
+</div>
+
+<div class="card">
+<h2>2. 数据收集原则 / Data Collection Principles</h2>
+<p><strong>本地优先，服务端不持久存储内容。</strong></p>
+<ul>
+<li>你的所有记录条目（文字、照片、音频、视频）均存储在设备本地 IndexedDB 中。</li>
+<li>应用采用 BYOK（Bring Your Own Key）模式：LLM / STT 的 API Key 由你自行配置并仅保存在本地，我们不会读取或上传你的 Key。</li>
+<li>若你使用云端账号（network 账号），服务端仅代理鉴权、套餐与配额查询，不保留你的笔记内容。</li>
+</ul>
+<p class="lang-en">All entries are stored locally in IndexedDB. API keys for LLM/STT are configured by you and kept only on the device. The backend acts solely as an auth/plan/quota proxy and does not persist your notes.</p>
+</div>
+
+<div class="card">
+<h2>3. 后端代理说明 / Backend Proxy</h2>
+<p>为降低使用门槛，应用提供可选的后端代理服务：</p>
+<ul>
+<li><span class="badge">语音转写</span> 音频片段上传至后端进行 STT（语音识别），识别完成后音频数据不保留。</li>
+<li><span class="badge">AI 分析</span> 若你未配置自有 Key，可选择由后端代理转发至大语言模型；转发内容即当前条目标题与正文，处理完成后不保留。</li>
+<li><span class="badge">地理编码</span> 地理位置信息通过后端代理查询高德地图服务，用于展示地点名称。</li>
+</ul>
+<p class="lang-en">Optional backend proxies: STT (audio transcribed and not retained), LLM analysis (content forwarded and not retained), and geocoding (location queried via Amap).</p>
+</div>
+
+<div class="card">
+<h2>4. 权限用途 / Permissions</h2>
+<ul>
+<li><strong>相机 / Camera</strong>：用于拍摄照片或视频并添加到记录中。</li>
+<li><strong>麦克风 / Microphone</strong>：用于语音输入与语音转文字。</li>
+<li><strong>位置 / Location</strong>：用于为记录附加地理位置信息（可选，默认关闭）。</li>
+<li><strong>通知 / Notifications</strong>：用于在设定时间发送提醒。</li>
+<li><strong>精确闹钟 / Exact Alarm</strong>：确保提醒在指定时间准时触发（Android 12+）。</li>
+<li><strong>安装包 / Install Packages</strong>：用于应用内检测新版本并引导系统更新（仅在你主动确认时触发）。</li>
+</ul>
+<p class="lang-en">Camera and microphone are for media capture. Location is optional for geo-tagging. Notifications and exact alarms are for reminders. Install packages is for in-app update prompts.</p>
+</div>
+
+<div class="card">
+<h2>5. 数据安全 / Data Security</h2>
+<ul>
+<li>本地数据使用浏览器标准 IndexedDB 存储，受设备操作系统沙箱保护。</li>
+<li>网络传输使用 HTTPS（后端已启用 TLS）。</li>
+<li>账号密码经 bcrypt 哈希后存储，服务端不保存明文密码。</li>
+<li>JWT 令牌用于身份校验，支持登出与刷新。</li>
+</ul>
+<p class="lang-en">Local data is protected by OS sandboxing. Network traffic uses HTTPS. Passwords are hashed with bcrypt. JWT tokens are used for authentication.</p>
+</div>
+
+<div class="card">
+<h2>6. 你的权利 / Your Rights</h2>
+<ul>
+<li><strong>导出</strong>：可在设置中导出全部数据为 JSON。</li>
+<li><strong>删除</strong>：可在设置中「清除本地数据」或「注销云端账号」；注销后服务端关联信息将被删除。</li>
+<li><strong>撤回授权</strong>：可在系统设置中随时关闭相机、麦克风、位置等权限。</li>
+</ul>
+<p class="lang-en">You can export all data as JSON, clear local data, or delete your cloud account at any time. System permissions can be revoked in device settings.</p>
+</div>
+
+<div class="card">
+<h2>7. 联系我们 / Contact Us</h2>
+<p>如有隐私相关问题，请通过以下方式联系：</p>
+<ul>
+<li>GitHub Issues：<a href="https://github.com/cq-dong/AiJi/issues" target="_blank">https://github.com/cq-dong/AiJi/issues</a></li>
+<li>开发者：董成麒（Chengqi Dong）</li>
+</ul>
+<p class="lang-en">For privacy concerns, please open an issue on GitHub or contact the developer directly.</p>
+</div>
+
+<footer>
+© 2026 AiJi · 本政策可能随版本更新而调整，重大变更将在应用内公告。<br>
+This policy may be updated with app releases. Significant changes will be announced in-app.
+</footer>
+</body>
+</html>

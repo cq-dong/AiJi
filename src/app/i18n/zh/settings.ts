@@ -157,6 +157,7 @@ export const settings = {
   'settings.upgradeToNetwork': '升级为网络账号',
   'settings.quotaSummary': '今日 LLM {llmUsed}/{llmLimit} 次，STT {sttUsedSec}/{sttLimitSec} 秒',
   'settings.sessionStaleHint': '登录状态可能已过期，重新登录',
+  'settings.sessionExpiredRelogin': '登录已过期，点击重新登录',
   'settings.logout': '退出登录',
   'settings.upgradedToNetwork': '已升级为网络账号',
   'settings.changeAvatar': '更换头像',
@@ -179,6 +180,20 @@ export const settings = {
   'settings.upgradePaid': '升级付费',
   'settings.planYearly': '年度会员',
   'settings.planMonthly': '月度会员',
+
+  // 账号信息 / 修改密码 / 注销 / 兑换码（2026-07-29 账号中心）
+  'settings.accountInfo': '账号信息',
+  'settings.registeredAt': '注册 {date}',
+  'settings.changePassword': '修改密码',
+  'settings.oldPasswordLabel': '旧密码',
+  'settings.newPasswordLabel': '新密码',
+  'settings.changePasswordSuccess': '密码已修改，请重新登录',
+  'settings.deleteAccount': '注销账号',
+  'settings.deleteAccountWarn': '注销后账号与全部数据将被永久删除，不可恢复。请输入密码确认。',
+  'settings.deleteAccountConfirm': '确认注销',
+  'settings.redeemCode': '输入兑换码',
+  'settings.redeemCodePlaceholder': 'AIJI-XXXX-XXXX-XXXX',
+  'settings.redeemSuccess': '已激活{plan}，至 {date}',
 
   // 权益方案 / 配额
   'settings.plans': '权益方案',
@@ -203,6 +218,20 @@ export const settings = {
   'settings.quotaReset': '重置时间',
   'settings.unitTimes': '次',
   'settings.unitSeconds': '秒',
+
+  // 云端同步（Phase 2）：network 账号可开，保存即推 + 打开即拉 + 5min 兜底。
+  'settings.cloudSync': '云端同步',
+  'settings.cloudSyncOff': '关闭中——数据仅保存在本机',
+  'settings.cloudSyncOn': '自动同步：保存即推 · 打开即拉 · 每 5 分钟兜底',
+  'settings.syncLastAt': '上次同步 {time}',
+  'settings.syncNever': '尚未同步',
+  'settings.syncPending': '待上传 {count} 条',
+  'settings.syncStorage': '云存储 {used} / {limit}',
+  'settings.syncStorageUnlimited': '云存储 {used}（不限量）',
+  'settings.syncMigrating': '首次同步中 {done}/{total}…',
+  'settings.syncStorageFull': '云存储已满，升级套餐后继续同步媒体',
+  'settings.syncRequireNetwork': '需先升级为网络账号',
+  'settings.syncError': '同步异常：{msg}',
 
   // 反馈
   'settings.feedback': '使用反馈',

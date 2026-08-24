@@ -218,6 +218,8 @@ export interface Settings {
   // i18n（2026-07-22）：界面语言。undefined = 未固化（boot hydrate 时按系统语言 detect 并写回，
   // 一次性——之后系统语言变化不跟随，用户在设置里手动改）。
   language?: 'zh' | 'en'
+  // 云端同步（Phase 2）：开=保存即推+开 App 即拉+5min 兜底。仅 network 账号可开（UI 门）。
+  syncEnabled?: boolean
 }
 
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────

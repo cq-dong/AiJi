@@ -156,6 +156,7 @@ export const settings = {
   'settings.upgradeToNetwork': 'Upgrade to network account',
   'settings.quotaSummary': 'Today: LLM {llmUsed}/{llmLimit}, STT {sttUsedSec}/{sttLimitSec}s',
   'settings.sessionStaleHint': 'Session may have expired, please sign in again',
+  'settings.sessionExpiredRelogin': 'Session expired — tap to sign in again',
   'settings.logout': 'Sign out',
   'settings.upgradedToNetwork': 'Upgraded to network account',
   'settings.changeAvatar': 'Change avatar',
@@ -178,6 +179,20 @@ export const settings = {
   'settings.upgradePaid': 'Upgrade to paid',
   'settings.planYearly': 'Yearly plan',
   'settings.planMonthly': 'Monthly plan',
+
+  // 账号信息 / 修改密码 / 注销 / 兑换码（2026-07-29 账号中心）
+  'settings.accountInfo': 'Account info',
+  'settings.registeredAt': 'Joined {date}',
+  'settings.changePassword': 'Change password',
+  'settings.oldPasswordLabel': 'Current password',
+  'settings.newPasswordLabel': 'New password',
+  'settings.changePasswordSuccess': 'Password changed. Please sign in again',
+  'settings.deleteAccount': 'Delete account',
+  'settings.deleteAccountWarn': 'Deleting your account permanently removes the account and all data. Enter your password to confirm.',
+  'settings.deleteAccountConfirm': 'Delete permanently',
+  'settings.redeemCode': 'Enter redemption code',
+  'settings.redeemCodePlaceholder': 'AIJI-XXXX-XXXX-XXXX',
+  'settings.redeemSuccess': '{plan} activated until {date}',
 
   // 权益方案 / 配额
   'settings.plans': 'Plans',
@@ -202,6 +217,20 @@ export const settings = {
   'settings.quotaReset': 'Resets at',
   'settings.unitTimes': 'calls',
   'settings.unitSeconds': 's',
+
+  // 云端同步（Phase 2）：network 账号可开，保存即推 + 打开即拉 + 5min 兜底。
+  'settings.cloudSync': 'Cloud sync',
+  'settings.cloudSyncOff': 'Off — data stays on this device only',
+  'settings.cloudSyncOn': 'Auto sync: push on save · pull on open · 5-min fallback',
+  'settings.syncLastAt': 'Last synced {time}',
+  'settings.syncNever': 'Not synced yet',
+  'settings.syncPending': '{count} pending',
+  'settings.syncStorage': 'Cloud storage {used} / {limit}',
+  'settings.syncStorageUnlimited': 'Cloud storage {used} (unlimited)',
+  'settings.syncMigrating': 'First sync {done}/{total}…',
+  'settings.syncStorageFull': 'Cloud storage full — upgrade to keep syncing media',
+  'settings.syncRequireNetwork': 'Upgrade to a network account first',
+  'settings.syncError': 'Sync error: {msg}',
 
   // 反馈
   'settings.feedback': 'Feedback',

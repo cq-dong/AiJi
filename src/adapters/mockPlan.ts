@@ -4,6 +4,7 @@
 // 真正修改账号 paidPlanId/paidExpiresAt 由 accountStore.upgradePlan（后续 task）负责，
 // PlanPort 层对 accountStore 无感知（单向 port→app 依赖）。
 import type { PlanPort } from '@/ports'
+import { NotNetworkError } from '@/ports'
 import { PLAN_TIERS } from '@/domain/plan'
 
 export const mockPlan: PlanPort = {
@@ -20,4 +21,5 @@ export const mockPlan: PlanPort = {
       payUrl: undefined,
     }
   },
+  async redeem() { throw new NotNetworkError('需网络账号') },
 }

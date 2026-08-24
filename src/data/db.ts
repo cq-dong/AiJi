@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
 import type { Aggregate, Category, Conversation, Draft, Entry, EntryAi, Memory, Reminder, Settings, Tag } from '@/domain/types'
+import type { OutboxRow, SyncMediaTrackRow, SyncStateRow } from '@/domain/sync'
 
 // IndexedDB schema (PRD §7.3). UI 层先用 mock 适配器，schema 已就位待接入。
 export class AiJiDB extends Dexie {
@@ -22,6 +23,11 @@ export class AiJiDB extends Dexie {
   // AI 记忆（2026-07-22）：用户明确记忆/偏好，classify 与 answerChat 注入 prompt。
   // 账号分区同 6 张分区表（ownerId 索引）；v8 新表无存量，无 upgrade 回填。
   memories!: Table<Memory, string>
+  // 云端同步（Phase 2）：outbox=待推队列（ownerId 分区）；syncMedia=已上传 ref 标记；
+  // syncState=kv 元数据（lastPullSeq / migrated 标记）。
+  syncOutbox!: Table<OutboxRow, number>
+  syncMedia!: Table<SyncMediaTrackRow, string>
+  syncState!: Table<SyncStateRow, string>
 
   constructor() {
     super('aiji')
@@ -133,6 +139,24 @@ export class AiJiDB extends Dexie {
       drafts: 'id, updatedAt',
       conversations: 'id, updatedAt, ownerId',
       memories: 'id, ownerId, updatedAt',
+    })
+    // v9: 云端同步——syncOutbox（++seq 自增主键，&[ownerId+kind+id] 唯一去重，ownerId 过滤）、
+    // syncMedia（ref 主键）、syncState（key 主键 kv）。纯加表，无 upgrade 回调。
+    // .stores() 非增量——所有 store 逐字重声明（现有索引逐字保留，仅追加三同步表）。
+    this.version(9).stores({
+      entries: 'id, createdAt, updatedAt, status, deletedAt, ownerId',
+      entryAi: 'id, entryId, version',
+      categories: 'slug, usageCount, ownerId',
+      tags: 'slug, usageCount, ownerId',
+      aggregates: 'id, scope.type, scope.range, stale, ownerId',
+      settings: '++id',
+      reminders: 'id, dueAt, status, entryId, ownerId',
+      drafts: 'id, updatedAt',
+      conversations: 'id, updatedAt, ownerId',
+      memories: 'id, ownerId, updatedAt',
+      syncOutbox: '++seq, &[ownerId+kind+id], ownerId',
+      syncMedia: 'ref',
+      syncState: 'key',
     })
   }
 }

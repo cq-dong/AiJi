@@ -12,6 +12,7 @@ import { useAccountStore } from '@/app/accountStore'
 import { useQuotaStore } from '@/app/quotaStore'
 import { seedDevDefaults } from '@/app/devSeed'
 import { initReminderFire } from '@/app/reminderFire'
+import { maybeStartSync } from '@/app/syncEngine'
 
 // D38: 平台分流 Service Worker。
 // 原生壳（Capacitor）：注销存量 SW——vite-plugin-pwa 的 SW 会缓存 JS bundle（含烘焙的
@@ -39,9 +40,11 @@ if (_acc && _acc.type === 'network') {
 
 // DEV-only：从 .env.local（gitignored）灌 BYOK 默认到 localStorage+Dexie，再 hydrate——
 // 手机走隧道加载同一 bundle 即自动拿到 key，免每台设备手填。seed 失败不阻断载入。
+// 云端同步：hydrate 完成后才能读 settings.syncEnabled → maybeStartSync（network 账号+开关开才启，
+// 首启自动迁移）。放在 hydrate 的 finally 链尾，保证 settings 已落库。
 void seedDevDefaults()
   .catch((e) => console.error('[devSeed] failed', e))
-  .finally(() => useUiStore.getState().hydrate())
+  .finally(() => useUiStore.getState().hydrate().finally(() => void maybeStartSync()))
 
 // D20: 提醒到点「弹窗+声音」初始化——注册原生 LocalNotifications listener + web
 // webNotify handler + audio unlock。必须在 React render 前注册，保证 whole-app

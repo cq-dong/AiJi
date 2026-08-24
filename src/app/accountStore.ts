@@ -8,8 +8,10 @@ import type { Account, AuthSession } from '@/domain/account'
 import { localAccount } from '@/adapters/localAccount'
 import { localSession } from '@/app/session'
 import { di } from '@/app/di'
+import { db } from '@/data/db'
 import { SessionExpiredError } from '@/ports'
 import { setCurrentOwner } from '@/app/currentOwner'
+import { maybeStartSync, stopSync } from '@/app/syncEngine'
 import { t } from '@/app/i18n'
 
 // adoptLocal 包装：收养失败不让 login/register reject——登录本身已成功（session 已落），
@@ -86,17 +88,22 @@ async function triggerQuotaReset(): Promise<void> {
 
 // network 账号登录/绑定后的 best-effort 收尾：先写 keySource='builtin'（防 di 路由漂移到 BYOK），
 // 再 rehydrate（重载新 owner 数据）。顺序有意——rehydrate 内会读 settings，先落 builtin 再重载
-// 避免 race 读到旧 byok。两者均吞错不阻塞登录主流程。
+// 避免 race 读到旧 byok。两者均吞错不阻塞登录主流程。最后启动云端同步引擎（settings.syncEnabled
+// 开才真启，maybeStartSync 内自判；未开/已启均 no-op）。
 async function postNetworkLogin(): Promise<void> {
   await setKeySourceBuiltin()
   await triggerStoreRehydrate()
   await triggerQuotaReset()
+  void maybeStartSync()
 }
 
 interface AccountState {
   account: Account | null
   session: AuthSession | null
   sessionStale: boolean
+  // 会话确定性失效（boot refresh 401/无 token）：与 sessionStale（网络抖动，可自愈）区分——
+  // UI 据此显「登录已过期·点击重新登录」而非无限「加载中」。login/register/logout 复位。
+  sessionExpired: boolean
   hydrated: boolean
   hydrate: () => void
   registerGuest: (nickname: string) => Account
@@ -104,6 +111,9 @@ interface AccountState {
   register: (email: string, password: string) => Promise<void>
   bindNetwork: (email: string, password: string) => Promise<void>
   upgradePlan: (planId: string) => Promise<void>
+  changePassword: (oldPassword: string, newPassword: string) => Promise<void>
+  deleteAccount: (password: string) => Promise<void>
+  redeemCode: (code: string) => Promise<void>
   clearSession: () => void
   logout: () => void
   setAvatar: (dataUrl: string) => void
@@ -114,6 +124,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
   account: null,
   session: null,
   sessionStale: false,
+  sessionExpired: false,
   hydrated: false,
   hydrate: () => {
     if (get().hydrated) return
@@ -136,13 +147,14 @@ export const useAccountStore = create<AccountState>((set, get) => ({
         .then((s) => {
           if (!get().account) return
           localSession.set(s)
-          set({ session: s, sessionStale: false })
+          set({ session: s, sessionStale: false, sessionExpired: false })
         })
         .catch((e) => {
-          // 分型：refresh 失效（401）→ 会话过期清 session；其他（网络）→ 标 stale 待重试。
+          // 分型：refresh 失效（401）→ 会话过期清 session + 置 sessionExpired（UI 引导重登）；
+          // 其他（网络）→ 标 stale 待重试（可自愈，不清 session）。
           if (e instanceof SessionExpiredError) {
             localSession.clear()
-            set({ session: null, sessionStale: false })
+            set({ session: null, sessionStale: false, sessionExpired: true })
           } else {
             set({ sessionStale: true })
           }
@@ -173,7 +185,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // 之后 listEntries 按 account.id 过滤即可看到收养来的历史数据。
     setCurrentOwner(account.id)
     await adoptLocalSafe(account.id)
-    set({ account, session, sessionStale: false })
+    set({ account, session, sessionStale: false, sessionExpired: false })
     // 内置 key 可达 + 清旧 owner 快照重载（隔离）。best-effort 不阻塞登录。
     void postNetworkLogin()
   },
@@ -183,7 +195,7 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     localSession.set(session)
     setCurrentOwner(account.id)
     await adoptLocalSafe(account.id)
-    set({ account, session, sessionStale: false })
+    set({ account, session, sessionStale: false, sessionExpired: false })
     void postNetworkLogin()
   },
   bindNetwork: async (email, password) => {
@@ -204,22 +216,36 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // 绑定即升级为 network 账号：guest 期间记的 'local' 数据收养到服务器 account.id。
     setCurrentOwner(next.id)
     await adoptLocalSafe(next.id)
-    set({ account: next, session, sessionStale: false })
+    set({ account: next, session, sessionStale: false, sessionExpired: false })
     void postNetworkLogin()
   },
   upgradePlan: async (planId) => {
     const r = await di.plan.upgrade(planId)
     const cur = get().account
     if (!cur) return
-    const next: Account = {
-      ...cur,
-      plan: 'paid',
-      paidPlanId: r.paidPlanId,
-      paidExpiresAt: r.paidExpiresAt,
-    }
+    // 后端现真落库并返 account（§2.4）：优先用，保证本地=后端；旧 stub 响应无 account → 手拼。
+    const next: Account = r.account ?? { ...cur, plan: 'paid', paidPlanId: r.paidPlanId, paidExpiresAt: r.paidExpiresAt }
     localAccount.set(next)
     set({ account: next })
     // quota refresh 由 UI 层 PlansSheet 调 useQuotaStore.getState().refresh()（单向依赖）
+  },
+  changePassword: async (oldPassword, newPassword) => {
+    await di.auth.changePassword(oldPassword, newPassword)
+    // 后端已作废全部 refresh token（含本机）→ 清 session，UI 跳登录页。
+    get().clearSession()
+  },
+  deleteAccount: async (password) => {
+    await di.auth.deleteAccount(password)
+    // 后端已硬删账号+数据。本地全清：localStorage + 整个 IndexedDB（db.delete 删全库）+ logout。
+    localStorage.clear()
+    await db.delete().catch((e) => console.error('[accountStore] db.delete failed', e))
+    get().logout()
+  },
+  redeemCode: async (code) => {
+    const r = await di.plan.redeem(code)
+    localAccount.set(r.account)
+    set({ account: r.account })
+    // quota refresh 由 UI 层调 useQuotaStore.getState().refresh()
   },
   clearSession: () => {
     localSession.clear()
@@ -232,7 +258,10 @@ export const useAccountStore = create<AccountState>((set, get) => ({
     // 登出 → 数据分区回到 'local'（未登录态）。已收养到旧 account.id 的数据保留在库中，
     // 下次该账号登录仍可见；新记的数据落到 'local'，待下次登录收养。
     setCurrentOwner('local')
-    set({ account: null, session: null, sessionStale: false })
+    // 停云端同步引擎（清 interval/listener/outbox 槽）。先停再置 state，避免引擎 tick
+    // 在 owner 已切 'local' 后还跑（getCurrentOwner 已返 'local'，tick 内 flush 空 no-op，但停干净）。
+    stopSync()
+    set({ account: null, session: null, sessionStale: false, sessionExpired: false })
     void di.storage
       .getSettings()
       .then((s) => {

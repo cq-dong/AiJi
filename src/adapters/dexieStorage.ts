@@ -1,5 +1,6 @@
 import { db } from '@/data/db'
 import { getCurrentOwner } from '@/app/currentOwner'
+import { enqueue } from '@/app/syncOutbox'
 import type { StoragePort } from '@/ports'
 import type { Aggregate, AggregateScopeType, Conversation, Draft, Entry, Memory, Reminder } from '@/domain/types'
 import {
@@ -107,6 +108,7 @@ export const dexieStorage: StoragePort = {
   async saveEntry(entry) {
     // 强制盖章当前 owner——防调用方漏传或构造时用错 owner。
     await db.entries.put({ ...entry, ownerId: getCurrentOwner() })
+    await enqueue(getCurrentOwner(), 'entry', entry.id)
   },
   async getEntryAi(entryId) {
     await ensureSeeded()
@@ -122,6 +124,7 @@ export const dexieStorage: StoragePort = {
   },
   async saveEntryAi(ai) {
     await db.entryAi.put(ai)
+    await enqueue(getCurrentOwner(), 'entry', ai.entryId)
   },
   async listCategories() {
     await ensureSeeded()
@@ -130,6 +133,7 @@ export const dexieStorage: StoragePort = {
   },
   async saveCategory(cat) {
     await db.categories.put({ ...cat, ownerId: getCurrentOwner() })
+    await enqueue(getCurrentOwner(), 'category', cat.slug)
   },
   async listTags() {
     await ensureSeeded()
@@ -138,6 +142,7 @@ export const dexieStorage: StoragePort = {
   },
   async saveTag(tag) {
     await db.tags.put({ ...tag, ownerId: getCurrentOwner() })
+    await enqueue(getCurrentOwner(), 'tag', tag.slug)
   },
   async listAggregates() {
     await ensureSeeded()
@@ -220,6 +225,7 @@ export const dexieStorage: StoragePort = {
   },
   async saveReminder(r: Reminder): Promise<void> {
     await db.reminders.put({ ...r, ownerId: getCurrentOwner() })
+    await enqueue(getCurrentOwner(), 'reminder', r.id)
   },
   async deleteReminder(id: string): Promise<void> {
     const owner = getCurrentOwner()
@@ -227,28 +233,37 @@ export const dexieStorage: StoragePort = {
     // 仅删当前 owner 的——防跨账号 slug/id 误删（防御性，store 调用链已按 owner 过滤）。
     if (!r || r.ownerId !== owner) return
     await db.reminders.delete(id)
+    await enqueue(owner, 'reminder', id, { tombstone: true })
   },
   async deleteCategory(slug: string): Promise<void> {
     const owner = getCurrentOwner()
     const c = await db.categories.get(slug)
     if (!c || c.ownerId !== owner) return
     await db.categories.delete(slug)
+    await enqueue(owner, 'category', slug, { tombstone: true })
   },
   async deleteEntry(id: string): Promise<void> {
     // D5: 先取 entry 清 OPFS 媒体，再删 Dexie 行 + 级联 AI/reminders。
     // 账号分区：仅删当前 owner 的条目；跨账号 id 直删防护。
+    // 云端同步级联：reminders 与媒体是独立同步行，各自的 tombstone 需显式入队。
     const owner = getCurrentOwner()
     const e = await db.entries.get(id)
     if (!e || e.ownerId !== owner) return
-    if (e) await removeMediaForEntry(e)
+    const cascadedReminders = await db.reminders.where('entryId').equals(id).toArray()
+    const mediaRefs = e.parts.filter((p) => p.type !== 'text').map((p) => p.ref)
+    await removeMediaForEntry(e)
     await db.entries.delete(id)
     await db.entryAi.where('entryId').equals(id).delete()
     await db.reminders.where('entryId').equals(id).delete()
+    await enqueue(owner, 'entry', id, { tombstone: true })
+    for (const r of cascadedReminders) await enqueue(owner, 'reminder', r.id, { tombstone: true })
+    for (const ref of mediaRefs) await enqueue(owner, 'media', ref, { tombstone: true })
   },
   async saveDraft(d: Draft): Promise<void> {
     // Wave 4: multi-row. d.id is string; put by keyPath (no explicit key).
     // drafts 不分区（设备级草稿，不绑账号）。
     await db.drafts.put(d)
+    await enqueue(getCurrentOwner(), 'draft', d.id)
   },
   async listDrafts(): Promise<Draft[]> {
     await ensureSeeded()
@@ -262,6 +277,7 @@ export const dexieStorage: StoragePort = {
   },
   async deleteDraft(id: string): Promise<void> {
     await db.drafts.delete(id)
+    await enqueue(getCurrentOwner(), 'draft', id, { tombstone: true })
   },
   async listTrashed(): Promise<Entry[]> {
     await ensureSeeded()
@@ -276,6 +292,8 @@ export const dexieStorage: StoragePort = {
     const e = await db.entries.get(id)
     if (!e || e.ownerId !== owner) return
     await db.entries.put({ ...e, deletedAt: new Date().toISOString() })
+    // 软删=可恢复的更新（payload 带 deletedAt 字段），非 tombstone。
+    await enqueue(owner, 'entry', id)
   },
   async recoverEntry(id: string): Promise<void> {
     const owner = getCurrentOwner()
@@ -283,19 +301,26 @@ export const dexieStorage: StoragePort = {
     if (!e || e.ownerId !== owner || !e.deletedAt) return
     // undefined props are dropped by structured clone → deletedAt absent on next read.
     await db.entries.put({ ...e, deletedAt: undefined })
+    await enqueue(owner, 'entry', id)
   },
   async purgeExpired(): Promise<number> {
     // 30-day window: entries trashed before cutoff are hard-deleted (+ cascade AI + reminders).
     // 仅清当前 owner 的过期回收项。
+    // 云端同步级联：同 deleteEntry，entry/reminder/media 三类 tombstone 入队。
     const owner = getCurrentOwner()
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000
     const all = await db.entries.where('ownerId').equals(owner).toArray()
     const expired = all.filter((e) => e.deletedAt && new Date(e.deletedAt).getTime() < cutoff)
     for (const e of expired) {
+      const cascadedReminders = await db.reminders.where('entryId').equals(e.id).toArray()
+      const mediaRefs = e.parts.filter((p) => p.type !== 'text').map((p) => p.ref)
       await removeMediaForEntry(e)
       await db.entries.delete(e.id)
       await db.entryAi.where('entryId').equals(e.id).delete()
       await db.reminders.where('entryId').equals(e.id).delete()
+      await enqueue(owner, 'entry', e.id, { tombstone: true })
+      for (const r of cascadedReminders) await enqueue(owner, 'reminder', r.id, { tombstone: true })
+      for (const ref of mediaRefs) await enqueue(owner, 'media', ref, { tombstone: true })
     }
     return expired.length
   },
@@ -355,5 +380,18 @@ export const dexieStorage: StoragePort = {
       await db.conversations.where('ownerId').equals('local').modify({ ownerId: accountId })
       await db.memories.where('ownerId').equals('local').modify({ ownerId: accountId })
     })
+    // 收养的行需同步：全量入队该账号的 entries/categories/tags/reminders。
+    // 幂等——flush 时现组 payload，LWW 服务端去重。
+    // trashed 条目（deletedAt 非空）入队非 tombstone——payload 带 deletedAt 字段即可（软删可恢复）。
+    const [ents, cats, tgs, rems] = await Promise.all([
+      db.entries.where('ownerId').equals(accountId).toArray(),
+      db.categories.where('ownerId').equals(accountId).toArray(),
+      db.tags.where('ownerId').equals(accountId).toArray(),
+      db.reminders.where('ownerId').equals(accountId).toArray(),
+    ])
+    for (const e of ents) await enqueue(accountId, 'entry', e.id)
+    for (const c of cats) await enqueue(accountId, 'category', c.slug)
+    for (const t of tgs) await enqueue(accountId, 'tag', t.slug)
+    for (const r of rems) await enqueue(accountId, 'reminder', r.id)
   },
 }

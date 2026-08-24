@@ -78,7 +78,14 @@ export const httpAuth: AuthPort = {
         throw new NotNetworkError('网络不可用')
       }
       const body = await parseBody(res)
-      if (!res.ok) throw parseAuthError(body, res.status)
+      // refresh 401 = 会话确定性失效（token 被作废/过期/重放踢出），必须抛 SessionExpiredError——
+      // parseAuthError 会裹成普通 Error，hydrate 误判为网络抖动（sessionStale）导致
+      // 设置页额度行无限「加载中」、无重登引导（2026-08-07 实锤：兑换后一周 token 被重放
+      // 检测作废，用户只见「内置 key 加载中」+ AI 全失败）。
+      if (!res.ok) {
+        if (res.status === 401) throw new SessionExpiredError('AUTH_401:登录已过期')
+        throw parseAuthError(body, res.status)
+      }
       // 后端返 {account, session}；AuthPort.refresh 契约只返 session。
       const data = body as { account: Account; session: AuthSession }
       return data.session
@@ -86,6 +93,46 @@ export const httpAuth: AuthPort = {
       inflightRefresh = null
     })
     return inflightRefresh
+  },
+
+  async changePassword(oldPassword, newPassword) {
+    const session = localSession.get()
+    let res: Response
+    try {
+      res = await fetch(`${BASE}/api/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.jwt ?? ''}` },
+        body: JSON.stringify({ oldPassword, newPassword }),
+      })
+    } catch {
+      throw new NotNetworkError('网络不可用')
+    }
+    const body = await parseBody(res)
+    if (!res.ok) {
+      // 后端 message 已是面向用户的中文（'旧密码错误'/'密码错误'）；走 AUTH_ code 映射会被
+      // error.AUTH_401='邮箱或密码错误' 顶包（登录语境串，与本场景不符）→ 直透 message。
+      throw new Error((body as { message?: string } | null)?.message ?? `HTTP ${res.status}`)
+    }
+  },
+
+  async deleteAccount(password) {
+    const session = localSession.get()
+    let res: Response
+    try {
+      res = await fetch(`${BASE}/api/account/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.jwt ?? ''}` },
+        body: JSON.stringify({ password }),
+      })
+    } catch {
+      throw new NotNetworkError('网络不可用')
+    }
+    const body = await parseBody(res)
+    if (!res.ok) {
+      // 后端 message 已是面向用户的中文（'旧密码错误'/'密码错误'）；走 AUTH_ code 映射会被
+      // error.AUTH_401='邮箱或密码错误' 顶包（登录语境串，与本场景不符）→ 直透 message。
+      throw new Error((body as { message?: string } | null)?.message ?? `HTTP ${res.status}`)
+    }
   },
 
   async logout() {

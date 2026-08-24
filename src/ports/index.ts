@@ -201,7 +201,8 @@ export interface FeedbackPort {
 // ── Slice B 端口 ──────────────────────────────────────────────
 // 错误类：适配器抛、UI/store catch 按 name 分流。erasableSyntaxOnly 禁 class 参数属性，手写 constructor。
 export class SessionExpiredError extends Error {
-  constructor(message = 'session expired') {
+  // 默认消息会原样落到条目 processError（store.ts processEntry catch），须用户可读的中文。
+  constructor(message = '登录已过期，请重新登录') {
     super(message)
     this.name = 'SessionExpiredError'
   }
@@ -218,11 +219,21 @@ export class QuotaExhaustedError extends Error {
     this.name = 'QuotaExhaustedError'
   }
 }
+export class StorageFullError extends Error {
+  constructor(message = '云存储空间不足，请升级套餐') {
+    super(message)
+    this.name = 'StorageFullError'
+  }
+}
 
 export interface AuthPort {
   register(email: string, password: string): Promise<{ account: Account; session: AuthSession }>
   login(email: string, password: string): Promise<{ account: Account; session: AuthSession }>
   refresh(): Promise<AuthSession>
+  // 修改密码（网络账号）。成功后后端作废全部 refresh token → 前端清 session 重登。
+  changePassword(oldPassword: string, newPassword: string): Promise<void>
+  // 注销账号（二次确认密码）。成功后前端清本地全部数据。
+  deleteAccount(password: string): Promise<void>
   logout(): Promise<void>
 }
 
@@ -237,5 +248,9 @@ export interface PlanPort {
     paidPlanId: string
     paidExpiresAt: string
     payUrl?: string
+    // 后端现真落库并返 account（Phase 1 §2.4）；旧 stub 响应无此字段 → 前端回落手拼。
+    account?: Account
   }>
+  // 兑换码激活付费档。返更新后 account（含 plan/paidPlanId/paidExpiresAt），前端覆盖本地。
+  redeem(code: string): Promise<{ account: Account }>
 }
