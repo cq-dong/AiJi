@@ -10,6 +10,33 @@ import { deviceOnboarded } from '@/app/onboardedFlag'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+// 密码可见切换（眼睛）。24px 触达区，svg 16px 与输入框 13px 正文协调。
+function EyeToggle({ visible, onToggle, label }: { visible: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={label}
+      aria-pressed={visible}
+      className="absolute right-1 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-btn text-t3 transition-colors active:bg-priS"
+    >
+      {visible ? (
+        // 睁眼（当前可见，点击隐藏）
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      ) : (
+        // 闭眼（当前隐藏，点击显示）
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+          <line x1="1" y1="1" x2="23" y2="23" />
+        </svg>
+      )}
+    </button>
+  )
+}
+
 export default function Login() {
   const navigate = useNavigate()
   const t = useT()
@@ -20,6 +47,9 @@ export default function Login() {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // 密码可见性（密码框/确认框各自独立切换）
+  const [showPw, setShowPw] = useState(false)
+  const [showConfirmPw, setShowConfirmPw] = useState(false)
   // Batch 7（调研 #13）：提交失败整卡抖动（macOS 登录窗同律）——controls 驱动不重挂载、不丢焦点。
   const shake = useAnimationControls()
 
@@ -102,9 +132,12 @@ export default function Login() {
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('login.emailPlaceholder')}
             aria-label={t('login.aria.email')} aria-invalid={!!error}
             className="mt-3 h-11 w-full rounded-btn border border-brd/80 bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('login.passwordPlaceholder')}
-            aria-label={t('login.aria.password')} aria-invalid={!!error}
-            className="mt-2 h-11 w-full rounded-btn border border-brd/80 bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
+          <div className="relative mt-2">
+            <input type={showPw ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('login.passwordPlaceholder')}
+              aria-label={t('login.aria.password')} aria-invalid={!!error}
+              className="h-11 w-full rounded-btn border border-brd/80 bg-card px-3 pr-11 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
+            <EyeToggle visible={showPw} onToggle={() => setShowPw(v => !v)} label={showPw ? t('login.aria.hidePassword') : t('login.aria.showPassword')} />
+          </div>
           {/* 确认密码：注册/登录切换时高度+淡入展开（原来硬切 pop-in） */}
           <AnimatePresence initial={false}>
             {mode === 'register' && (
@@ -115,9 +148,12 @@ export default function Login() {
                 transition={{ duration: 0.2, ease: 'easeOut' }}
                 className="overflow-hidden"
               >
-                <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder={t('login.confirmPasswordPlaceholder')}
-                  aria-label={t('login.aria.confirmPassword')}
-                  className="mt-2 h-11 w-full rounded-btn border border-brd/80 bg-card px-3 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
+                <div className="relative mt-2">
+                  <input type={showConfirmPw ? 'text' : 'password'} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder={t('login.confirmPasswordPlaceholder')}
+                    aria-label={t('login.aria.confirmPassword')}
+                    className="h-11 w-full rounded-btn border border-brd/80 bg-card px-3 pr-11 text-[13px] text-ink placeholder:text-t3 transition-all focus:border-pri/50 focus:shadow-glowPriSm focus:outline-none focus-visible:ring-2 focus-visible:ring-pri/20" />
+                  <EyeToggle visible={showConfirmPw} onToggle={() => setShowConfirmPw(v => !v)} label={showConfirmPw ? t('login.aria.hidePassword') : t('login.aria.showPassword')} />
+                </div>
               </motion.div>
             )}
           </AnimatePresence>

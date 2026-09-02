@@ -65,6 +65,8 @@ export const chat = {
   'login.aria.password': 'Password',
   'login.confirmPasswordPlaceholder': 'Confirm password',
   'login.aria.confirmPassword': 'Confirm password',
+  'login.aria.showPassword': 'Show password',
+  'login.aria.hidePassword': 'Hide password',
   'login.errorEmail': 'Invalid email format',
   'login.errorPasswordShort': 'Password must be at least 8 chars',
   'login.errorPasswordMismatch': 'Passwords do not match',

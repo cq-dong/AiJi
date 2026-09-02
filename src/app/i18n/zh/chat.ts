@@ -69,6 +69,8 @@ export const chat = {
   'login.aria.password': '密码',
   'login.confirmPasswordPlaceholder': '确认密码',
   'login.aria.confirmPassword': '确认密码',
+  'login.aria.showPassword': '显示密码',
+  'login.aria.hidePassword': '隐藏密码',
   'login.errorEmail': '邮箱格式无效',
   'login.errorPasswordShort': '密码至少 8 位',
   'login.errorPasswordMismatch': '两次密码不一致',
