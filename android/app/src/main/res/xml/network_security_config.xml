@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 后端已启用 HTTPS（aiji.site），不再允许明文传输。 -->
+<!-- 后端已启用 HTTPS，不允许明文传输。
+     2026-09-02: aiji.site 被腾讯云未备案域名阻断（443 SNI 被 DPI RST），
+     APK 直连 https://106.54.26.195（纯 IP 不受备案拦截）。该入口用自签 CA
+     （服务器 /etc/nginx/aiji-ipcert，私钥不出服务器），故在此追加信任其公钥。
+     system CA 必须同时保留——GitHub 更新检查、反馈上报等仍走公网。
+     注：不用 domain-config 是因为其对 IP 字面量的匹配行为不确定。 -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/aiji_ca" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>
