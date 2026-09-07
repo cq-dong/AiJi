@@ -149,7 +149,10 @@ export async function flush(): Promise<void> {
           await uploadPendingMedia(ep)
         } catch (e) {
           // 媒体上传网络/5xx 失败 → 整批保留 outbox 下轮重试（文本也等，保证顺序一致）。
-          // 但不置 lastError（仅媒体层，文本尚未失败）。
+          // 2026-09-07 实锤：413（nginx body 上限）这类持续性失败若静默，pending 数字
+          // 永不动、lastSyncAt 照常更新，用户无从得知卡点——置 lastError 让 UI 显红。
+          const msg = e instanceof Error ? e.message : String(e)
+          patch({ lastError: `媒体上传失败：${msg}` })
           console.warn('[syncEngine] uploadPendingMedia failed, will retry:', e)
           return
         }
@@ -171,7 +174,9 @@ export async function flush(): Promise<void> {
       result = await pushChanges(changes)
     } catch (e) {
       if (e instanceof SessionExpiredError) throw e
-      // 网络/5xx：保留 outbox 下轮重试，不置 lastError（常规重试）。
+      // 网络/5xx：保留 outbox 下轮重试。置 lastError（成功后 tick 会清）——
+      // 静默会让 pending 数字冻结且无任何提示。
+      patch({ lastError: e instanceof Error ? e.message : String(e) })
       console.warn('[syncEngine] pushChanges failed, will retry:', e)
       return
     }
