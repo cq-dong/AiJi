@@ -175,8 +175,9 @@ export async function flush(): Promise<void> {
       console.warn('[syncEngine] pushChanges failed, will retry:', e)
       return
     }
-    // 推送成功 → 删已推 outbox 行。
+    // 推送成功 → 删已推 outbox 行 → 立即刷 pendingCount（UI 实时倒数，不等整轮结束）。
     await db.syncOutbox.bulkDelete(seqsToDelete)
+    await refreshPendingCount()
     // media tombstone 行推送成功后清 track 行（让该 ref 可重新上传，若他端又创同 ref）。
     for (const ref of mediaTombstoneRefs) {
       await db.syncMedia.delete(ref).catch(() => {})
@@ -363,7 +364,9 @@ async function tick(): Promise<void> {
     do {
       dirty = false
       try {
+        patch({ phase: 'push' })
         await flush()
+        patch({ phase: 'pull' })
         await pull()
         // 刷新状态
         await refreshPendingCount()
@@ -388,8 +391,15 @@ async function tick(): Promise<void> {
     } while (dirty)
   } finally {
     running = false
-    patch({ syncing: false })
+    patch({ syncing: false, phase: 'idle' })
   }
+}
+
+/** 手动触发一轮同步（设置页「立即同步」）。引擎未启动时 no-op。
+ *  跑中调用无害——tick 的 dirty 标记会在本轮结束后补跑一次。 */
+export function syncNow(): void {
+  if (!started) return
+  void tick()
 }
 
 function scheduleTick(): void {

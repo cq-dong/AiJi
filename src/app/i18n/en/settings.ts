@@ -231,6 +231,12 @@ export const settings = {
   'settings.syncStorageFull': 'Cloud storage full — upgrade to keep syncing media',
   'settings.syncRequireNetwork': 'Upgrade to a network account first',
   'settings.syncError': 'Sync error: {msg}',
+  // Sync state visibility: explicit in-progress steps + idle verdict + manual trigger.
+  'settings.syncUploading': 'Uploading local changes…',
+  'settings.syncPulling': 'Pulling cloud changes…',
+  'settings.syncUpToDate': 'Up to date',
+  'settings.syncing': 'Syncing',
+  'settings.syncNow': 'Sync now',
 
   // 反馈
   'settings.feedback': 'Feedback',

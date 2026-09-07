@@ -232,6 +232,12 @@ export const settings = {
   'settings.syncStorageFull': '云存储已满，升级套餐后继续同步媒体',
   'settings.syncRequireNetwork': '需先升级为网络账号',
   'settings.syncError': '同步异常：{msg}',
+  // 同步状态可见性：进行中显式步骤 + 空闲态可读结论 + 手动触发。
+  'settings.syncUploading': '正在上传本地变更…',
+  'settings.syncPulling': '正在拉取云端变更…',
+  'settings.syncUpToDate': '已同步',
+  'settings.syncing': '同步中',
+  'settings.syncNow': '立即同步',
 
   // 反馈
   'settings.feedback': '使用反馈',

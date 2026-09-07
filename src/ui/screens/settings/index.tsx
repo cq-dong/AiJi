@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, Archive, Brain, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, Plus, Share2, Sparkles, Timer, Trash2, X } from 'lucide-react'
+import { AlertCircle, Archive, Brain, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, Plus, RefreshCw, Share2, Sparkles, Timer, Trash2, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
 import { AnimatePresence } from 'framer-motion'
-import { Button, Toast, cn } from '@/ui/components'
+import { Button, Spinner, Toast, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import { t } from '@/app/i18n'
 import { getCurrentLang } from '@/app/currentLang'
 import { di } from '@/app/di'
-import { maybeStartSync, stopSync } from '@/app/syncEngine'
+import { maybeStartSync, stopSync, syncNow } from '@/app/syncEngine'
 import { useSyncStore } from '@/app/syncStore'
 import { useAccountStore } from '@/app/accountStore'
 import { exportZip } from '@/adapters/zipExport'
@@ -1284,6 +1284,7 @@ export default function Settings() {
     storageFull,
     lastError,
     syncing,
+    phase,
   } = useSyncStore()
   // 云存储用量文案（limitBytes<0=不限；storageFull 时 label 染 catFail 色）。
   const storageText =
@@ -1537,13 +1538,30 @@ export default function Settings() {
                   </div>
                 }
               />
+            ) : syncing ? (
+              // 同步进行中：明确告知当前步骤（上传 outbox / 拉取远端）+ 剩余条数实时倒数
+              //（flush 每批推送成功即刷 pendingCount），spinner 常驻直到本轮结束。
+              <SettingsRow
+                icon={<Cloud size={15} strokeWidth={2.2} className="animate-pulse" />}
+                label={
+                  phase === 'push'
+                    ? t('settings.syncUploading')
+                    : t('settings.syncPulling')
+                }
+                value={
+                  phase === 'push' && pendingCount > 0
+                    ? t('settings.syncPending', { count: pendingCount })
+                    : undefined
+                }
+                right={<Spinner size={14} />}
+              />
             ) : (
               <SettingsRow
-                icon={<Cloud size={15} strokeWidth={2.2} className={syncing ? 'animate-pulse' : ''} />}
+                icon={<Cloud size={15} strokeWidth={2.2} />}
                 label={
                   lastSyncAt ? t('settings.syncLastAt', { time: formatHM(lastSyncAt) }) : t('settings.syncNever')
                 }
-                value={pendingCount > 0 ? t('settings.syncPending', { count: pendingCount }) : undefined}
+                value={pendingCount > 0 ? t('settings.syncPending', { count: pendingCount }) : t('settings.syncUpToDate')}
               />
             )}
             <RowDivider />
@@ -1553,6 +1571,15 @@ export default function Settings() {
                 storageFull ? <span className="text-catFail">{storageText}</span> : storageText
               }
               value={storageFull ? t('settings.syncStorageFull') : undefined}
+            />
+            <RowDivider />
+            {/* 手动同步：同步异常/等 debounce 时用户可立即触发一轮（引擎未跑/正在跑时禁用防抖动）。 */}
+            <SettingsRow
+              icon={<RefreshCw size={15} strokeWidth={2.2} className={syncing ? 'animate-spin' : ''} />}
+              label={t('settings.syncNow')}
+              value={syncing ? t('settings.syncing') : undefined}
+              disabled={syncing}
+              onClick={() => syncNow()}
             />
             {lastError && (
               <>

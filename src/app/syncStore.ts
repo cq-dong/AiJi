@@ -5,6 +5,7 @@ import { create } from 'zustand'
 interface SyncUiState {
   running: boolean // 引擎已启动
   syncing: boolean // 一轮 flush/pull 进行中
+  phase: 'idle' | 'push' | 'pull' // 当前轮进行到哪步（同步中才有意义）
   lastSyncAt: string | null
   pendingCount: number // outbox 待推条数
   migrating: boolean
@@ -19,6 +20,7 @@ interface SyncUiState {
 export const useSyncStore = create<SyncUiState>(() => ({
   running: false,
   syncing: false,
+  phase: 'idle',
   lastSyncAt: null,
   pendingCount: 0,
   migrating: false,
