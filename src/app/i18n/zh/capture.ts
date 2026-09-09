@@ -60,7 +60,6 @@ export const capture = {
   'capture.dongle.scanning': '正在扫描…',
   'capture.dongle.rescan': '重新扫描',
   'capture.dongle.connect': '连接',
-  'capture.dongle.connected': '已连接',
   'capture.dongle.disconnect': '断开',
   'capture.dongle.battery': '电量',
   'capture.dongle.mark': '标记重点',

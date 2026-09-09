@@ -53,6 +53,8 @@ export const detail = {
   'detail.imageUnavailable': '图片不可用（样例）',
   'detail.videoUnavailable': '视频不可用（样例）',
   'detail.locationNone': '地点：未记录（设置中可开启）',
+  // PartView.AudioPlayer：标记 chip 无 label 时的兜底名（markHighlight 未传 label）。
+  'detail.markN': '重点 {n}',
 
   // index.tsx
   'detail.aria.more': '更多',

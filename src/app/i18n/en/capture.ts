@@ -58,7 +58,6 @@ export const capture = {
   'capture.dongle.scanning': 'Scanning…',
   'capture.dongle.rescan': 'Rescan',
   'capture.dongle.connect': 'Connect',
-  'capture.dongle.connected': 'Connected',
   'capture.dongle.disconnect': 'Disconnect',
   'capture.dongle.battery': 'Battery',
   'capture.dongle.mark': 'Mark highlight',

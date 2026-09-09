@@ -51,6 +51,8 @@ export const detail = {
   'detail.imageUnavailable': 'Image unavailable (sample)',
   'detail.videoUnavailable': 'Video unavailable (sample)',
   'detail.locationNone': 'Location: not recorded (enable in settings)',
+  // PartView.AudioPlayer: fallback chip name when a mark has no label.
+  'detail.markN': 'Mark {n}',
 
   // index.tsx
   'detail.aria.more': 'More',

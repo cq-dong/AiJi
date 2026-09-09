@@ -233,7 +233,7 @@ export function AudioPlayer({ mediaRef, durationSec, marks }: { mediaRef: string
             className="flex items-center gap-1 rounded-chip bg-priS px-2 py-1 text-[11px] font-medium text-pri cursor-pointer"
           >
             <Bookmark size={11} strokeWidth={2.2} />
-            {m.label ?? `重点 ${i + 1}`}
+            {m.label ?? t('detail.markN', { n: i + 1 })}
             <span className="text-t3">{formatDuration(m.atSec)}</span>
           </button>
         ))}

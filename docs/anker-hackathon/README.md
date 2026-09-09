@@ -104,6 +104,20 @@ STT → LLM → 落库 → 展示（既有处理管线不动）
 - 出线后（09-30）真 SDK 适配器 `ankerDongle.ts` 替换 mockDongle，并回填上面三条待确认
 - 场景剧本模式（`?dongle=script`，设计稿 §2.2）**降级后置**——预赛视频用真流录屏即可，不阻塞主线
 
+### 真 SDK 适配器前置清单（终审 (b) 池，09-30 拿到 SDK 时逐条处理）
+
+> 来源：2026-09-10 全分支终审（`.superpowers/sdd/final-review/report.md`）。mock 下均不触发或语义自洽，真适配器落地时必须重新审视：
+
+1. **atSec 语义重定义**：真设备的标记时间点来自设备侧时钟，与取流完成的对齐方式需重新定义（mock 修法是锚点在 getUserMedia resolve 后重置）
+2. **source 判定移到 startRecording**：`fromDongle` 目前在 stopRecording 时按当下 dongle 状态判定（store.ts:381），录音中设备断开会静默丢 marks——真 SDK 有设备出范围路径，应在 startRecording 成功时记 source
+3. **micDenied / dongle 错误分流**：dongle 取流失败目前归类 micDenied（mock 下成立），真设备需分开——设备错显示成「改用文本」是误导
+4. **外部流 stop 归属**：stopAudio 现在直接停外部流 tracks（mock 下必须，防 mic 灯长亮）；真 SDK 流生命周期归适配器管，确认归属再接线
+5. **DongleState 'recording' 状态**：mock 不进入该状态，真适配器状态机需处理（UI 当前未消费）
+6. **port 侧断开事件清 device**：适配器主动断开（设备侧超时/关机）需广播并清 device，store 判定全 gate 在 state 上
+7. **classify prompt 注入标记上下文**（spec §2.4 加分项，plan 未排）：「用户在这些时间点打了重点标记」→ 摘要侧重展开。决赛 24h 高性价比填充项；**预赛材料措辞勿写成已有能力**
+
+其他架构债（低优先）：store 直接 import webCapture 的 `startAudioFromStream` 绕过 di（Capacitor 换 capture 适配器时的隐藏耦合点，决赛前考虑建模进 di）。
+
 ---
 
 ## 关键时间节点

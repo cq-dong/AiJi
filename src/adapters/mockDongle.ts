@@ -70,8 +70,11 @@ export const mockDongle: RecordingDonglePort = {
     // 只要产出 MediaStream，下游 MediaRecorder/Paraformer/波形全复用。
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('mic-unavailable')
     // 计时锚点重置：atSec 语义「相对本次取流」（= 录音开始），非相对 connect。
+    // 锚点须在流到手之后重置——getUserMedia 可能因权限弹窗等挂起数秒，
+    // 若在 await 前重置，首录 atSec 会被这段等待时间抬高。
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true })
     connectedAt = Date.now()
-    return navigator.mediaDevices.getUserMedia({ audio: true })
+    return s
   },
 
   async markHighlight(label) {
