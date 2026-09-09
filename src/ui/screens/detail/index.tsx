@@ -81,7 +81,7 @@ function RecordView({ parts }: { parts: EntryPart[] }) {
         if (p.type === 'audio') {
           return (
             <div key={i} className="flex flex-col gap-2">
-              <AudioPlayer mediaRef={p.ref} durationSec={p.durationSec} />
+              <AudioPlayer mediaRef={p.ref} durationSec={p.durationSec} marks={p.marks} />
               {p.transcript && (
                 <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-t2">{p.transcript}</p>
               )}
@@ -193,7 +193,7 @@ function SourcePartView({
           {part.transcript && (
             <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-ink">{part.transcript}</p>
           )}
-          <AudioPlayer mediaRef={part.ref} durationSec={part.durationSec} />
+          <AudioPlayer mediaRef={part.ref} durationSec={part.durationSec} marks={part.marks} />
         </>
       )}
       {part.type === 'video' && (

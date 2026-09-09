@@ -88,6 +88,7 @@ export default function Capture() {
   const dongle = useUiStore((s) => s.dongle)
   const subscribeDongle = useUiStore((s) => s.subscribeDongle)
   const disconnectDongle = useUiStore((s) => s.disconnectDongle)
+  const markHighlight = useUiStore((s) => s.markHighlight)
   const t = useT()
 
   const [view, setView] = useState<View>('compose')
@@ -316,13 +317,12 @@ export default function Capture() {
     void stopRecording().catch(() => showCaptureFailureToast())
   }
 
-  // Anker 录音豆「标记重点」：Task 5 接管（结果进 capture.draftMarks）。本 Task 占位——
-  // di.dongle.markHighlight() 的返回秒数 console.log + toast 反馈，不建 marks 数据通路。
+  // Anker 录音豆「标记重点」（Task 5 全链路）：store 动作累积进 capture.draftMarks，
+  // stopRecording 落进 audio part 的 marks → detail 回放 chip 点击跳转。标记失败在
+  // store 内吞掉（不伤录音主链路），此处无条件 toast 反馈。
   const handleMarkHighlight = () => {
-    void di.dongle.markHighlight().then((r) => {
-      console.log('[capture] dongle markHighlight', r)
-      setToast(t('capture.dongle.marked'))
-    }).catch((e) => console.error('[capture] markHighlight failed', e))
+    void markHighlight()
+    setToast(t('capture.dongle.marked'))
   }
 
   const openCamera = () => setView('camera')

@@ -5,8 +5,9 @@ import type { DongleDevice, DongleInfo, DongleState, RecordingDonglePort } from 
 // - 音频是真的：getAudioStream 直接 getUserMedia 包装——真机演示 STT/落库全链路真实可用；
 // - 设备是假的：scan 恒返一台「soundcore Work 3200 (Demo)」，连接 800ms 模拟配对延迟。
 // 真 SDK 到手后写 ankerDongle.ts 平行适配器，di 一行切换，其余零改动。
-// 连接时起计时器：markHighlight 的 atSec = 相对 connect 的秒数（对齐「录音开始」的
-// 朴素假设——采集页先连接后开录，误差 ≤ 连接→开录间隔）。
+// 计时锚点：端口语义定为「相对 getAudioStream 调用」（≈录音开始——store 每次开录
+// 都会先取流）。getAudioStream 成功时重置 connectedAt，连接→开录的间隔不计入
+// atSec，标记点与 part.durationSec（相对录音开始）同基准。
 
 const DEVICE: DongleDevice = { id: 'mock-work-3200', name: 'soundcore Work 3200 (Demo)' }
 
@@ -68,6 +69,8 @@ export const mockDongle: RecordingDonglePort = {
     // 音频是真的：复用浏览器麦克风。真 SDK 版此处换成 SDK 的音频流对象——
     // 只要产出 MediaStream，下游 MediaRecorder/Paraformer/波形全复用。
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('mic-unavailable')
+    // 计时锚点重置：atSec 语义「相对本次取流」（= 录音开始），非相对 connect。
+    connectedAt = Date.now()
     return navigator.mediaDevices.getUserMedia({ audio: true })
   },
 

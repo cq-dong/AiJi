@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, AudioMark, Category, ChatAnswer, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
 import type { DongleDevice, DongleInfo, DongleState } from '@/ports'
 import { scopeRange } from '@/domain/dateRange'
 import { localRecall } from '@/ui/screens/chat/helpers'
@@ -27,6 +27,9 @@ interface CaptureDraft {
   // Wave 4: if this capture resumed a persisted draft, the draft's id — so finishSave /
   // clearDraft can delete that draft row (multi-draft: each draft is its own row).
   resumedDraftId?: string
+  // Anker 录音豆重点标记：录音中 markHighlight 累积，stopRecording 消费后清空
+  //（dongle 源才写进 audio part；麦克风源无 marks 字段保持向后兼容）。
+  draftMarks: AudioMark[]
 }
 
 interface UiState {
@@ -131,7 +134,9 @@ interface UiState {
   scanDongle: () => Promise<DongleDevice[]>
   connectDongle: (deviceId: string) => Promise<void>
   disconnectDongle: () => Promise<void>
-  markHighlight: (label?: string) => Promise<{ atSec: number }>
+  // Anker 录音豆重点标记（Task 5 全链路）：录音中调用 → capture.draftMarks 追加；
+  // stopRecording 把 draftMarks 写进 dongle 源 audio part 的 marks。
+  markHighlight: (label?: string) => Promise<void>
   // AI 记忆（2026-07-22）：增/删/开关。落库后 set 内存态，settings MemorySheet 消费。
   // 风格照抄 reminder 相关 action：save upsert + 内存态替换、delete 落库 + 过滤、toggle 翻转 enabled。
   saveMemory: (content: string) => Promise<void>
@@ -139,7 +144,7 @@ interface UiState {
   toggleMemory: (id: string) => Promise<void>
 }
 
-const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined, title: undefined }
+const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined, title: undefined, draftMarks: [] }
 
 // range key (dateKey) for a scope+ref comes from @/domain/dateRange (A3: same ISO-week
 // algorithm the summary navigator uses, so filed entries match the period card).
@@ -371,11 +376,20 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     const cur = get().capture
     const transcript = (cur.finalized + cur.interim).trim()
+    // Anker 录音豆重点标记：仅 dongle 源录音写 marks（端口语义「相对 getAudioStream 调用」，
+    // 即相对录音开始）；麦克风源/旧链路无此字段，保持向后兼容。
+    const fromDongle = get().dongle.state === 'connected'
+    const marks = cur.draftMarks
     // D4 尾巴3: 显式标 mediaType='audio'——PartView 已有 fallback 推断但显式更准（LLM prompt 分块 / 导出 extension 均依赖）
-    const part: EntryPart = { type: 'audio', ref: result.ref, durationSec: Math.max(1, Math.round(result.durationSec)), transcript, mime: result.mime, mediaType: 'audio' }
+    const part: EntryPart = {
+      type: 'audio', ref: result.ref,
+      durationSec: Math.max(1, Math.round(result.durationSec)),
+      transcript, mime: result.mime, mediaType: 'audio',
+      ...(fromDongle && marks.length > 0 ? { marks } : {}),
+    }
     if (result.blob) void di.storage.saveMedia(result.ref, result.blob).catch((e) => console.error('[store] saveMedia failed', e))
     set((s2) => ({
-      capture: { ...s2.capture, recording: false, finalized: '', interim: '', parts: [...s2.capture.parts, part] },
+      capture: { ...s2.capture, recording: false, finalized: '', interim: '', parts: [...s2.capture.parts, part], draftMarks: [] },
     }))
   },
   beginSave: () => set((s) => ({ capture: { ...s.capture, recording: false, saving: true } })),
@@ -1079,7 +1093,23 @@ export const useUiStore = create<UiState>((set, get) => ({
     await di.dongle.disconnect()
     set({ dongle: { state: 'idle', device: undefined, info: undefined, scanning: false } })
   },
-  markHighlight: (label) => di.dongle.markHighlight(label),
+  // Anker 录音豆重点标记（Task 5）：录音中调用 → capture.draftMarks 追加；失败只
+  // console.error——标记是锦上添花，任何失败绝不打断录音主链路。label 从 ACTION 参数
+  // 取（端口类型只声明 { atSec }，mock 适配器返回值中的 label 不进端口契约）。
+  markHighlight: async (label) => {
+    if (!get().capture.recording) return
+    try {
+      const { atSec } = await di.dongle.markHighlight(label)
+      set((s) => ({
+        capture: {
+          ...s.capture,
+          draftMarks: [...s.capture.draftMarks, { atSec, ...(label !== undefined ? { label } : {}) }],
+        },
+      }))
+    } catch (e) {
+      console.error('[store] markHighlight failed', e) // 标记失败不伤录音主链路
+    }
+  },
   // ── AI 记忆 actions（2026-07-22）──────────────────────────────────────────
   // 风格照抄 reminder 相关 action：save upsert + 内存态替换、delete 落库 + 过滤、toggle 翻转 enabled。
   // prompt 注入由 classify/answerChat 调用点自行 di.storage.listMemories() 拉取，store 不参与注入逻辑。

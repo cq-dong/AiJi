@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { MapPin } from 'lucide-react'
-import type { EntryPart, GeoPoint } from '@/domain/types'
+import { Bookmark, MapPin } from 'lucide-react'
+import type { AudioMark, EntryPart, GeoPoint } from '@/domain/types'
 import { Card } from '@/ui/components'
 import { di } from '@/app/di'
 import { t } from '@/app/i18n'
@@ -149,7 +149,7 @@ function Waveform() {
   )
 }
 
-export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durationSec: number }) {
+export function AudioPlayer({ mediaRef, durationSec, marks }: { mediaRef: string; durationSec: number; marks?: AudioMark[] }) {
   // Fetch the persisted blob from OPFS (A2). Seed parts have no blob → static/disabled.
   const t = useT()
   const [status, setStatus] = useState<'loading' | 'ready' | 'none'>('loading')
@@ -181,6 +181,14 @@ export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durat
     else { void a.play(); setPlaying(true) }
   }
 
+  // Anker 录音豆重点标记：点击 chip → seek 到该秒并续播。
+  const seekTo = (sec: number) => {
+    const a = audioRef.current
+    if (!a || status !== 'ready') return
+    a.currentTime = sec
+    void a.play(); setPlaying(true)
+  }
+
   const disabled = status !== 'ready'
   if (status === 'none') {
     // seed parts 无 blob / OPFS 不可用 → 显式「音频不可用（样例）」静默态，别留一个点了没反应的按钮。
@@ -195,6 +203,7 @@ export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durat
     )
   }
   return (
+    <div className="flex flex-col gap-1.5">
     <div className="flex items-center gap-2 h-[28px] rounded-[14px] bg-priS px-2">
       <div className="relative flex items-center">
         <span className={`flex size-3 items-center justify-center text-pri ${disabled ? 'opacity-40' : ''}`} aria-hidden="true">
@@ -213,6 +222,23 @@ export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durat
       {status === 'ready' && url && (
         <audio ref={audioRef} src={url} onEnded={() => setPlaying(false)} className="hidden" />
       )}
+    </div>
+    {marks && marks.length > 0 && (
+      <div className="flex flex-wrap gap-1.5">
+        {marks.map((m, i) => (
+          <button
+            key={i}
+            type="button"
+            onClick={() => seekTo(m.atSec)}
+            className="flex items-center gap-1 rounded-chip bg-priS px-2 py-1 text-[11px] font-medium text-pri cursor-pointer"
+          >
+            <Bookmark size={11} strokeWidth={2.2} />
+            {m.label ?? `重点 ${i + 1}`}
+            <span className="text-t3">{formatDuration(m.atSec)}</span>
+          </button>
+        ))}
+      </div>
+    )}
     </div>
   )
 }
@@ -349,7 +375,7 @@ export function PartView({ part, iso, location }: { part: EntryPart; iso: string
           {part.transcript && (
             <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{part.transcript}</p>
           )}
-          <AudioPlayer mediaRef={part.ref} durationSec={part.durationSec} />
+          <AudioPlayer mediaRef={part.ref} durationSec={part.durationSec} marks={part.marks} />
         </>
       )}
       {part.type === 'video' && (
