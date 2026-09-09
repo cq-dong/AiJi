@@ -85,10 +85,10 @@ STT → LLM → 落库 → 展示（既有处理管线不动）
 | 任务 | 内容 | commit |
 |------|------|--------|
 | Port + 类型 | RecordingDonglePort 端口 + AudioPart.marks 域类型 | `a32a42a` |
-| mockDongle | 扫描/连接/音频流/重点标记全接口；设备模拟、音频真实（getAudioStream 重置计时锚） | `92885dc` |
+| mockDongle | 扫描/连接/音频流/重点标记全接口；设备模拟、音频真实 | `92885dc` |
 | di + store | mockDongle 注册 + store `dongle` 状态切片与扫描/连接动作 | `91e70e3` |
 | 采集页 | 音频源切换 chip + 扫描连接 sheet + `startAudioFromStream` 外流直采 | `a66d3c3` |
-| 标记链路 | draftMarks → AudioPart.marks → detail 回放器标记点可点击跳转 | `afb1072` |
+| 标记链路 | draftMarks → AudioPart.marks → detail 回放器标记点可点击跳转；getAudioStream 重置计时锚（atSec 对齐录音起点） | `afb1072` |
 
 ### 待确认事项（2026-09-09 更新）
 
