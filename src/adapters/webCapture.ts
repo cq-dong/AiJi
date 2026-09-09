@@ -50,6 +50,91 @@ export function getMicAnalyser(): AnalyserNode | null {
   return micAnalyser
 }
 
+// 「取流之后」共享管线：MediaRecorder（timeslice 防长录音容器损坏）+ 波形抽头 + WebSpeech
+// live 预览。麦克风路径（startAudio 的 getUserMedia 之后）与录音豆路径（外部流，Anker
+// 赛道一）复用同一段——两处 timeslice/波形抽头逻辑必须保持一致。
+// WebSpeech 仍走系统麦克风（它无法吃外部流）——录音豆场景 live 预览会串系统麦克风音，
+// 故以 opts.onInterim 有无为开关；麦克风两条路径（capture/chat）恒传，行为不变。
+// final 转写不受影响：录音豆路径走 Paraformer blob 管线兜底。
+async function attachAudioStream(
+  external: MediaStream,
+  opts: { onInterim?: (text: string) => void; onFinal?: (text: string) => void } = {},
+): Promise<void> {
+  stream = external
+
+  chunks = []
+  if (typeof MediaRecorder !== 'undefined') {
+    try {
+      recorder = new MediaRecorder(stream)
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
+      // timeslice=1000ms：强制 dataavailable 周期性触发，产出合法多 Cluster webm。
+      // 不传 timeslice 时 MediaRecorder 只在 stop 时吐单个 Cluster，Segment/Cluster 尺寸
+      // 字段写成无效 EBML —— 短录音尚能解析，但 >~60s 的录音产出的 webm 容器结构性损坏，
+      // 后端 ffmpeg 报「invalid as first byte of an EBML number / exceeds containing master
+      // element」转码失败 → STT 空 → classify「条目无文本」→ 条目 failed（2026-07-29 实锤：
+      // 1:20 录音两次全挂、50s 成功）。timeslice 后每秒一个合法 Cluster，ffmpeg 稳定转码。
+      recorder.start(1000)
+    } catch (e) {
+      // L2: MediaRecorder 构造失败（Safari MIME 边界等）→ 释放已到手的 stream 免泄漏
+      // （否则 throw 传播到 store catch 只设 recording:false，stopAudio 早返不发 track.stop → mic
+      // 灯长亮）。降级：WebSpeech live 预览仍可用（独立于 stream），stopAudio 返 blob=undefined
+      // （transcript-only）。
+      console.error('[webCapture] MediaRecorder construction failed', e)
+      stream?.getTracks().forEach((t) => t.stop())
+      stream = null
+      recorder = null
+    }
+  }
+  startedAt = Date.now()
+
+  // 波形抽头：建立 analyser 供 getMicAnalyser() 读取。失败静默——波形降级为 CSS 假条。
+  // （stream 可能因上方 MediaRecorder 降级路径被置 null，此时跳过抽头。）
+  try {
+    if (stream) {
+      audioCtx = new AudioContext()
+      const source = audioCtx.createMediaStreamSource(stream)
+      micAnalyser = audioCtx.createAnalyser()
+      micAnalyser.fftSize = 256
+      micAnalyser.smoothingTimeConstant = 0.75
+      source.connect(micAnalyser)
+    }
+  } catch {
+    audioCtx = null
+    micAnalyser = null
+  }
+
+  const Ctor = getSpeechRecognitionCtor()
+  if (Ctor && opts.onInterim) {
+    recognition = new Ctor()
+    recognition.lang = 'zh-CN'
+    recognition.continuous = true
+    recognition.interimResults = true
+    // WebSpeech 在部分系统上忽略 lang='zh-CN' 仍输出繁体（引擎回退系统语种），统一 t2s 转简体。
+    recognition.onresult = (ev) => {
+      let interim = ''
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const r = ev.results[i]
+        if (r.isFinal) opts.onFinal?.(Chinese.t2s(r[0].transcript))
+        else interim += r[0].transcript
+      }
+      if (interim) opts.onInterim?.(Chinese.t2s(interim))
+    }
+    recognition.onerror = () => { /* swallow; recording continues without live preview */ }
+    try { recognition.start() } catch { /* already running or unsupported */ }
+  }
+}
+
+// 录音豆入口：外部 MediaStream（di.dongle.getAudioStream()）替代 getUserMedia，
+// 其余（MediaRecorder/波形抽头）与麦克风路径完全一致（attachAudioStream 共享）。
+// 不传 opts → 无 WebSpeech live 预览（WebSpeech 只能吃系统麦克风，串味；final
+// 转写走 Paraformer blob 管线不受影响）。
+export async function startAudioFromStream(
+  external: MediaStream,
+  opts: { onInterim?: (text: string) => void; onFinal?: (text: string) => void } = {},
+): Promise<void> {
+  await attachAudioStream(external, opts)
+}
+
 export const webCapture: CapturePort = {
   async hasMicPermission() {
     try {
@@ -85,67 +170,9 @@ export const webCapture: CapturePort = {
   async startAudio({ onInterim, onFinal }) {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('mic-unavailable')
     // getUserMedia throws NotAllowedError (denied) / NotFoundError (no mic) / SecurityError (insecure context).
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
-    chunks = []
-    if (typeof MediaRecorder !== 'undefined') {
-      try {
-        recorder = new MediaRecorder(stream)
-        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data) }
-        // timeslice=1000ms：强制 dataavailable 周期性触发，产出合法多 Cluster webm。
-        // 不传 timeslice 时 MediaRecorder 只在 stop 时吐单个 Cluster，Segment/Cluster 尺寸
-        // 字段写成无效 EBML —— 短录音尚能解析，但 >~60s 的录音产出的 webm 容器结构性损坏，
-        // 后端 ffmpeg 报「invalid as first byte of an EBML number / exceeds containing master
-        // element」转码失败 → STT 空 → classify「条目无文本」→ 条目 failed（2026-07-29 实锤：
-        // 1:20 录音两次全挂、50s 成功）。timeslice 后每秒一个合法 Cluster，ffmpeg 稳定转码。
-        recorder.start(1000)
-      } catch (e) {
-        // L2: MediaRecorder 构造失败（Safari MIME 边界等）→ 释放已 getUserMedia 的 mic stream 免泄漏
-        // （否则 throw 传播到 store catch 只设 recording:false，stopAudio 早返不发 track.stop → mic 灯长亮）。
-        // 降级：WebSpeech live 预览仍可用（独立于 stream），stopAudio 返 blob=undefined（transcript-only）。
-        console.error('[webCapture] MediaRecorder construction failed', e)
-        stream?.getTracks().forEach((t) => t.stop())
-        stream = null
-        recorder = null
-      }
-    }
-    startedAt = Date.now()
-
-    // 波形抽头：建立 analyser 供 getMicAnalyser() 读取。失败静默——波形降级为 CSS 假条。
-    // （stream 可能因上方 MediaRecorder 降级路径被置 null，此时跳过抽头。）
-    try {
-      if (stream) {
-        audioCtx = new AudioContext()
-        const source = audioCtx.createMediaStreamSource(stream)
-        micAnalyser = audioCtx.createAnalyser()
-        micAnalyser.fftSize = 256
-        micAnalyser.smoothingTimeConstant = 0.75
-        source.connect(micAnalyser)
-      }
-    } catch {
-      audioCtx = null
-      micAnalyser = null
-    }
-
-    const Ctor = getSpeechRecognitionCtor()
-    if (Ctor) {
-      recognition = new Ctor()
-      recognition.lang = 'zh-CN'
-      recognition.continuous = true
-      recognition.interimResults = true
-      // WebSpeech 在部分系统上忽略 lang='zh-CN' 仍输出繁体（引擎回退系统语种），统一 t2s 转简体。
-      recognition.onresult = (ev) => {
-        let interim = ''
-        for (let i = ev.resultIndex; i < ev.results.length; i++) {
-          const r = ev.results[i]
-          if (r.isFinal) onFinal?.(Chinese.t2s(r[0].transcript))
-          else interim += r[0].transcript
-        }
-        if (interim) onInterim?.(Chinese.t2s(interim))
-      }
-      recognition.onerror = () => { /* swallow; recording continues without live preview */ }
-      try { recognition.start() } catch { /* already running or unsupported */ }
-    }
+    const mic = await navigator.mediaDevices.getUserMedia({ audio: true })
+    // 取流之后与录音豆外部流路径共用同一段管线（attachAudioStream）。
+    await attachAudioStream(mic, { onInterim, onFinal })
   },
 
   async stopAudio() {

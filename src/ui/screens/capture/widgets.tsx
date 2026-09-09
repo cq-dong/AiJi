@@ -3,6 +3,7 @@ import { Capacitor } from '@capacitor/core'
 import { motion } from 'framer-motion'
 import {
   Bookmark,
+  Bluetooth,
   Camera,
   GalleryThumbnails,
   Image as ImageIcon,
@@ -16,10 +17,12 @@ import {
 } from 'lucide-react'
 import { cn, Spinner } from '@/ui/components'
 import { di } from '@/app/di'
+import { useUiStore } from '@/app/store'
 import { getMicAnalyser } from '@/adapters/webCapture'
 import { haptic } from '@/ui/lib/haptics'
 import { useT } from '@/app/i18n/useT'
 import type { EntryPart, GeoPoint } from '@/domain/types'
+import type { DongleDevice } from '@/ports'
 
 const KEYFRAMES =
   '@keyframes aji-wave { 0%,100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } } ' +
@@ -957,6 +960,135 @@ export function CameraView({
             </span>
           )}
         </span>
+      </div>
+    </div>
+  )
+}
+
+// ── Anker 录音豆：音频源切换 chip ──
+// 采音默认麦克风；chip 切到「录音豆」态 = startRecording 分流到 dongle 外部流。
+// 已连接时显示电量徽标；未连接时点击弹 DongleSheet 扫描连接（接线在 capture/index.tsx）。
+export function DongleSourceChip({
+  active,
+  connected,
+  batteryPct,
+  onClick,
+}: {
+  active: boolean
+  connected: boolean
+  batteryPct?: number
+  onClick: () => void
+}) {
+  const t = useT()
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        'flex items-center gap-1.5 rounded-chip border px-2.5 py-1.5 text-[11px] font-medium cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none',
+        active ? 'border-pri/30 bg-priS text-pri' : 'border-brd bg-card text-t2',
+      )}
+    >
+      <Bluetooth size={13} strokeWidth={2} />
+      {t('capture.dongle.source')}
+      {connected && batteryPct !== undefined && (
+        <span className="text-t3 tabular-nums">{batteryPct}%</span>
+      )}
+    </button>
+  )
+}
+
+// ── 录音豆扫描/连接 sheet ── 列表 + 连接/断开。mock 恒一台设备。
+// 扫描态一律读 store.dongle.scanning 单一信号（与 state==='scanning' 可能短暂不一致）；
+// 断开必须走 store.disconnectDongle()（直调端口会留 stale device 在切片里）。
+export function DongleSheet({
+  open,
+  onClose,
+}: {
+  open: boolean
+  onClose: () => void
+}) {
+  const t = useT()
+  const dongle = useUiStore((s) => s.dongle)
+  const scanDongle = useUiStore((s) => s.scanDongle)
+  const connectDongle = useUiStore((s) => s.connectDongle)
+  const disconnectDongle = useUiStore((s) => s.disconnectDongle)
+  const [devices, setDevices] = useState<DongleDevice[]>([])
+  const [connecting, setConnecting] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    void scanDongle().then(setDevices).catch(() => setDevices([]))
+  }, [open, scanDongle])
+
+  if (!open) return null
+  const isConnected = dongle.state === 'connected'
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/30 backdrop-blur-[2px]"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[420px] rounded-t-[32px] bg-card p-5 pb-8 shadow-xl animate-slide-up"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-[17px] font-bold text-ink">{t('capture.dongle.scanTitle')}</p>
+        <p className="mt-1 text-[12px] text-t2">{t('capture.dongle.scanDesc')}</p>
+        <div className="mt-4 space-y-2">
+          {isConnected && dongle.device ? (
+            <div className="flex items-center justify-between rounded-card border border-pri/30 bg-priS/50 px-3 py-2.5">
+              <span className="text-[13px] font-medium text-ink">{dongle.device.name}</span>
+              <div className="flex items-center gap-2">
+                {dongle.info?.batteryPct !== undefined && (
+                  <span className="text-[11px] text-t2 tabular-nums">
+                    {t('capture.dongle.battery')} {dongle.info.batteryPct}%
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void disconnectDongle()}
+                  className="rounded-chip px-2 py-1 text-[12px] font-medium text-catFail cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 outline-none"
+                >
+                  {t('capture.dongle.disconnect')}
+                </button>
+              </div>
+            </div>
+          ) : dongle.scanning ? (
+            <p className="py-6 text-center text-[13px] text-t3">{t('capture.dongle.scanning')}</p>
+          ) : devices.length === 0 ? (
+            <div className="py-4 text-center">
+              <p className="text-[13px] text-t3">—</p>
+              <button
+                type="button"
+                onClick={() => void scanDongle().then(setDevices)}
+                className="mt-2 rounded-chip px-2 py-1 text-[12px] font-medium text-pri cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 outline-none"
+              >
+                {t('capture.dongle.rescan')}
+              </button>
+            </div>
+          ) : (
+            devices.map((d) => (
+              <div key={d.id} className="flex items-center justify-between rounded-card border border-brd px-3 py-2.5">
+                <span className="text-[13px] font-medium text-ink">{d.name}</span>
+                <button
+                  type="button"
+                  disabled={connecting !== null}
+                  onClick={() => {
+                    setConnecting(d.id)
+                    // 连接失败也要复位 connecting（否则按钮永久禁用）；错误吞掉留 console 供排查。
+                    void connectDongle(d.id)
+                      .catch((e) => console.error('[DongleSheet] connectDongle failed', e))
+                      .finally(() => setConnecting(null))
+                  }}
+                  className="flex min-h-9 items-center rounded-btn bg-pri px-3 text-[12px] font-medium text-white cursor-pointer transition duration-base ease-out active:scale-95 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+                >
+                  {connecting === d.id ? <Spinner size={14} /> : t('capture.dongle.connect')}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   )

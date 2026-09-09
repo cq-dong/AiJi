@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
+import { Bookmark, Mic } from 'lucide-react'
 import { useUiStore } from '@/app/store'
 import { useAccountStore } from '@/app/accountStore'
 import { useQuotaStore } from '@/app/quotaStore'
@@ -14,6 +15,8 @@ import {
   CaptureKeyframes,
   CaptureToolbar,
   Composer,
+  DongleSheet,
+  DongleSourceChip,
   DraftHintBanner,
   FlowPart,
   InterimBubble,
@@ -79,10 +82,18 @@ export default function Capture() {
   const clearDraft = useUiStore((s) => s.clearDraft)
   const saveDraft = useUiStore((s) => s.saveDraft)
   const primeLocation = useUiStore((s) => s.primeLocation)
+  // ── Anker 录音豆（soundcore Work 3200）：音频源切换 ──
+  // 挂载订阅端口状态推送（幂等）；dongleMode 是「音频源偏好」本地态，跟随实际
+  // 连接同步（连上即录音豆源、断开回落麦克风）；chip 点击已连接 → 断开，未连接 → 弹 sheet。
+  const dongle = useUiStore((s) => s.dongle)
+  const subscribeDongle = useUiStore((s) => s.subscribeDongle)
+  const disconnectDongle = useUiStore((s) => s.disconnectDongle)
   const t = useT()
 
   const [view, setView] = useState<View>('compose')
   const [elapsed, setElapsed] = useState(0)
+  const [dongleSheetOpen, setDongleSheetOpen] = useState(false)
+  const [dongleMode, setDongleMode] = useState(false)
   // 自由书写面：常驻 Composer 的本地草稿。不加框、无确认钮——加媒体/录音/保存/
   // 离开时自动并入 parts 流（commitTextDraft），时间序保持、输入永不丢。
   const [textDraft, setTextDraft] = useState('')
@@ -169,6 +180,11 @@ export default function Capture() {
     const id = window.setInterval(() => setElapsed((e) => e + 1), 1000)
     return () => window.clearInterval(id)
   }, [recording])
+
+  // 录音豆：挂载即订阅端口状态推送（store 幂等守卫，重复挂载不叠加 listener）。
+  useEffect(() => { subscribeDongle() }, [subscribeDongle])
+  // 音源偏好跟随实际连接：连上 → 录音豆源；断开（chip 点击/sheet/端口侧）→ 回落麦克风。
+  useEffect(() => { setDongleMode(dongle.state === 'connected') }, [dongle.state])
 
   // NoMicPanel「改用文本」：面板卸载、Composer 挂载后再聚焦（wantFocusRef 延迟消费）。
   useEffect(() => {
@@ -279,6 +295,11 @@ export default function Capture() {
   // D3 修复：native 路径先 probe，成功才清 micDenied——此前 allowMic() 先清再 probe，
   // probe 失败时 micDenied 残留 false，UI 卡在无 NoMicPanel 但 startRecording 又失败。
   const handleVoice = async () => {
+    // 录音豆源选中但未连接 → 引导连接（弹 sheet），不静默落回麦克风。
+    if (dongleMode && dongle.state !== 'connected') {
+      setDongleSheetOpen(true)
+      return
+    }
     if (micDenied) {
       if (Capacitor.isNativePlatform()) {
         const ok = await di.capture.requestMicPermission()
@@ -293,6 +314,15 @@ export default function Capture() {
   }
   const handleStopVoice = () => {
     void stopRecording().catch(() => showCaptureFailureToast())
+  }
+
+  // Anker 录音豆「标记重点」：Task 5 接管（结果进 capture.draftMarks）。本 Task 占位——
+  // di.dongle.markHighlight() 的返回秒数 console.log + toast 反馈，不建 marks 数据通路。
+  const handleMarkHighlight = () => {
+    void di.dongle.markHighlight().then((r) => {
+      console.log('[capture] dongle markHighlight', r)
+      setToast(t('capture.dongle.marked'))
+    }).catch((e) => console.error('[capture] markHighlight failed', e))
   }
 
   const openCamera = () => setView('camera')
@@ -502,10 +532,47 @@ export default function Capture() {
 
       {view === 'compose' && (
         recording ? (
-          // Wave 3 #2: compact recording bar at footer — parts list stays visible
-          <VoiceBar elapsed={elapsed} onStop={handleStopVoice} />
+          <div className="flex shrink-0 flex-col">
+            {/* Anker 录音豆：录音中且录音豆源 → VoiceBar 上方「标记重点」（Task 5 接管数据通路） */}
+            {dongleMode && (
+              <div className="flex items-center justify-center border-t border-brd/70 bg-card/90 px-4 pt-2.5">
+                <button
+                  type="button"
+                  onClick={handleMarkHighlight}
+                  className="flex min-h-9 items-center gap-1.5 rounded-chip bg-priS px-3 text-[12px] font-medium text-pri cursor-pointer transition duration-base ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card outline-none"
+                >
+                  <Bookmark size={14} strokeWidth={2} />
+                  {t('capture.dongle.mark')}
+                </button>
+              </div>
+            )}
+            {/* Wave 3 #2: compact recording bar at footer — parts list stays visible */}
+            <VoiceBar elapsed={elapsed} onStop={handleStopVoice} />
+          </div>
         ) : !micDenied && (
           <footer className="flex shrink-0 flex-col gap-3 border-t border-brd/70 bg-card/90 px-4 pb-5 pt-3 backdrop-blur-lg">
+            {/* Anker 录音豆：音频源行——麦克风为当前源时高亮（被动指示），录音豆 chip 可点击切换 */}
+            <div className="flex items-center justify-between">
+              <span
+                className={`flex items-center gap-1.5 rounded-chip border px-2.5 py-1.5 text-[11px] font-medium ${
+                  dongleMode ? 'border-brd bg-card text-t2' : 'border-pri/30 bg-priS text-pri'
+                }`}
+                aria-current={!dongleMode}
+              >
+                <Mic size={13} strokeWidth={2} />
+                {t('capture.dongle.mic')}
+              </span>
+              <DongleSourceChip
+                active={dongleMode}
+                connected={dongle.state === 'connected'}
+                batteryPct={dongle.info?.batteryPct}
+                onClick={() => {
+                  // 已连接 → 断开回落麦克风（必须走 store 动作，清切片 device）；未连接 → 弹 sheet 扫描连接。
+                  if (dongle.state === 'connected') void disconnectDongle()
+                  else setDongleSheetOpen(true)
+                }}
+              />
+            </div>
             <CaptureToolbar
               onText={() => {
                 wantFocusRef.current = true
@@ -527,6 +594,9 @@ export default function Capture() {
           </footer>
         )
       )}
+
+      {/* Anker 录音豆：扫描/连接 sheet（open=false 时组件返 null，不占 DOM） */}
+      <DongleSheet open={dongleSheetOpen} onClose={() => setDongleSheetOpen(false)} />
 
       {toast && <Toast message={toast} onDone={() => setToast(null)} />}
       {actionToast && (

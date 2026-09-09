@@ -6,6 +6,7 @@ import { localRecall } from '@/ui/screens/chat/helpers'
 import { seedSettings } from '@/data/seed'
 import { enrichLocation } from '@/adapters/geocoding'
 import { playReminderBeep } from '@/adapters/reminderSound'
+import { startAudioFromStream } from '@/adapters/webCapture'
 import * as summaryCache from '@/adapters/summaryCache'
 import { di } from './di'
 import { useAccountStore, registerStoreRehydrate } from './accountStore'
@@ -342,10 +343,16 @@ export const useUiStore = create<UiState>((set, get) => ({
     set((s) => ({ capture: { ...s.capture, finalized: '', interim: '' } }))
     get().primeLocation()
     try {
-      await di.capture.startAudio({
-        onInterim: (t) => set((s) => ({ capture: { ...s.capture, interim: t } })),
-        onFinal: (t) => set((s) => ({ capture: { ...s.capture, finalized: s.capture.finalized + t, interim: '' } })),
-      })
+      const onInterim = (text: string) => set((s) => ({ capture: { ...s.capture, interim: text } }))
+      const onFinal = (text: string) => set((s) => ({ capture: { ...s.capture, finalized: s.capture.finalized + text, interim: '' } }))
+      // 录音豆已连接 → 外部流直采（Anker 赛道一）。WebSpeech live 预览关闭
+      //（它吃不到外部流，只会串系统麦克风音）；final 转写由 Paraformer blob 管线兜底。
+      if (get().dongle.state === 'connected') {
+        const ext = await di.dongle.getAudioStream()
+        await startAudioFromStream(ext) // 不传 opts → 无 live 预览
+      } else {
+        await di.capture.startAudio({ onInterim, onFinal })
+      }
       set((s) => ({ capture: { ...s.capture, recording: true } }))
     } catch (e) {
       console.error('[store] startAudio failed', e)

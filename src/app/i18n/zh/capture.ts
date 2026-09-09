@@ -52,4 +52,17 @@ export const capture = {
   'capture.aria.stopRecord': '停止录制',
   'capture.aria.startRecord': '开始录制',
   'capture.aria.takePhoto': '拍照',
+  // ── Anker 录音豆（soundcore Work 3200）：音频源切换 + 扫描/连接 sheet ──
+  'capture.dongle.source': '录音豆',
+  'capture.dongle.mic': '麦克风',
+  'capture.dongle.scanTitle': '连接录音豆',
+  'capture.dongle.scanDesc': '扫描附近的 soundcore Work 3200',
+  'capture.dongle.scanning': '正在扫描…',
+  'capture.dongle.rescan': '重新扫描',
+  'capture.dongle.connect': '连接',
+  'capture.dongle.connected': '已连接',
+  'capture.dongle.disconnect': '断开',
+  'capture.dongle.battery': '电量',
+  'capture.dongle.mark': '标记重点',
+  'capture.dongle.marked': '已标记',
 } as const

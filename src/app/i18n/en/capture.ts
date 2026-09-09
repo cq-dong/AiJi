@@ -50,4 +50,17 @@ export const capture = {
   'capture.aria.stopRecord': 'Stop recording',
   'capture.aria.startRecord': 'Start recording',
   'capture.aria.takePhoto': 'Take photo',
+  // Anker recording dongle (soundcore Work 3200): audio source switch + scan/connect sheet.
+  'capture.dongle.source': 'Recording Dongle',
+  'capture.dongle.mic': 'Microphone',
+  'capture.dongle.scanTitle': 'Connect Recording Dongle',
+  'capture.dongle.scanDesc': 'Scan nearby soundcore Work 3200',
+  'capture.dongle.scanning': 'Scanning…',
+  'capture.dongle.rescan': 'Rescan',
+  'capture.dongle.connect': 'Connect',
+  'capture.dongle.connected': 'Connected',
+  'capture.dongle.disconnect': 'Disconnect',
+  'capture.dongle.battery': 'Battery',
+  'capture.dongle.mark': 'Mark highlight',
+  'capture.dongle.marked': 'Marked',
 }
