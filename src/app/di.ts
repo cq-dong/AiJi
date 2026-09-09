@@ -17,10 +17,11 @@ import { httpQuota } from '@/adapters/httpQuota'
 import { httpPlan } from '@/adapters/httpPlan'
 import { builtinLlm } from '@/adapters/builtinLlm'
 import { builtinStt } from '@/adapters/builtinStt'
+import { mockDongle } from '@/adapters/mockDongle'
 import { Capacitor } from '@capacitor/core'
 import type {
   AppUpdatePort, AuthPort, CapturePort, FeedbackPort, LocalNotificationsPort,
-  LlmPort, PlanPort, QuotaPort, SecretStorePort, StoragePort, SttPort,
+  LlmPort, PlanPort, QuotaPort, RecordingDonglePort, SecretStorePort, StoragePort, SttPort,
 } from '@/ports'
 
 // Slice B Phase A env 分流：VITE_AIJI_BACKEND='http' → 真实后端（httpAuth/httpQuota/httpPlan），
@@ -55,6 +56,8 @@ export interface Di {
   // 使用反馈——内置 GitHub PAT（.env.local inline），提交建 Issue。见
   // docs/superpowers/specs/2026-07-19-feedback-feature-design.md。
   feedback: FeedbackPort
+  // Anker 录音豆——mock 顶位，真 SDK 到手换 ankerDongle 适配器（只改此行）。
+  dongle: RecordingDonglePort
 }
 
 // keySource 读取：每次调用读 IndexedDB 单行 settings (<1ms)，相对 LLM/STT 秒级 IO 可忽略；
@@ -102,4 +105,5 @@ export const di: Di = {
   appUpdate: Capacitor.isNativePlatform() ? capacitorAppUpdate : webAppUpdate,
   localNotifications,
   feedback: githubFeedback,
+  dongle: mockDongle,
 }

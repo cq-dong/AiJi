@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
+import type { DongleDevice, DongleInfo, DongleState } from '@/ports'
 import { scopeRange } from '@/domain/dateRange'
 import { localRecall } from '@/ui/screens/chat/helpers'
 import { seedSettings } from '@/data/seed'
@@ -121,6 +122,15 @@ interface UiState {
   startChatVoice: () => Promise<void>
   stopChatVoice: () => Promise<string> // 返回 transcript（finalized+interim.trim），调用方写入输入框
   allowChatMic: () => void
+  // ── Anker 录音豆状态切片（Anker 黑客松赛道一）── mockDongle 状态机镜像 + 扫描/连接动作。
+  // subscribeDongle：端口状态推送 → store 镜像（UI 只读 store，不直碰 di.dongle 回调）。
+  // UI（AppShell/capture）挂载时自调一次；幂等（重复调不叠加 listener——模块级 flag 守卫）。
+  dongle: { state: DongleState; device?: DongleDevice; info?: DongleInfo; scanning: boolean }
+  subscribeDongle: () => void
+  scanDongle: () => Promise<DongleDevice[]>
+  connectDongle: (deviceId: string) => Promise<void>
+  disconnectDongle: () => Promise<void>
+  markHighlight: (label?: string) => Promise<{ atSec: number }>
   // AI 记忆（2026-07-22）：增/删/开关。落库后 set 内存态，settings MemorySheet 消费。
   // 风格照抄 reminder 相关 action：save upsert + 内存态替换、delete 落库 + 过滤、toggle 翻转 enabled。
   saveMemory: (content: string) => Promise<void>
@@ -229,6 +239,10 @@ function chatCacheKey(question: string, entries: Entry[]): string {
   return `${norm}::${sig}`
 }
 
+// Anker 录音豆：subscribeDongle 幂等守卫——端口 onStateChange 只注册一次，重复调用不叠加
+// listener（非 store 状态，故放模块作用域，与 permissionRequested 同款模式）。
+let dongleSubscribed = false
+
 // conversation null → 新空会话（首次 sendMessage lazy-create，id=uuid）。
 function ensureConversation(c: Conversation | null): Conversation {
   return c ?? { id: crypto.randomUUID(), messages: [], updatedAt: new Date().toISOString() }
@@ -271,6 +285,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   chatList: [],
   chatLoading: 'idle',
   chatVoice: { recording: false, interim: '', finalized: '', micDenied: false },
+  dongle: { state: 'idle' as DongleState, scanning: false },
   hydrate: async () => {
     if (get().hydrated) return
     try {
@@ -1031,6 +1046,33 @@ export const useUiStore = create<UiState>((set, get) => ({
     return transcript
   },
   allowChatMic: () => set((s) => ({ chatVoice: { ...s.chatVoice, micDenied: false } })),
+  // ── Anker 录音豆 actions（Anker 黑客松赛道一）── mockDongle 状态机镜像 + 扫描/连接动作。
+  // connectDongle 后 device 不在此 set——device 由端口 onStateChange 推送（subscribeDongle 镜像）。
+  subscribeDongle: () => {
+    if (dongleSubscribed) return
+    dongleSubscribed = true
+    di.dongle.onStateChange((s, device) =>
+      set((st) => ({ dongle: { ...st.dongle, state: s, ...(device ? { device } : {}) } })),
+    )
+  },
+  scanDongle: async () => {
+    set((s) => ({ dongle: { ...s.dongle, scanning: true } }))
+    try {
+      return await di.dongle.scan()
+    } finally {
+      set((s) => ({ dongle: { ...s.dongle, scanning: false } }))
+    }
+  },
+  connectDongle: async (deviceId) => {
+    await di.dongle.connect(deviceId)
+    const info = await di.dongle.getDeviceInfo().catch(() => undefined)
+    set((s) => ({ dongle: { ...s.dongle, info } }))
+  },
+  disconnectDongle: async () => {
+    await di.dongle.disconnect()
+    set({ dongle: { state: 'idle', device: undefined, info: undefined, scanning: false } })
+  },
+  markHighlight: (label) => di.dongle.markHighlight(label),
   // ── AI 记忆 actions（2026-07-22）──────────────────────────────────────────
   // 风格照抄 reminder 相关 action：save upsert + 内存态替换、delete 落库 + 过滤、toggle 翻转 enabled。
   // prompt 注入由 classify/answerChat 调用点自行 di.storage.listMemories() 拉取，store 不参与注入逻辑。
