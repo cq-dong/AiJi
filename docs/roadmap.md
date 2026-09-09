@@ -1,6 +1,6 @@
 # AiJi · 开发路线图
 
-> 最后更新：2026-07-17。MVP 范围见 PRD `docs/superpowers/specs/2026-07-15-aiji-design.md`（§7.3）。
+> 最后更新：2026-09-10。MVP 范围见 PRD `docs/superpowers/specs/2026-07-15-aiji-design.md`（§7.3）。
 > 本文件固化「已完成 / 在做 / 后置」三态，方便用户 + 未来 agent 查。状态变就更新本文。
 
 ## 当前状态：MVP 功能完备
@@ -45,6 +45,20 @@
 验收 LGTM（2026-07-16）：6 项行为测试（卡片渲染 / 确认流 / Notification fire / reload 持久 / 错过策略 / snooze+dismiss）+ 4 项 store 不变量（timeout 去重 / fire 前 re-check / Q3 阈值 / processEntry 不自动建）全 pass，无 console error。
 
 **打磨回合（2026-07-16，LGTM 后 polish）**：修 3 处 correctness minor——(1) `confirmReminder` 清掉 EntryAi.reminderSuggestion 防 reload 后卡片重现/重确认建重复（含深链直达 detail、hydrate 前 aiByEntry 空时从 Dexie 取 AI 再清）；(2) `snoozeReminder` 锚定 `max(now, dueAt)` 防稍后提醒把未来到点提醒往前挪；(3) `deepSeekLlm` 传本地带偏移 ISO 给 LLM（原 UTC `Z` 无时区信号，相对时间解析偏移会错）。余 a11y/UX minor（label-input 关联、空 datetime guard、formatDueAt 防错、dead STATUS_LABELS、comment rot）留后续打磨轮。
+
+## 在做：Anker 黑客松赛道一「智能录音」（`anker` 分支，2026-09-10 起）
+
+> 参赛记录与赛事情报见 `docs/anker-hackathon/README.md`。分支基于 `v2.5`，赛后视情况决定是否合并回主干。
+
+- **目标**：基于 Anker 录音豆（soundcore Work 3200）重新定义声音的采集→理解→反馈——与 AiJi「把听见变成理解」的既有链路天然契合。预赛只需提交材料（作品说明文档 + 演示视频），无需 SDK。
+- **时间线**：09-27 预赛材料提交截止（五维材料评审：选题清晰度/方案清晰度/项目创新性/落地可行性/团队能力匹配）→ 09-30 出线公布（30 队；**SDK 完整版仅向出线团队发放，预赛前无任何团队持有**）→ 10.16-10.17 深圳线下决赛（24h 集中开发 + 路演）。
+- **已完成（架构先行：设备 mock + 真实 getUserMedia 音频）**：
+  - RecordingDonglePort 端口 + AudioPart.marks 域类型（`a32a42a`）
+  - mockDongle 适配器：扫描/连接/音频流/重点标记，设备模拟、音频真实（`92885dc`）
+  - di 注册 + store `dongle` 状态切片（`91e70e3`）
+  - 采集页音频源切换（麦克风 ↔ 录音豆 chip + 扫描连接 sheet）+ `startAudioFromStream` 外流直采（`a66d3c3`）
+  - 重点标记全链路：draftMarks → AudioPart.marks → 详情页回放器标记点点击跳转（`afb1072`）
+- **待办**：09-27 预赛材料（作品说明文档 + 演示视频，**均未开始**，最紧路径）· 出线后 `ankerDongle.ts` 真适配器替换 mock · 场景剧本模式（`?dongle=script`，已降级后置）
 
 ## 后置 / 不做（用户已决策，2026-07-16）
 

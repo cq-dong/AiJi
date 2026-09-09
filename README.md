@@ -145,6 +145,21 @@ npm run build        # tsc -b && vite build
 > - <本分支未完成或留给下条分支的>
 > ```
 
+### anker（基于 v2.5，2026-09-10）
+
+**主要更新**——Anker 黑客松赛道一「智能录音」：录音豆（soundcore Work 3200）Port 先行集成
+
+- **RecordingDonglePort 端口**：连接生命周期（onStateChange/scan/connect/disconnect）/ 音频流 getAudioStream / 重点标记 markHighlight / 设备信息 getDeviceInfo，独立于 CapturePort；di 注册 + store `dongle` 切片（`a32a42a` / `91e70e3`）
+- **mockDongle 适配器**：模拟扫描/连接/电量，音频走真实 getUserMedia——真 SDK（09-30 出线后发放，预赛前无任何团队持有）到手只换适配器（`92885dc`）
+- **采集页音频源切换**：麦克风 ↔ 录音豆 chip + 扫描连接 sheet；录音豆源外流直采（startAudioFromStream，WebSpeech 实时预览关、Paraformer blob 管线不变）（`a66d3c3`）
+- **重点标记全链路**：录音中标记重点 → AudioPart.marks → 详情页回放器标记点点击跳转（`afb1072`）
+
+**后续 / 待办**
+
+- 09-27 预赛材料（作品说明文档 + 演示视频，均未开始；五维材料评审，出线 30 队）
+- 出线后（09-30）真 SDK 适配器 `ankerDongle.ts` 替换 mockDongle
+- 场景剧本模式（`?dongle=script`）降级后置——预赛视频真流录屏即可
+
 ### v2.0（基于 v1.5，2026-07-20）
 
 **主要更新**——Android 原生壳 + GitHub 分发 + 应用内自更新 + 真机缺陷全量修复
