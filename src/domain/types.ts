@@ -1,6 +1,12 @@
 // Domain models — pure TS, zero I/O, framework-agnostic (PRD §7.3).
 // erasableSyntaxOnly is on: no enums/namespaces/param-props. Use unions + `as const`.
 
+// 录音豆重点标记：atSec = 相对音频开始的秒数（音频 part 的时长基准）。
+export interface AudioMark {
+  atSec: number
+  label?: string
+}
+
 export type PartType = 'text' | 'audio' | 'video'
 
 // D7: media type annotation for LLM prompt chunking. Distinguishes photos
@@ -25,6 +31,9 @@ export interface AudioPart {
   // type. Carrying mime on the part lets export derive the right extension without
   // relying on OPFS filename→type inference. Absent on pre-D5 parts (→ fallback).
   mime?: string
+  // 录音豆重点标记（Anker 赛道一）。录音中设备按键/UI 按钮打的时间点；
+  // 可选——普通麦克风录音、旧条目均无此字段。详情页回放器渲染可点击跳转。
+  marks?: AudioMark[]
   mediaType?: MediaType
 }
 

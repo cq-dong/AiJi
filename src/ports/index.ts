@@ -254,3 +254,43 @@ export interface PlanPort {
   // 兑换码激活付费档。返更新后 account（含 plan/paidPlanId/paidExpiresAt），前端覆盖本地。
   redeem(code: string): Promise<{ account: Account }>
 }
+
+// ── Anker 录音豆（soundcore Work 3200）端口 ──────────────────────
+// 赛道一「智能录音」：官方移动端 SDK 能力 = 录音 / 重点标记 / 状态信息。
+// 预赛前（SDK 未发放）以 mockDongle 适配器顶位；真 SDK 到手只换适配器，
+// UI/Domain/STT 管线零改动（端口/适配器分层第三次验证：PWA→Capacitor→录音豆）。
+// 设计决策：独立端口不并入 CapturePort——连接生命周期 + 硬件元数据 + 标记
+// 是硬件概念，CapturePort 已有 9 个 camera/gallery 方法，再塞会失控。
+export type DongleState = 'idle' | 'scanning' | 'connected' | 'recording'
+
+export interface DongleDevice {
+  id: string
+  name: string
+}
+
+export interface DongleInfo {
+  name: string
+  batteryPct?: number
+  firmware?: string
+}
+
+export interface RecordingDonglePort {
+  /** 状态机：idle → scanning → connected → recording（回退沿同路径）。cb 返回 unsubscribe。 */
+  onStateChange(cb: (s: DongleState, device?: DongleDevice) => void): () => void
+  /** 扫描附近设备。空数组 = 无设备（UI 引导重扫）。 */
+  scan(): Promise<DongleDevice[]>
+  /** 连接指定设备。未扫描直接连接 → 适配器自行 throw（UI catch 显错误）。 */
+  connect(deviceId: string): Promise<void>
+  /** 断开。未连接时安全 no-op。 */
+  disconnect(): Promise<void>
+  /**
+   * 已连接设备的音频流。形态对齐 getUserMedia 返回值——下游 MediaRecorder /
+   * Paraformer WS / 波形抽头零改动复用，这是「mock 可无缝换真 SDK」的铰链。
+   * 未连接 → throw 'dongle-not-connected'。
+   */
+  getAudioStream(): Promise<MediaStream>
+  /** SDK 已知能力：重点标记。返回相对录音开始的秒数（由适配器计时）。 */
+  markHighlight(label?: string): Promise<{ atSec: number }>
+  /** 设备元数据（电量/固件）。未连接 → throw 'dongle-not-connected'。 */
+  getDeviceInfo(): Promise<DongleInfo>
+}
