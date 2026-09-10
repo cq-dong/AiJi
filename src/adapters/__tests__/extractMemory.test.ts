@@ -32,6 +32,25 @@ describe('buildExtractMemoryPrompt', () => {
     expect(msgs[0].role).toBe('system')
     expect(msgs[1].role).toBe('user')
   })
+
+  it('陪伴化扩展：进行中事项/目标 也属可记类别', () => {
+    const system = buildExtractMemoryPrompt('我在准备考研')[0].content as string
+    expect(system).toContain('进行中事项')
+  })
+
+  it('传 knownMemories → system 含判重块与已有记忆原文', () => {
+    const system = buildExtractMemoryPrompt('我每天跑步', ['我对花生过敏', '日记都归到 life 类'])[0].content as string
+    expect(system).toContain('已记住的内容')
+    expect(system).toContain('- 我对花生过敏')
+    expect(system).toContain('- 日记都归到 life 类')
+  })
+
+  it('不传 knownMemories → 无判重块（与旧版逐字节一致）', () => {
+    const a = buildExtractMemoryPrompt('我每天跑步')[0].content as string
+    const b = buildExtractMemoryPrompt('我每天跑步', [])[0].content as string
+    expect(a).toBe(b)
+    expect(a).not.toContain('已记住的内容')
+  })
 })
 
 describe('parseMemoryReply', () => {

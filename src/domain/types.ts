@@ -220,6 +220,11 @@ export interface Settings {
   language?: 'zh' | 'en'
   // 云端同步（Phase 2）：开=保存即推+开 App 即拉+5min 兜底。仅 network 账号可开（UI 门）。
   syncEnabled?: boolean
+  // AI 陪伴 · 自动记忆（2026-09-10）：聊天每轮自动提取值得长期记住的信息落 AI 记忆。
+  // undefined 视同 true；显式「记住 X」意图不受此开关影响（用户明示永远生效）。
+  // 关掉后只剩手动添加（设置→AI 记忆）。builtin 路径每次提取 consume('llm', 1)，
+  // 在意配额的用户可关。
+  autoMemory?: boolean
 }
 
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────
@@ -262,6 +267,9 @@ export interface ChatMessage {
   createdAt: string
   error?: boolean
   trace?: ChatTrace
+  // 视觉分化（2026-09-10 陪伴化）：'memoryConfirm' = 系统确认（静默/显式记忆落库回执），
+  // 渲染成安静的胶囊卡片而非助手对话气泡——系统回执 ≠ 伙伴在说话。
+  kind?: 'memoryConfirm'
 }
 
 // MVP 单会话：固定 id=1。多会话时改 schema + listConversations，UI 不动。

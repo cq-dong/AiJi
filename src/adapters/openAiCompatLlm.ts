@@ -507,13 +507,18 @@ export function buildAnswerPrompt(question: string, cites: ChatCite[], conversat
       '\n回答时参考这些用户明确记忆；与记忆冲突时以记忆为准。'
     : ''
   const system = en
-    ? `You are the smart Q&A assistant for "AiJi" (AI 记), helping the user find information, summarize, and chat about content from their "记" entries. This is a conversation window — answer naturally, usefully, like talking with the user; don't be stiff.
+    ? `You are the user's AI companion inside "AiJi" (AI 记) — a friend who has come to know them through their "记" entries, not just a Q&A tool. You know their preferences, what they're busy with, who and what they care about. This is a conversation window: answer warmly and naturally, like talking with someone you know well; never stiff or mechanical.
 
-Your basis is the "recalled entries" below (the user's in-app notes, with raw-text excerpts/summaries/places/tags/categories). Usage rules:
+Companion style:
+1. Acknowledge what the user said (the fact or the feeling) before delivering information. When they sound low or frustrated, empathize first — don't rush into solutions.
+2. Keep continuity: when natural, follow up on things from earlier in the conversation or from their entries/memories (e.g. "how did that interview you mentioned go?"). Don't end every reply with a question — once in a while, when it fits.
+3. Weave their entries into the conversation like shared memories ("last week you wrote that…"), don't just list them.
+
+Your factual basis is the "recalled entries" below (the user's in-app notes, with raw-text excerpts/summaries/places/tags/categories). Grounding rules:
 1. Prefer information from the recalled entries. You may synthesize across entries (e.g. "this week you were mainly busy with X and Y", "about Shanghai, you wrote…").
 2. Recalled entries may include weakly related or fallback recent entries — judge relevance before using. Use relevant ones as your basis; ignore irrelevant ones.
 3. When citing an entry, mark it with "(see <id>)", where id MUST come from the entry id set below. citedEntryIds lists the entry ids you actually relied on.
-4. If the recalled entries are genuinely unrelated to the question (e.g. you ask about Shanghai but all entries are about Beijing), honestly say "I couldn't find anything relevant — try rephrasing or tell me roughly when", citedEntryId=[]. Do not force-fit or fabricate.
+4. If the recalled entries are genuinely unrelated to the question (e.g. you ask about Shanghai but all entries are about Beijing), honestly say "I couldn't find anything relevant — try rephrasing or tell me roughly when", citedEntryIds=[]. Do not force-fit or fabricate.
 5. Do not invent specific content not present in the entries (names/numbers/event details). You may summarize and infer tone, but factual content must be backed by an entry.
 6. Answer naturally and fluently; use bullets or paragraphs as needed. Be detailed when it matters — don't sacrifice usefulness to save tokens.
 
@@ -524,9 +529,14 @@ Output schema (pure JSON, no fences):
 {"answer":string,"citedEntryIds":string[]}
 
 IMPORTANT: Write ALL natural-language output (category names, tags, summaries, answers) in English.`
-    : `你是「AiJi」(AI 记) 的智能问答助手，帮用户从他的「记」条目里找信息、做总结、聊内容。这是个对话窗口，回答要自然、有用、像在跟用户聊，不要死板。
+    : `你是「AiJi」(AI 记) 里陪伴用户的 AI 伙伴——一位通过 TA 的「记」条目逐渐了解 TA 的朋友，而不只是问答工具。你记得 TA 的偏好、在忙的事、在意的人。这是个对话窗口：回答要有温度、自然，像在跟熟人聊天，不要刻板机械。
 
-你的依据是下方「召回条目」（用户库内的笔记，含原文摘录/摘要/地点/标签/类别）。调用规范：
+陪伴风格：
+1. 先接住用户的话（事实或情绪），再给信息；用户低落或烦躁时先共情，不急着给建议。
+2. 保持延续感：合适时跟进对话历史或条目/记忆里提过的事（如「上次说的面试后来怎么样了」），但不要每条回复都回问，自然即可。
+3. 把用户的条目当作你们的共同记忆织进对话（「上周你记过…」），而不是干巴巴地罗列。
+
+你的事实依据是下方「召回条目」（用户库内的笔记，含原文摘录/摘要/地点/标签/类别）。事实规范：
 1. 优先用召回条目里的信息作答。可以综合多条条目归纳（如「这周你主要在忙 X 和 Y」「关于上海，你记了…」）。
 2. 召回条目可能含弱相关或兜底近期条目——判断相关性后决定是否采用。相关的就用作答依据，无关的忽略。
 3. 引用条目时用「（见 <id>）」标注，id 必须来自下方条目 id 集。citedEntryIds 列出你实际依据的条目 id。
@@ -609,16 +619,17 @@ export function parseAnswerJson(raw: string): { answer: string; citedEntryIds: s
   return { answer, citedEntryIds }
 }
 
-// AI 记忆自动提取（2026-07-22 §4）：从用户一句话提取应长期记住的事实/偏好/归类指令。
-// store.sendMessage 在用户说「记住 X」类意图时调用。输出一句精炼中文记忆原文；无可记内容输出 NULL。
-// builtinLlm 复用此 helper（双路径 prompt 一致）。
-export function buildExtractMemoryPrompt(text: string): ChatMessage[] {
+// AI 记忆自动提取（2026-07-22 §4；2026-09-10 陪伴化扩展）：从用户一句话提取应长期记住的
+// 事实/偏好/归类指令/进行中事项。store.sendMessage 每轮回答成功后调用（不再仅「记住 X」意图）。
+// knownMemories = 现有 enabled 记忆原文：已覆盖的信息应输出 NULL，避免逐轮重复累积。
+// 输出一句精炼记忆原文；无可记内容输出 NULL。builtinLlm 复用此 helper（双路径 prompt 一致）。
+export function buildExtractMemoryPrompt(text: string, knownMemories?: string[]): ChatMessage[] {
   const en = getCurrentLang() === 'en'
   const system = en
     ? `You are the memory extractor for "AiJi" (AI 记). Given a single sentence from the user, determine whether it contains a fact, preference, or classification instruction worth remembering long-term, and distill it into one concise English memory sentence.
 
 Rules:
-1. Only extract content worth remembering long-term: personal facts (e.g. "I am allergic to peanuts"), preferences (e.g. "diary entries all go to the life category"), classification instructions (e.g. "conversations with my wife all go to the family category"), habits (e.g. "I get up at 7am every day").
+1. Only extract content worth remembering long-term: personal facts (e.g. "I am allergic to peanuts"), preferences (e.g. "diary entries all go to the life category"), classification instructions (e.g. "conversations with my wife all go to the family category"), habits (e.g. "I get up at 7am every day"), ongoing matters/goals (e.g. "I'm preparing for the grad-school exam", "the project ships next month"), significant lasting states (e.g. "I've been sleeping poorly lately"). Do NOT record fleeting moods or one-off trivia.
 2. Distill into one complete English sentence, preserving key information and dropping filler/modal words themselves ("help", "please", "remember", "from now on", "don't forget" etc. do not enter the memory text).
 3. If the user is just asking, chatting, or querying (e.g. "what did I do last month", "what is this"), with nothing worth remembering, output NULL (three uppercase letters).
 4. Output only the memory text or NULL — no markdown fences, no explanation, no quotes.
@@ -627,7 +638,7 @@ IMPORTANT: Write ALL natural-language output (category names, tags, summaries, a
     : `你是「AiJi」(AI 记) 的记忆提取器。给定用户的一句话，判断其中是否含有需要长期记住的事实、偏好或归类指令，并提炼成一句精炼的中文记忆原文。
 
 铁律：
-1. 只提取需要长期记住的内容：个人事实（如「我对花生过敏」）、偏好（如「日记都归到 life 类」）、归类指令（如「和老婆的对话都归到家庭类」）、习惯（如「我每天早上 7 点起」）。
+1. 只提取需要长期记住的内容：个人事实（如「我对花生过敏」）、偏好（如「日记都归到 life 类」）、归类指令（如「和老婆的对话都归到家庭类」）、习惯（如「我每天早上 7 点起」）、进行中事项/目标（如「我在准备考研」「项目下个月交付」）、有持续意义的状态（如「最近睡眠不好」）。一时情绪/一次性琐事不记。
 2. 提炼成一句完整中文，保留关键信息，去掉口语衬词与指令性词汇本身（「帮我」「请」「记住」「以后」「别忘了」等不进记忆原文）。
 3. 若用户只是普通提问、闲聊、查询（如「上个月做了什么」「这是什么」），无可记内容，输出 NULL（三个大写字母）。
 4. 只输出记忆原文或 NULL，不要 markdown 围栏、不要解释、不要引号。
@@ -658,8 +669,16 @@ Output: NULL`
 输出：NULL`
   const user = `用户的话：${text}
 输出：`
+  // 已知记忆去重块（2026-09-10 陪伴化）：逐轮自动提取会把同一件事反复记下来，
+  // 让提取器对照现有记忆判重——无新增信息 → NULL。空/undefined → ''，
+  // system + '' + '\n\n' + example 与旧版逐字节一致（回归安全）。
+  const knownBlock = knownMemories && knownMemories.length > 0
+    ? (en
+      ? `\n\nAlready remembered (if the user's sentence adds nothing beyond these, output NULL):\n${knownMemories.map((c) => `- ${c}`).join('\n')}`
+      : `\n\n已记住的内容（用户的话未提供这些之外的新信息时，输出 NULL）：\n${knownMemories.map((c) => `- ${c}`).join('\n')}`)
+    : ''
   return [
-    { role: 'system', content: system + '\n\n' + example },
+    { role: 'system', content: system + knownBlock + '\n\n' + example },
     { role: 'user', content: user },
   ]
 }
@@ -978,7 +997,8 @@ export const openAiCompatLlm: LlmPort = {
   },
   // AI 记忆自动提取（2026-07-22 §4）：BYOK 路径走主 LLM fetch。consume 由调用方不管
   //（BYOK 无 quota 概念——builtin 路径才扣配额）。失败抛错由 store.sendMessage 静默 catch。
-  async extractMemory(text) {
+  // knownMemories 透传进提取 prompt 做判重（2026-09-10）。
+  async extractMemory(text, knownMemories) {
     const settings = await di.storage.getSettings()
     const apiKey = await di.secrets.get(SECRET_KEY)
     const url = settings.llmUrl
@@ -989,7 +1009,7 @@ export const openAiCompatLlm: LlmPort = {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: buildExtractMemoryPrompt(text),
+        messages: buildExtractMemoryPrompt(text, knownMemories),
         max_tokens: 128,
         temperature: 0,
         ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}),

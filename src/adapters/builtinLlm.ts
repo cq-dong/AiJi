@@ -245,9 +245,10 @@ export const builtinLlm: LlmPort = {
 
   // AI 记忆自动提取（2026-07-22 §4）：同 buildExtractMemoryPrompt 走 /api/llm/chat + consume('llm', 1)。
   // 401→refresh 重试由 chatFetch 内置处理；parseMemoryReply 把 NULL/空→null。
-  async extractMemory(text) {
+  // knownMemories 透传进提取 prompt 做判重（2026-09-10 陪伴化：每轮调用，去重靠它）。
+  async extractMemory(text, knownMemories) {
     assertNetwork()
-    const messages = buildExtractMemoryPrompt(text)
+    const messages = buildExtractMemoryPrompt(text, knownMemories)
     const raw = await chat(messages)
     useQuotaStore.getState().consume('llm', 1)
     return parseMemoryReply(raw)

@@ -83,6 +83,8 @@ export const settings = {
   'settings.memoryTitle': 'AI memory',
   'settings.memoryHelp':
     'Note a preference or fact; AI classification and Q&A will reference it. e.g. "File all talks with my wife under Family" "I\'m allergic to peanuts"',
+  'settings.memoryAuto': 'Auto-remember from chat',
+  'settings.memoryAutoHint': 'Extracts worth-remembering facts from each chat turn; saying "remember X" always works',
   'settings.memoryEmpty': 'No memories yet. Add one below.',
   'settings.memoryAddLabel': 'Add one',
   'settings.memoryPlaceholder': 'e.g. "File all talks with my wife under Family"',

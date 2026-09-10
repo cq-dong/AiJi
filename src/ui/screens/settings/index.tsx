@@ -744,6 +744,8 @@ function GeocodingSheet({ onClose }: { onClose: () => void }) {
 // 增/删/开关走 store action（落库 + 内存态），即时生效；prompt 注入由适配器拉 listMemories。
 function MemorySheet({ onClose }: { onClose: () => void }) {
   const memories = useUiStore((s) => s.memories)
+  const autoMemory = useUiStore((s) => s.settings.autoMemory)
+  const setSettings = useUiStore((s) => s.setSettings)
   const saveMemory = useUiStore((s) => s.saveMemory)
   const deleteMemory = useUiStore((s) => s.deleteMemory)
   const toggleMemory = useUiStore((s) => s.toggleMemory)
@@ -773,6 +775,16 @@ function MemorySheet({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <p className="mt-1 text-[11px] text-t3">{t('settings.memoryHelp')}</p>
+
+        {/* 自动记忆开关（2026-09-10 陪伴化）：开=每轮聊天自动提取值得长期记住的信息；
+            关=只剩显式「记住 X」意图与手动添加。undefined 视同开。 */}
+        <div className="mt-2 flex items-center justify-between gap-2 rounded-card border border-brd/80 bg-card px-3 py-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] leading-snug text-ink">{t('settings.memoryAuto')}</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-t3">{t('settings.memoryAutoHint')}</p>
+          </div>
+          <Toggle checked={autoMemory !== false} onChange={(v) => setSettings({ autoMemory: v })} />
+        </div>
 
         <div className="mt-3 max-h-[320px] space-y-2 overflow-y-auto">
           {memories.length === 0 && (

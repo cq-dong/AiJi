@@ -935,25 +935,36 @@ export const useUiStore = create<UiState>((set, get) => ({
         .then(() => get().refreshChatList())
         .catch((e) => console.error('[store] saveConversation(answer) failed', e))
 
-      // 回答成功落库后：若用户消息含「记住」类意图，自动提取记忆落 AI 记忆 + 回确认消息。
+      // 回答成功落库后：自动记忆提取（2026-09-10 陪伴化——每轮都尝试，不再仅限「记住」类意图）。
+      // 闸门与分流：
+      // - settings.autoMemory===false → 只响应显式「记住 X」意图（用户明示永远生效），隐式轮跳过。
+      // - 显式意图提取成功 → 追加「已记住」确认消息；隐式提取成功 → 静默落记忆（聊天流免打扰，
+      //   用户可在 设置→AI 记忆 里审阅/停用/删除）。
+      // - 去重：现有 enabled 记忆原文传给提取器（knownMemories），无新增信息 → NULL。
+      // 缓存命中路径在前面早返、不走这里（同问句首次已提取过，省一次 LLM 调用）。
       // fire-and-forget + 自闭环 try/catch：extractMemory 失败静默，不影响主问答（answer 已显）。
       // 复用 saveMemory action：内部造 Memory 对象（id/enabled/timestamps）+ 落库 + 内存态追加。
       void (async () => {
-        if (!/记住|记一下|以后.*记|别忘了|给我记/.test(trimmed)) return
+        const explicit = /记住|记一下|以后.*记|别忘了|给我记/.test(trimmed)
+        if (!explicit && get().settings.autoMemory === false) return
+        // memories 数组新者在首（saveMemory prepend）；截 50 条防 prompt 膨胀。
+        const known = get().memories.filter((m) => m.enabled).map((m) => m.content).slice(0, 50)
         let memoryContent: string | null
         try {
-          memoryContent = await di.llm.extractMemory(trimmed)
+          memoryContent = await di.llm.extractMemory(trimmed, known)
         } catch (e) {
           console.error('[store] extractMemory failed', e)
           return
         }
         if (!memoryContent) return
         await get().saveMemory(memoryContent)
+        if (!explicit) return // 隐式提取静默落，不打扰聊天流
         const confirmMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: 'assistant',
           content: t('chat.memoryConfirm', { content: memoryContent }),
           createdAt: new Date().toISOString(),
+          kind: 'memoryConfirm',
         }
         const cur = get().conversation ?? ensureConversation(null)
         const conv2 = appendMessage(cur, confirmMsg)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Square, SquarePen } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Sparkles, Square, SquarePen } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Chip, Spinner, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
@@ -302,12 +302,52 @@ function LoadingBubble({ phase }: { phase: 'intent' | 'recall' | 'answer' }) {
   )
 }
 
-function EmptyTalk() {
-  const t = useT()
+// 记忆确认回执（2026-09-10 陪伴化）：kind='memoryConfirm' 的系统消息渲染为居中安静胶囊——
+// 视觉语义是「系统回执」（Sparkles + 主色浅底），不是伙伴在说一段话，与对话气泡分化。
+function MemoryConfirmBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
   return (
-    <div className="mt-10 px-6 text-center">
-      <p className="text-[15px] font-medium text-ink">{t('chat.emptyTitle')}</p>
+    <motion.div
+      className="flex justify-center"
+      initial={fresh ? { opacity: 0, y: 8 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+    >
+      <div className="flex max-w-[90%] items-center gap-1.5 rounded-chip bg-priS px-3 py-1.5 text-[12px] leading-relaxed text-pri">
+        <Sparkles size={13} strokeWidth={2.2} className="shrink-0" />
+        <span>{msg.content}</span>
+      </div>
+    </motion.div>
+  )
+}
+
+// 空态（2026-09-10 陪伴化）：伙伴式问候——时段问候语 + 一句「我记得你」+ 开场建议
+// chips（点击填入输入框并聚焦，不直接发送，用户可改）。无插画无营销感，对话感优先。
+function EmptyTalk({ onSuggest }: { onSuggest: (text: string) => void }) {
+  const t = useT()
+  const h = new Date().getHours()
+  const greet =
+    h < 5 || h >= 22 ? t('chat.greet.night') : h < 11 ? t('chat.greet.morning') : h < 18 ? t('chat.greet.afternoon') : t('chat.greet.evening')
+  const suggestions = [t('chat.sug.chat'), t('chat.sug.review'), t('chat.sug.advice')]
+  return (
+    <div className="mt-14 flex flex-col items-center px-6 text-center">
+      <div className="flex size-12 items-center justify-center rounded-full bg-gradient-to-b from-pri to-pri/90 shadow-glowPriSm">
+        <Sparkles size={22} className="text-white" strokeWidth={1.8} />
+      </div>
+      <p className="mt-4 text-[17px] font-bold text-ink">{greet}，{t('chat.emptyTitle')}</p>
       <p className="mt-1.5 text-[13px] leading-relaxed text-t2">{t('chat.emptyHint')}</p>
+      <div className="mt-5 flex w-full max-w-[280px] flex-col gap-2">
+        {suggestions.map((s, i) => (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onSuggest(s)}
+            className="animate-fade-in-up rounded-card border border-brd/80 bg-card px-3 py-2.5 text-[13px] text-ink shadow-sm transition duration-base ease-out active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            style={{ animationDelay: `${i * 60 + 100}ms` }}
+          >
+            {s}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -327,6 +367,7 @@ export default function Chat() {
   const [text, setText] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null) // 空态建议 chips 点击后聚焦
   // 入场动画的 fresh 判定：首个非空会话快照其全部消息 id 为「已见」——历史消息瞬显；
   // 之后到达的消息（id 不在快照）按 fresh 播入场动画。用户消息因会话创建即入快照，瞬显。
   const seenIds = useRef<Set<string> | null>(null)
@@ -385,16 +426,27 @@ export default function Chat() {
         canNewChat={hasMessages}
       />
 
-      {/* 隐私披露：问题 + 召回片段上送 LLM 作答（仅检索，AI 不写数据）。 */}
-      <p className="shrink-0 px-4 text-[11px] text-t3">{t('chat.privacy')}</p>
+      {/* 隐私披露：问题 + 召回片段上送 LLM 作答（仅检索，AI 不写数据）。
+          relative z-10 bg-page：滚动时最上面一条气泡会被滚动容器顶边齐切，正好贴进本行
+          92-109px 的字形带——无背景时两者像素级叠印（E2E 截图曾现文字相叠）。盖住即净。 */}
+      <p className="relative z-10 shrink-0 bg-page px-4 pb-1.5 text-[11px] text-t3">{t('chat.privacy')}</p>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="space-y-3">
-          {!hasMessages && !loading && <EmptyTalk />}
+          {!hasMessages && !loading && (
+            <EmptyTalk
+              onSuggest={(s) => {
+                setText(s)
+                inputRef.current?.focus()
+              }}
+            />
+          )}
           {messages.map((m) => {
             const fresh = !seenIds.current?.has(m.id)
             return m.role === 'user' ? (
               <UserBubble key={m.id} msg={m} fresh={fresh} />
+            ) : m.kind === 'memoryConfirm' ? (
+              <MemoryConfirmBubble key={m.id} msg={m} fresh={fresh} />
             ) : (
               <AiBubble key={m.id} msg={m} fresh={fresh} />
             )
@@ -441,6 +493,7 @@ export default function Chat() {
             )}
           </button>
           <textarea
+            ref={inputRef}
             value={inputValue}
             onChange={(e) => !recording && setText(e.target.value)}
             onKeyDown={(e) => {

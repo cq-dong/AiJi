@@ -84,6 +84,8 @@ export const settings = {
   'settings.memoryTitle': 'AI 记忆',
   'settings.memoryHelp':
     '记一条偏好或事实，AI 分类与问答会参考。如「和老婆的对话都归到家庭类」「我对花生过敏」',
+  'settings.memoryAuto': '聊天时自动记住',
+  'settings.memoryAutoHint': '从每轮对话中提取值得长期记住的信息；说「记住 X」不受此开关影响',
   'settings.memoryEmpty': '还没有记忆。在下方记一条吧。',
   'settings.memoryAddLabel': '记一条',
   'settings.memoryPlaceholder': '如「和老婆的对话都归到家庭类」',
