@@ -258,6 +258,8 @@ export interface ChatTrace {
   intent?: { keywords: string[]; scope?: { type: string; range: string } | null; categorySlugs?: string[] }
   recalled?: { id: string; label: string; score?: number }[]
   error?: string // 真实失败原因（error 消息才填）
+  // 思考模型推理全文（2026-09-28 流式输出）：流式期间逐帧累积实时渲染，结束后保留可回看。
+  reasoning?: string
 }
 export interface ChatMessage {
   id: string
@@ -270,6 +272,9 @@ export interface ChatMessage {
   // 视觉分化（2026-09-10 陪伴化）：'memoryConfirm' = 系统确认（静默/显式记忆落库回执），
   // 渲染成安静的胶囊卡片而非助手对话气泡——系统回执 ≠ 伙伴在说话。
   kind?: 'memoryConfirm'
+  // 流式渲染中（2026-09-28 流式输出）：true = 该 assistant 消息正逐帧更新，UI 跳过入场
+  // 动画并隐藏 LoadingBubble；结束置 false。内存态语义，Dexie 无需升版（messages 内嵌非索引）。
+  streaming?: boolean
 }
 
 // MVP 单会话：固定 id=1。多会话时改 schema + listConversations，UI 不动。

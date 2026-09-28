@@ -72,7 +72,10 @@ const llmProxy: LlmPort = {
     k === 'builtin' ? builtinLlm.aggregate(ids, scope, range, d, id) : openAiCompatLlm.aggregate(ids, scope, range, d, id)),
   parseChatIntent: (q, now) => readKeySource().then((k) =>
     k === 'builtin' ? builtinLlm.parseChatIntent(q, now) : openAiCompatLlm.parseChatIntent(q, now)),
-  answerChat: (o) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.answerChat(o) : openAiCompatLlm.answerChat(o))),
+  // answerChat 必须双参透传（2026-09-28 流式修复 B1）：旧实现只转单参吞掉 onEvent，
+  // 真链路（builtin/byok 经 DI）流式全灭——单测全 mock di.llm 漏检，diProxy.test 已补透传断言。
+  answerChat: (o, onEvent) => readKeySource().then((k) =>
+    k === 'builtin' ? builtinLlm.answerChat(o, onEvent) : openAiCompatLlm.answerChat(o, onEvent)),
   extractMemory: (text) => readKeySource().then((k) =>
     k === 'builtin' ? builtinLlm.extractMemory(text) : openAiCompatLlm.extractMemory(text)),
   ping: (o) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.ping(o) : openAiCompatLlm.ping(o))),

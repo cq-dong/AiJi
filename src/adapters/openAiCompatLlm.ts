@@ -1,9 +1,10 @@
-import type { LlmPort } from '@/ports'
-import type { Aggregate, AggregateScopeType, Category, ChatCite, ChatQuery, Entry, EntryAi, Facets, MediaType, Tag } from '@/domain/types'
+import type { LlmPort, ChatStreamEvent } from '@/ports'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Entry, EntryAi, Facets, MediaType, Tag } from '@/domain/types'
 import { di } from '@/app/di'
 import { getCurrentLang } from '@/app/currentLang'
 import { compressImage, extractFrame, pickFrameTimes } from '@/adapters/visionMedia'
 import { BUILTIN_VLM_URL, BUILTIN_VLM_MODEL } from '@/adapters/builtinDefaults'
+import { iterateSse } from '@/adapters/sseStream'
 
 // 提示词双语（i18n AI 输出侧，2026-07-22）：builder 内部读 getCurrentLang() 决定 zh/en
 // 系统提示文案，签名不变（下游 builtinLlm/store 零改动）。双语范围 = 系统提示指令文本 +
@@ -767,6 +768,73 @@ export function sanitizeInlineCites(answer: string, validIds: Set<string>): stri
   })
 }
 
+// 流式 answer 轮（2026-09-28 问 AI 流式输出）：stream:true + iterateSse 逐帧分流——
+// reasoning_content → onEvent reasoning（「思考过程」折叠块实时渲染）；content → 累积
+// rawAccum + onEvent content（气泡逐字渲染，UI 侧经 extractPartialAnswer 提可见文本）。
+// 收口与非流式一致：parseAnswerJson（截断宽容）→ sanitizeInlineCites → validIds 过滤。
+// 中途断流：rawAccum 有内容 → 宽容解析返回部分答案（不打断对话）；空 → 抛错走现有 error 路径。
+async function answerChatStreaming(
+  opts: { question: string; cites: ChatCite[]; conversation: { role: 'user' | 'assistant'; content: string }[] },
+  onEvent: (ev: ChatStreamEvent) => void,
+): Promise<ChatAnswer> {
+  const settings = await di.storage.getSettings()
+  const apiKey = await di.secrets.get(SECRET_KEY)
+  const url = settings.llmUrl
+  const model = settings.llmModel || 'deepseek-v4-flash'
+  if (!apiKey || !url) throw new Error('LLM BYOK 未配置（url/key 缺失）')
+  // AI 记忆注入：与非流式分支一致（prompt 同源 buildAnswerPrompt）。
+  const memories = await loadEnabledMemoryContents()
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: buildAnswerPrompt(opts.question, opts.cites, opts.conversation, memories),
+      max_tokens: 8192,
+      temperature: 0.4,
+      // thinking 策略同非流式分支（不禁，见 answerChat 注释）；仅多 stream:true。
+      stream: true,
+    }),
+  })
+  if (!res.ok) {
+    const t = await res.text().catch(() => '')
+    throw new Error(`LLM HTTP ${res.status}: ${t.slice(0, 200)}`)
+  }
+  if (!res.body) throw new Error('LLM 响应无 body（流式读取失败）')
+  let rawAccum = ''
+  try {
+    for await (const payload of iterateSse(res.body)) {
+      let frame: unknown
+      try {
+        frame = JSON.parse(payload)
+      } catch {
+        continue // 坏帧跳过（代理噪声/半截帧），不毁整轮
+      }
+      const delta = (frame as {
+        choices?: { delta?: { reasoning_content?: unknown; content?: unknown } }[]
+      })?.choices?.[0]?.delta
+      if (!delta) continue // finish_reason / usage 帧无 delta
+      if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+        onEvent({ type: 'reasoning', delta: delta.reasoning_content })
+      }
+      if (typeof delta.content === 'string' && delta.content) {
+        rawAccum += delta.content
+        onEvent({ type: 'content', delta: delta.content })
+      }
+    }
+  } catch (e) {
+    // 中途断流：一无所获 → 抛错走 store 现有错误路径；有内容 → 落到下方宽容解析。
+    if (!rawAccum.trim()) throw e
+  }
+  if (!rawAccum.trim()) throw new Error('LLM 响应缺 content')
+  const parsed = parseAnswerJson(rawAccum)
+  const validIds = new Set(opts.cites.map((c) => c.id))
+  const citedEntryIds = parsed.citedEntryIds.filter((id) => validIds.has(id))
+  // D29 内联引用清洗：与非流式分支同一 helper，双口径不漂移。
+  const answer = sanitizeInlineCites(parsed.answer, validIds)
+  return { answer, citedEntryIds }
+}
+
 export const openAiCompatLlm: LlmPort = {
   async classify(entryId) {
     const settings = await di.storage.getSettings()
@@ -1016,7 +1084,10 @@ export const openAiCompatLlm: LlmPort = {
   },
   // AI Chat answer 轮：基于本地召回 cites + 先前对话作答。防幻觉后校验——
   // citedEntryIds 必须来自传入 cites.id 集，LLM 臆造的 id 在此剔掉（即使 prompt 已约束，仍兜底）。
-  async answerChat({ question, cites, conversation }) {
+  async answerChat({ question, cites, conversation }, onEvent) {
+    // 流式分支（2026-09-28）：onEvent 存在时委托流式实现；下方非流式路径逐字节不变
+    // （回归安全——intent/extractMemory 等旧调用不传 onEvent）。
+    if (onEvent) return answerChatStreaming({ question, cites, conversation }, onEvent)
     const settings = await di.storage.getSettings()
     const apiKey = await di.secrets.get(SECRET_KEY)
     const url = settings.llmUrl

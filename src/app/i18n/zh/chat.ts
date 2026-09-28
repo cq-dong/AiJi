@@ -27,6 +27,8 @@ export const chat = {
   'chat.trace.scopeMonth': '月',
   'chat.trace.categoriesLabel': '类别：',
   'chat.trace.recalled': '检索库中（{count} 条相关）',
+  // 思考模型推理全文（2026-09-28 流式输出）：流式期间实时累积，结束后可回看。
+  'chat.trace.reasoning': '推理过程',
   'chat.trace.organize': '组织回答',
   'chat.trace.organizeHint': '基于上述条目综合生成回答。',
   'chat.loading.intent': '理解问题…',

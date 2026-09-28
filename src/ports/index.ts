@@ -102,6 +102,11 @@ export interface SttPort {
   transcribe(ref: string): Promise<string>
 }
 
+// 流式增量事件（2026-09-28 问 AI 流式输出）：reasoning = 思考模型推理片段（UI「思考过程」
+// 折叠块实时渲染）；content = answer 正文 JSON 封包原始片段（经 extractPartialAnswer
+// 提取可见文本渲染）。BYOK/builtin 两条链路共用此契约。
+export type ChatStreamEvent = { type: 'reasoning' | 'content'; delta: string }
+
 export interface LlmPort {
   classify(entryId: string): Promise<EntryAi>
   // range = the period key the store wants this digest scoped to ('2026-07-16' / '2026-W28' / '2026-07').
@@ -121,11 +126,14 @@ export interface LlmPort {
   parseChatIntent(question: string, nowIso: string): Promise<ChatQuery>
   // answer 轮：基于传入 cites（已压缩）+ 对话历史作答。铁律：citedEntryIds 必须来自 cites.id；
   // port 层后校验剔非法 id。空 cites 调用方应直接走「库内未找到依据」不调此方法。
+  // onEvent（2026-09-28 流式输出）：传入时适配器走流式链路，逐帧回调 reasoning/content 增量；
+  // 省略 = 旧非流式行为（向后兼容，intent/extractMemory 等调用不动）。返回值不变——
+  // 流式结束仍产完整 ChatAnswer（落库/缓存收口不变）；断流有部分内容时宽容返回部分答案。
   answerChat(opts: {
     question: string
     cites: ChatCite[] // 已压缩的 top-K 召回条目（LLM 作答的上下文素材）
     conversation: { role: 'user' | 'assistant'; content: string }[] // 先前多轮对话
-  }): Promise<ChatAnswer>
+  }, onEvent?: (ev: ChatStreamEvent) => void): Promise<ChatAnswer>
   // AI 记忆自动提取（2026-07-22 §4；2026-09-10 陪伴化扩展）：从用户一句话提取应长期记住的
   // 事实/偏好/归类指令/进行中事项。返一句精炼记忆原文；无可记内容（普通提问）返 null。
   // store.sendMessage 每轮回答成功后调用（settings.autoMemory===false 时仅显式「记住 X」意图调）。

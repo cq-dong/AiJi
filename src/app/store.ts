@@ -5,6 +5,7 @@ import { localRecall } from '@/ui/screens/chat/helpers'
 import { seedSettings } from '@/data/seed'
 import { enrichLocation } from '@/adapters/geocoding'
 import { playReminderBeep } from '@/adapters/reminderSound'
+import { extractPartialAnswer } from '@/adapters/sseStream'
 import * as summaryCache from '@/adapters/summaryCache'
 import { di } from './di'
 import { useAccountStore, registerStoreRehydrate } from './accountStore'
@@ -98,6 +99,9 @@ interface UiState {
   deleteEntry: (id: string) => Promise<void>
   updateEntry: (id: string, patch: Partial<Entry>) => Promise<void>
   updateEntryAi: (entryId: string, patch: Partial<EntryAi>) => Promise<void>
+  // 流式 flush 专用（2026-09-28）：纯内存 map-replace 更新当前会话的某条消息（其余消息引用
+  // 不变，配合气泡 memo）。不落库——saveConversation 由 sendMessage 占位创建/流式结束两次收口。
+  updateChatMessage: (msgId: string, patch: Partial<ChatMessage>) => void
   primeLocation: () => void
   // AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md)。多会话（2026-07-22）。
   // conversation null = 尚无当前会话（newConversation 后或首次 sendMessage lazy-create）。
@@ -238,6 +242,19 @@ function appendMessage(c: Conversation, m: ChatMessage): Conversation {
   return { ...c, messages: [...c.messages, m], updatedAt: m.createdAt }
 }
 
+// M2（2026-09-28 流式验收）：chatLoading 所有权序号。每次 sendMessage 递增并记录本轮 seq；
+// 离开/切换会话（newConversation/loadConversation 异 id/deleteChatConversation 当前条）同样递增——
+// 旧轮随即放弃 chatLoading 所有权：相位推入点（recall/answer）仅在 seq 最新时生效，
+// finalize/早退路径 guard 失败时仅在自己仍是最新 seq 才复位 idle（防永久卡 'answer' 软锁输入框）。
+let chatSendSeq = 0
+
+// M4：流式占位（streaming:true）是内存态语义——进程被杀后 Dexie 可能残留 streaming:true 的
+// 尸体会话（空气泡+打字光标+压住 LoadingBubble）。读出时一律抹 false：内存态不信持久层。
+function stripStreamingFlags(conv: Conversation): Conversation {
+  if (!conv.messages.some((m) => m.streaming)) return conv
+  return { ...conv, messages: conv.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)) }
+}
+
 // 从 conversation 取最近 N 条 {role, content} 作 answer LLM 对话历史（不含当前问题——
 // buildAnswerPrompt 把当前问题作为最后一轮 user 追加，故此处只给先前轮次）。跳过 error 消息。
 function chatHistory(conv: Conversation | null, limit: number): { role: 'user' | 'assistant'; content: string }[] {
@@ -308,9 +325,11 @@ export const useUiStore = create<UiState>((set, get) => ({
       await get().loadDraft()
       // AI Chat: 载入历史列表（refreshChatList 过滤空会话），conversation 续聊最近一条
       // （chatList[0] = updatedAt 最大）。替代旧 id=1 直读——多会话下无固定 id。
+      // M4: 续聊会话同样抹 streaming 尸体标记（内存态语义不信持久层）。
       try {
         await get().refreshChatList()
-        set({ conversation: get().chatList[0] ?? null })
+        const top = get().chatList[0]
+        set({ conversation: top ? stripStreamingFlags(top) : null })
       } catch (e) { console.error('[store] hydrate chatList failed', e) }
     } catch (e) {
       // D9: 载入失败保持空状态（不再 seed 兜底），标记已尝试避免反复重试（存储失败不阻断 UI）
@@ -855,6 +874,15 @@ export const useUiStore = create<UiState>((set, get) => ({
     await di.storage.saveEntryAi(next)
     set((s) => ({ aiByEntry: { ...s.aiByEntry, [entryId]: next } }))
   },
+  updateChatMessage: (msgId, patch) => {
+    // 照 updateEntry 的 map-replace 模式，只替换目标消息对象（配合气泡 memo 的引用比较）。
+    // 纯内存：流式期间 ~80ms 一帧调用，落库由 sendMessage 占位/结束两次收口。
+    const cur = get().conversation
+    if (!cur || !cur.messages.some((m) => m.id === msgId)) return
+    set({
+      conversation: { ...cur, messages: cur.messages.map((m) => (m.id === msgId ? { ...m, ...patch } : m)) },
+    })
+  },
   // ── AI Chat · sendMessage (docs/design/ai-chat-impl-plan.md §4) ──────────
   // intent(LLM) → 本地 localRecall → answer(LLM) → 落 conversation。离线直接拒绝（不假装降级）。
   // 防幻觉层 3：空 cites 不调 answer LLM，直接「库内未找到依据」裸答拒绝。同问缓存命中跳两轮。
@@ -874,6 +902,9 @@ export const useUiStore = create<UiState>((set, get) => ({
         .catch((e) => console.error('[store] saveConversation(offline) failed', e))
       return
     }
+
+    // M2: 本轮 chatLoading 所有权序号（离线拒绝是 UI 级拒绝、不占用序号）。
+    const seq = ++chatSendSeq
 
     // 1. 乐观追加用户消息 + intent 阶段。先落库用户消息（即使后续 LLM 失败也保留对话记录）。
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: trimmed, createdAt: now }
@@ -895,12 +926,21 @@ export const useUiStore = create<UiState>((set, get) => ({
       return
     }
 
+    // 流式占位消息 id/创建时间（2026-09-28）：answer 轮 append 占位后赋值；外层 catch 用它
+    // 把占位原位转为错误消息（不追加新气泡，位置稳定）。
+    let streamMsgId: string | null = null
+    let streamCreatedAt = ''
+    // 流式累积态提升到 try 外（m9）：外层 catch 的错误消息 trace 需带上已累积 reasoning 便于排查。
+    let reasoningAccum = ''
+    let rawAccum = ''
+
     try {
       // 2. intent 轮：解析问句 → ChatQuery（scope/keywords/categorySlugs）。
       const query = await di.llm.parseChatIntent(trimmed, new Date().toISOString())
 
       // 3. 本地召回（recall 阶段，纯函数，毫秒级）。
-      set({ chatLoading: 'recall' })
+      // M2: seq 过期（用户已切会话/发新问）→ 不再推相位，防覆盖新轮的 chatLoading。
+      if (seq === chatSendSeq) set({ chatLoading: 'recall' })
       const { aiByEntry, tags } = get()
       const cites = localRecall(query, entries, aiByEntry, tags)
 
@@ -919,18 +959,100 @@ export const useUiStore = create<UiState>((set, get) => ({
 
       // 4. answer 轮：localRecall 兜底保证 cites 非空（全 0 命中时回落近期 top-K）。
       // 不再因 cites 空硬裸答——交给 LLM 综合判断相关性并自然作答（D35：效果优先）。
-      set({ chatLoading: 'answer' })
-      const answer: ChatAnswer =
-        cites.length === 0
-          ? { answer: t('chat.errNoCites'), citedEntryIds: [] }
-          : await di.llm.answerChat({ question: trimmed, cites, conversation: chatHistory(conversation, CHAT_HISTORY_WINDOW) })
+      // M2: seq 守卫同 recall——旧轮不得把 chatLoading 推成 answer（曾致全局输入软锁）。
+      if (seq === chatSendSeq) set({ chatLoading: 'answer' })
 
-      // 缓存（entries 签名不变即复用）。
-      chatAnswerCache.set(chatCacheKey(trimmed, entries), answer)
+      // 流式编排（2026-09-28）：cites 非空走流式链路——先 append 占位 assistant 消息
+      // （streaming:true，落库一次），onEvent 增量 ~80ms 节流 flush 到内存（流式期间不再
+      // 落库），结束 finalize 原位替换占位 + 落库。cites 空维持旧裸答路径（不调 LLM）。
+      let streamPartial = false // 断流/失败以部分可见文本 finalize 的降级答案（不完整，不进缓存）
 
-      const aiMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: answer.answer, citedEntryIds: answer.citedEntryIds, createdAt: new Date().toISOString(), trace }
-      conv = appendMessage(conv, aiMsg)
-      set({ conversation: conv, chatLoading: 'idle' })
+      let answer: ChatAnswer
+      if (cites.length === 0) {
+        answer = { answer: t('chat.errNoCites'), citedEntryIds: [] }
+      } else {
+        streamMsgId = crypto.randomUUID()
+        streamCreatedAt = new Date().toISOString()
+        const placeholder: ChatMessage = { id: streamMsgId, role: 'assistant', content: '', streaming: true, createdAt: streamCreatedAt, trace }
+        conv = appendMessage(conv, placeholder)
+        // M3: 竞态防护同 finalize——intent 轮中用户可能已切会话，此时只 saveConversation
+        // 落占位到原会话，绝不 set 把当前视图掰回本会话。
+        if (get().conversation?.id === conv.id) set({ conversation: conv })
+        void di.storage.saveConversation(conv)
+          .then(() => get().refreshChatList())
+          .catch((e) => console.error('[store] saveConversation(placeholder) failed', e))
+
+        // 节流 flush：reasoning 累积进 trace.reasoning（「思考过程」折叠块实时渲染）；
+        // content 累积 rawAccum 过 extractPartialAnswer 提可见文本（气泡逐字渲染）。
+        // 增量合并进 pending，~80ms 一帧写 store。会话已切换时丢弃内存 flush
+        // （finalize 仍 saveConversation 收口到原会话）。
+        const convId = conv.id
+        const msgId = streamMsgId
+        let flushTimer: ReturnType<typeof setTimeout> | null = null
+        let pending: Partial<ChatMessage> = {}
+        const flush = (): void => {
+          flushTimer = null
+          const patch = pending
+          pending = {}
+          if (Object.keys(patch).length === 0) return
+          if (get().conversation?.id !== convId) return
+          get().updateChatMessage(msgId, patch)
+        }
+        const scheduleFlush = (patch: Partial<ChatMessage>): void => {
+          pending = { ...pending, ...patch }
+          if (flushTimer === null) flushTimer = setTimeout(flush, 80)
+        }
+        const cancelFlush = (): void => {
+          if (flushTimer !== null) {
+            clearTimeout(flushTimer)
+            flushTimer = null
+          }
+          pending = {}
+        }
+        try {
+          answer = await di.llm.answerChat(
+            { question: trimmed, cites, conversation: chatHistory(conversation, CHAT_HISTORY_WINDOW) },
+            (ev) => {
+              if (ev.type === 'reasoning') {
+                reasoningAccum += ev.delta
+                scheduleFlush({ trace: { ...trace, reasoning: reasoningAccum } })
+              } else {
+                rawAccum += ev.delta
+                scheduleFlush({ content: extractPartialAnswer(rawAccum) })
+              }
+            },
+          )
+        } catch (streamErr) {
+          // 断流/失败：有部分可见文本 → finalize 部分答案（不报错）；无 → 抛给外层 catch 错误路径。
+          const partial = extractPartialAnswer(rawAccum)
+          if (!partial) throw streamErr
+          streamPartial = true
+          answer = { answer: partial, citedEntryIds: [] }
+        } finally {
+          cancelFlush()
+        }
+      }
+
+      // 缓存（entries 签名不变即复用）。断流降级答案不完整，不进缓存。
+      if (!streamPartial) chatAnswerCache.set(chatCacheKey(trimmed, entries), answer)
+
+      if (streamMsgId !== null) {
+        // 流式 finalize：原位替换占位消息（id/createdAt 稳定，UI 无跳变、不重播入场动画）；
+        // reasoning 全文留 trace 可回看。conv.updatedAt bump 到现在（chatList 倒序置顶）。
+        const finalTrace: ChatTrace = reasoningAccum ? { ...trace, reasoning: reasoningAccum } : trace
+        const finalMsg: ChatMessage = { id: streamMsgId, role: 'assistant', content: answer.answer, citedEntryIds: answer.citedEntryIds, createdAt: streamCreatedAt, streaming: false, trace: finalTrace }
+        conv = { ...conv, messages: conv.messages.map((m) => (m.id === streamMsgId ? finalMsg : m)), updatedAt: new Date().toISOString() }
+      } else {
+        const aiMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: answer.answer, citedEntryIds: answer.citedEntryIds, createdAt: new Date().toISOString(), trace }
+        conv = appendMessage(conv, aiMsg)
+      }
+      // 会话切换竞态防护：流式窗口长，期间用户可能 newConversation/loadConversation。
+      // 仍是当前会话 → set 内存态；已切换 → 只 saveConversation 落库到原会话，不动当前
+      // conversation/chatLoading（新会话自己的 sendMessage 在管理 loading 相位）。
+      // M2: guard 失败但自己仍是最新 seq（如切走但未发新问）→ 必须复位 chatLoading，
+      // 否则本轮推入的 'answer' 相位永久残留 → 全局输入框软锁。
+      if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
+      else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
       void di.storage.saveConversation(conv)
         .then(() => get().refreshChatList())
         .catch((e) => console.error('[store] saveConversation(answer) failed', e))
@@ -978,9 +1100,19 @@ export const useUiStore = create<UiState>((set, get) => ({
       // D37: content 带真实失败原因（非笼统「稍后重试」），trace.error 存原文便于排查。
       console.error('[store] sendMessage failed', e)
       const reason = e instanceof Error ? e.message : String(e)
-      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: t('chat.errGeneric', { reason }), createdAt: new Date().toISOString(), error: true, trace: { error: reason } }
-      conv = appendMessage(conv, errMsg)
-      set({ conversation: conv, chatLoading: 'idle' })
+      // m9: 错误消息 trace 带上已累积 reasoning（流式断点前思考模型已推理的部分），便于排查断点。
+      const errTrace: ChatTrace = reasoningAccum ? { error: reason, reasoning: reasoningAccum } : { error: reason }
+      const errMsg: ChatMessage = { id: crypto.randomUUID(), role: 'assistant', content: t('chat.errGeneric', { reason }), createdAt: new Date().toISOString(), error: true, trace: errTrace }
+      if (streamMsgId !== null) {
+        // 流式占位已 append：原位转为错误消息（不追加新气泡，位置稳定；沿用占位 id/createdAt）。
+        conv = { ...conv, messages: conv.messages.map((m) => (m.id === streamMsgId ? { ...errMsg, id: streamMsgId, createdAt: m.createdAt } : m)) }
+      } else {
+        conv = appendMessage(conv, errMsg)
+      }
+      // 竞态防护同 answer finalize：已切会话只落库，不动当前 conversation/chatLoading；
+      // M2: 自己仍是最新 seq 时复位 chatLoading（防错误路径同样软锁）。
+      if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
+      else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
       void di.storage.saveConversation(conv)
         .then(() => get().refreshChatList())
         .catch((e2) => console.error('[store] saveConversation(err) failed', e2))
@@ -989,17 +1121,26 @@ export const useUiStore = create<UiState>((set, get) => ({
   newConversation: () => {
     // 置 conversation=null。当前会话消息每次 append 时已落库（saveConversation），无需显式存档；
     // 空会话不落库自然消失。下条 sendMessage lazy-create 新 uuid 行。
+    // M2: 离开发问中的会话 → 递增 seq，旧轮放弃 chatLoading 所有权（相位推入/finalize 复位随之失效）。
+    chatSendSeq++
     set({ conversation: null, chatLoading: 'idle' })
   },
   loadConversation: async (id) => {
     // 载入历史会话续聊。未命中/跨账号（getConversation 返 undefined）或空会话 → 静默 noop，
     // 不动当前 conversation，避免误切到不存在的会话。
+    // M4: 读出时抹掉持久层残留的 streaming:true 尸体（内存态语义不信持久层）。
     const conv = await di.storage.getConversation(id)
-    if (conv && conv.messages.length > 0) set({ conversation: conv, chatLoading: 'idle' })
+    if (conv && conv.messages.length > 0) {
+      // M2: 切到不同会话 → 递增 seq（同 id 续看不夺权——发问中的会话仍归本轮管）。
+      if (get().conversation?.id !== conv.id) chatSendSeq++
+      set({ conversation: stripStreamingFlags(conv), chatLoading: 'idle' })
+    }
   },
   deleteChatConversation: async (id) => {
     // 删单个会话。若删的是当前会话 → conversation=null（回到空新会话语义）。chatList 同步剔除。
     await di.storage.deleteConversation(id)
+    // M2: 删除发问中的当前会话 → 递增 seq，旧轮放弃 chatLoading 所有权。
+    if (get().conversation?.id === id) chatSendSeq++
     set((s) => ({
       conversation: s.conversation?.id === id ? null : s.conversation,
       chatList: s.chatList.filter((c) => c.id !== id),

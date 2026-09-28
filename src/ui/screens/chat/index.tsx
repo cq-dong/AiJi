@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Sparkles, Square, SquarePen } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -133,13 +133,16 @@ function renderRichText(
 }
 
 // D37: 思维链面板——理解问题→召回条目→组织回答的过程，默认折叠可展开。
-function TracePanel({ trace }: { trace: ChatTrace }) {
+// m12（2026-09-28 流式验收）：流式期间有 reasoning → 强制展开实时渲染推理过程；
+// finalize（streaming=false）后回归用户手动控制（默认折叠）。
+function TracePanel({ trace, streaming }: { trace: ChatTrace; streaming?: boolean }) {
   const [open, setOpen] = useState(false)
+  const shown = open || (!!streaming && !!trace.reasoning)
   const t = useT()
   const intent = trace.intent
   const recalled = trace.recalled ?? []
-  // 无内容可展示时（无 intent/recalled/error）不渲染。
-  if (!intent && recalled.length === 0 && !trace.error) return null
+  // 无内容可展示时（无 intent/recalled/error/reasoning）不渲染。
+  if (!intent && recalled.length === 0 && !trace.error && !trace.reasoning) return null
 
   const scopeType = intent?.scope
     ? intent.scope.type === 'day'
@@ -156,10 +159,10 @@ function TracePanel({ trace }: { trace: ChatTrace }) {
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 text-[11px] text-t3 transition duration-base ease-out active:scale-[0.97]"
       >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {shown ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         <span>{t('chat.traceToggle')}</span>
       </button>
-      {open && (
+      {shown && (
         <div className="mt-1.5 rounded-card bg-page px-3 py-2 text-[11px] leading-relaxed text-t2 space-y-1.5">
           {intent && (
             <div>
@@ -188,6 +191,13 @@ function TracePanel({ trace }: { trace: ChatTrace }) {
               </ul>
             </div>
           )}
+          {/* 思考模型推理全文（2026-09-28 流式输出）：流式期间逐帧累积实时渲染，结束后保留可回看。 */}
+          {trace.reasoning && (
+            <div>
+              <p className="text-t3">{t('chat.trace.reasoning')}</p>
+              <p className="whitespace-pre-wrap">{trace.reasoning}</p>
+            </div>
+          )}
           <div>
             <p className="text-t3">{t('chat.trace.organize')}</p>
             <p>{t('chat.trace.organizeHint')}</p>
@@ -201,7 +211,9 @@ function TracePanel({ trace }: { trace: ChatTrace }) {
 // AI 气泡：左对齐。解析 markdown 加粗/列表；引用 id 替换为条目名链接。
 // fresh（本会话新到）→ 整泡 fade+rise 入场 + 行级渐进显现（≤320ms 入场动画，非假流式）；
 // 历史消息（seenIds 命中）→ initial={false} 瞬显不播动画。
-function AiBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
+// memo（2026-09-28 流式输出）：流式 flush 每帧只替换目标消息对象，其余气泡 msg 引用不变 →
+// memo 引用比较命中跳过重渲；streaming 消息自身逐帧重渲（memo 不拦自身 props 变化）。
+const AiBubble = memo(function AiBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
   const navigate = useNavigate()
   const entries = useUiStore((s) => s.entries)
   const aiByEntry = useUiStore((s) => s.aiByEntry)
@@ -265,17 +277,19 @@ function AiBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
           className={`rounded-card px-3 py-2 text-[13px] leading-relaxed whitespace-normal break-words shadow-sm ${msg.error ? 'bg-page text-t3' : 'bg-card text-ink border border-brd/80'}`}
         >
           {renderMarkdown(msg.content)}
+          {/* 流式打字光标：占位空内容期兜底可见（LoadingBubble 此时已隐藏），逐字期间贴末尾。 */}
+          {msg.streaming && <span className="animate-pulse text-t3">▍</span>}
         </div>
         {msg.citedEntryIds && msg.citedEntryIds.length > 0 && (
           <CitationChips ids={msg.citedEntryIds} fresh={fresh} />
         )}
-        {msg.trace && <TracePanel trace={msg.trace} />}
+        {msg.trace && <TracePanel trace={msg.trace} streaming={msg.streaming} />}
       </div>
     </motion.div>
   )
-}
+})
 
-function UserBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
+const UserBubble = memo(function UserBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
   return (
     <motion.div
       className="flex justify-end"
@@ -288,7 +302,7 @@ function UserBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
       </div>
     </motion.div>
   )
-}
+})
 
 const LOADING_KEYS = {
   intent: 'chat.loading.intent',
@@ -381,11 +395,29 @@ export default function Chat() {
     seenIds.current = new Set(conversation.messages.map((m) => m.id))
   }
 
-  // 新消息 / loading 阶段变化 → 滚到底。
+  const messages = conversation?.messages ?? []
+  const hasMessages = messages.length > 0
+  const loading = chatLoading !== 'idle'
+  const recording = chatVoice.recording
+  // 流式中（2026-09-28）：存在 streaming 消息 → 隐藏 LoadingBubble（占位气泡 + 打字光标接管）。
+  const hasStreamingMsg = messages.some((m) => m.streaming)
+  // 流式增量总长（streaming 消息 content+reasoning）：flush 一次变一次，驱动自动滚动跟底。
+  const streamLen = messages.reduce((n, m) => (m.streaming ? n + m.content.length + (m.trace?.reasoning?.length ?? 0) : n), 0)
+
+  // m10（2026-09-28 流式验收）：贴底才跟——用户上翻阅读历史时，流式增量不再拽回底部。
+  // 滚动事件实时维护贴底状态（阈值 60px）；submit 强制回贴底（自己发的消息必跟随）。
+  const atBottomRef = useRef(true)
+  const handleScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+  }
+
+  // 新消息 / loading 阶段变化 / 流式增量 → 贴底时滚到底。
   useEffect(() => {
     const el = scrollRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [conversation?.messages.length, chatLoading])
+    if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
+  }, [messages.length, chatLoading, streamLen])
 
   // 卸载时若在录音 → 停 mic 释放（防 mic 灯长亮 + 适配器 singleton 残留，CapturePort 共享一个 recorder/stream）。
   useEffect(() => {
@@ -393,11 +425,6 @@ export default function Chat() {
       if (useUiStore.getState().chatVoice.recording) void useUiStore.getState().stopChatVoice()
     }
   }, [])
-
-  const messages = conversation?.messages ?? []
-  const hasMessages = messages.length > 0
-  const loading = chatLoading !== 'idle'
-  const recording = chatVoice.recording
 
   // 录音中：textarea 显「已键入文本 + live 转写」；停止时把转写并入 text（seamless：显示不变，仅切数据源）。
   const voiceTranscript = chatVoice.finalized + chatVoice.interim
@@ -410,6 +437,7 @@ export default function Chat() {
     const v = text.trim()
     if (!v || loading || recording) return
     setText('')
+    atBottomRef.current = true // m10: 发送自己的消息 → 强制回贴底跟随
     void sendMessage(v)
   }
 
@@ -437,7 +465,7 @@ export default function Chat() {
           92-109px 的字形带——无背景时两者像素级叠印（E2E 截图曾现文字相叠）。盖住即净。 */}
       <p className="relative z-10 shrink-0 bg-page px-4 pb-1.5 text-[11px] text-t3">{t('chat.privacy')}</p>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3">
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3">
         <div className="space-y-3">
           {!hasMessages && !loading && (
             <EmptyTalk
@@ -448,6 +476,9 @@ export default function Chat() {
             />
           )}
           {messages.map((m) => {
+            // 流式消息（2026-09-28）：创建即记 seen——占位气泡不播入场动画（流式逐字本身就是
+            // 入场感，叠加 fade/行级渐显会每帧重播）；finalize 原位替换同 id 也不重播。
+            if (m.streaming) seenIds.current?.add(m.id)
             const fresh = !seenIds.current?.has(m.id)
             return m.role === 'user' ? (
               <UserBubble key={m.id} msg={m} fresh={fresh} />
@@ -457,9 +488,10 @@ export default function Chat() {
               <AiBubble key={m.id} msg={m} fresh={fresh} />
             )
           })}
-          {/* Loading 阶段切换：crossfade 过渡（intent→recall→answer 不硬切文案）。 */}
+          {/* Loading 阶段切换：crossfade 过渡（intent→recall→answer 不硬切文案）。
+              流式中隐藏——占位气泡 + 打字光标已接管「正在回答」的感知。 */}
           <AnimatePresence mode="wait" initial={false}>
-            {loading && (
+            {loading && !hasStreamingMsg && (
               <motion.div
                 key={chatLoading}
                 initial={{ opacity: 0, y: 6 }}

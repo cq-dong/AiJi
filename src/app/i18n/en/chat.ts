@@ -23,6 +23,8 @@ export const chat = {
   'chat.trace.scopeMonth': 'month',
   'chat.trace.categoriesLabel': 'Categories: ',
   'chat.trace.recalled': 'Searching library ({count} related)',
+  // Reasoning-model chain-of-thought (2026-09-28 streaming): accrues live, kept for review.
+  'chat.trace.reasoning': 'Reasoning',
   'chat.trace.organize': 'Composing answer',
   'chat.trace.organizeHint': 'Answer composed from the entries above.',
   'chat.loading.intent': 'Understanding question…',

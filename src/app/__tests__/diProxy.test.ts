@@ -62,4 +62,30 @@ describe('di proxies', () => {
     expect(byokSpy).toHaveBeenCalledOnce()
     expect(builtinSpy).not.toHaveBeenCalled()
   })
+
+  // B1 回归（2026-09-28 流式验收）：llmProxy.answerChat 必须把第二参 onEvent 透传到底层
+  // 适配器——旧实现只转单参，真链路（builtin/byok 经 DI）流式全灭，单测全 mock di.llm 漏检。
+  it('B1: byok → answerChat 的 onEvent 透传到 openAiCompatLlm', async () => {
+    getSettings.mockResolvedValue({ keySource: 'byok' })
+    const spy = vi.spyOn(openAiCompatLlm, 'answerChat').mockResolvedValue({ answer: '', citedEntryIds: [] })
+    const onEvent = (): void => {}
+    await di.llm.answerChat({ question: 'q', cites: [], conversation: [] }, onEvent)
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy.mock.calls[0][1]).toBe(onEvent) // 同一回调引用到达底层适配器
+  })
+  it('B1: builtin → answerChat 的 onEvent 透传到 builtinLlm', async () => {
+    getSettings.mockResolvedValue({ keySource: 'builtin' })
+    const spy = vi.spyOn(builtinLlm, 'answerChat').mockResolvedValue({ answer: '', citedEntryIds: [] })
+    const onEvent = (): void => {}
+    await di.llm.answerChat({ question: 'q', cites: [], conversation: [] }, onEvent)
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy.mock.calls[0][1]).toBe(onEvent)
+  })
+  it('B1: 省略 onEvent → 底层同样收到 undefined（非流式旧路径不破）', async () => {
+    getSettings.mockResolvedValue({ keySource: 'byok' })
+    const spy = vi.spyOn(openAiCompatLlm, 'answerChat').mockResolvedValue({ answer: '', citedEntryIds: [] })
+    await di.llm.answerChat({ question: 'q', cites: [], conversation: [] })
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy.mock.calls[0][1]).toBeUndefined()
+  })
 })

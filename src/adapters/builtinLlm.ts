@@ -9,13 +9,14 @@
 // settings.videoVisionEnabled 守门、collectEntryImages 抽图、buildPrompt 传 hasImages+locationAddress、
 // 降级镜像 BYOK D14/D17（vlm 非 OK 且有文本→去图重发 /api/llm/chat；纯图无文本→throw）。
 // prompt 组装 / JSON 解析 / EntryAi·Aggregate 构造逻辑复用 openAiCompatLlm 的 helper。
-import type { LlmPort } from '@/ports'
+import type { LlmPort, ChatStreamEvent } from '@/ports'
 import { SessionExpiredError, NotNetworkError } from '@/ports'
 import type { Aggregate, ChatAnswer, EntryAi } from '@/domain/types'
 import { di } from '@/app/di'
 import { useAccountStore } from '@/app/accountStore'
 import { useQuotaStore } from '@/app/quotaStore'
 import { localSession } from '@/app/session'
+import { iterateSse } from '@/adapters/sseStream'
 import {
   entryText, toLocalIso, buildPrompt, parseJson,
   buildAggregatePrompt, parseAggregateJson,
@@ -35,12 +36,15 @@ function assertNetwork(): void {
 
 // 统一 chat 端点：所有 LLM 方法组装成 OpenAI 兼容 messages 发后端。
 // path：'/api/llm/chat'（纯文本）或 '/api/vlm/chat'（含图多模态）。后端注入真实 key 并扣配额。
-// 401 → refresh 重试一次 → 再 401 抛 SessionExpiredError。
+// 401 → refresh 重试一次 → 再 401 抛 SessionExpiredError（SSE 流式响应同样可能 401，骨架共用）。
 // role 用 string（非字面量联合）：buildIntentPrompt/buildAnswerPrompt 无显式返回类型，
 // 推断为 role:string；这里放宽以接受所有 helper 产出，后端负责校验。
+// extraBody（2026-09-28 流式输出）：流式答案轮传 { stream:true, thinking:true }，
+// 服务端 /api/llm/chat 收到后上游 stream:true 并原样透传 SSE 字节（缺省行为不变）。
 async function chatFetch(
   messages: { role: string; content: unknown }[],
   path: '/api/llm/chat' | '/api/vlm/chat',
+  extraBody?: Record<string, unknown>,
 ): Promise<Response> {
   const session = localSession.get()
   if (!session) throw new SessionExpiredError()
@@ -48,7 +52,7 @@ async function chatFetch(
     fetch(`${BASE}${path}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, opts: {} }),
+      body: JSON.stringify({ messages, opts: {}, ...extraBody }),
     })
   let res = await doFetch(session.jwt)
   if (res.status === 401) {
@@ -82,6 +86,59 @@ async function extractReply(res: Response): Promise<string> {
 async function chat(messages: { role: string; content: unknown }[]): Promise<string> {
   const res = await chatFetch(messages, '/api/llm/chat')
   return extractReply(res)
+}
+
+// 流式 answer 轮（2026-09-28 问 AI 流式输出）：POST /api/llm/chat 带 stream:true + thinking:true
+// （builtin 链路答案轮启用思考模型，reasoning 实时流入「思考过程」折叠块），服务端透传上游 SSE。
+// 逐帧分流与 BYOK answerChatStreaming 一致：reasoning_content → onEvent reasoning；
+// content → 累积 rawAccum + onEvent content。收口一致：parseAnswerJson → sanitizeInlineCites
+// → validIds 过滤。中途断流：rawAccum 有内容 → 宽容返回部分答案；空 → 抛错走现有 error 路径。
+async function chatAnswerStreaming(
+  messages: { role: string; content: unknown }[],
+  cites: { id: string }[],
+  onEvent: (ev: ChatStreamEvent) => void,
+): Promise<ChatAnswer> {
+  const res = await chatFetch(messages, '/api/llm/chat', { stream: true, thinking: true })
+  if (!res.ok) {
+    const t = await res.text().catch(() => '')
+    throw new Error(`builtinLlm HTTP ${res.status}: ${t.slice(0, 200)}`)
+  }
+  // m8: 服务端在响应头到达时已计费（HTTP 200 即开始扣费，断流/空流也不例外），
+  // 前端配额显示同步扣 1——必须在 res.ok 后立即扣，否则流式中途失败时客户端配额与服务端漂移。
+  useQuotaStore.getState().consume('llm', 1)
+  if (!res.body) throw new Error('builtinLlm 响应无 body（流式读取失败）')
+  let rawAccum = ''
+  try {
+    for await (const payload of iterateSse(res.body)) {
+      let frame: unknown
+      try {
+        frame = JSON.parse(payload)
+      } catch {
+        continue // 坏帧跳过（代理噪声/半截帧），不毁整轮
+      }
+      const delta = (frame as {
+        choices?: { delta?: { reasoning_content?: unknown; content?: unknown } }[]
+      })?.choices?.[0]?.delta
+      if (!delta) continue // finish_reason / usage 帧无 delta
+      if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+        onEvent({ type: 'reasoning', delta: delta.reasoning_content })
+      }
+      if (typeof delta.content === 'string' && delta.content) {
+        rawAccum += delta.content
+        onEvent({ type: 'content', delta: delta.content })
+      }
+    }
+  } catch (e) {
+    // 中途断流：一无所获 → 抛错走 store 现有错误路径；有内容 → 落到下方宽容解析。
+    if (!rawAccum.trim()) throw e
+  }
+  if (!rawAccum.trim()) throw new Error('builtinLlm 响应缺 content')
+  const parsed = parseAnswerJson(rawAccum)
+  const validIds = new Set(cites.map((c) => c.id))
+  const citedEntryIds = parsed.citedEntryIds.filter((cid) => validIds.has(cid))
+  // D29 内联引用清洗：与非流式分支同一 helper，双口径不漂移。
+  const answer = sanitizeInlineCites(parsed.answer, validIds)
+  return { answer, citedEntryIds } satisfies ChatAnswer
 }
 
 export const builtinLlm: LlmPort = {
@@ -230,11 +287,14 @@ export const builtinLlm: LlmPort = {
     return parseIntentJson(raw)
   },
 
-  async answerChat({ question, cites, conversation }) {
+  async answerChat({ question, cites, conversation }, onEvent) {
     assertNetwork()
     // AI 记忆注入（2026-07-22 §3）：enabled 记忆 content 数组传入 buildAnswerPrompt。
     const memories = await loadEnabledMemoryContents()
     const messages = buildAnswerPrompt(question, cites, conversation, memories)
+    // 流式分支（2026-09-28）：onEvent 存在 → chatAnswerStreaming（SSE 逐帧分流）；
+    // 省略 → 原非流式路径逐字节不变（向后兼容）。
+    if (onEvent) return chatAnswerStreaming(messages, cites, onEvent)
     const raw = await chat(messages)
     useQuotaStore.getState().consume('llm', 1)
     const parsed = parseAnswerJson(raw)
