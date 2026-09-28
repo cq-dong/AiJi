@@ -584,6 +584,26 @@ export function parseIntentJson(raw: string): ChatQuery {
   return { scope, keywords, categorySlugs: categorySlugs?.length ? categorySlugs : undefined }
 }
 
+// answer 轮 LLM 偶发不遵守纯 JSON 封包：输出散文 + 末尾 JS 风格 `citedEntryIds: ["id",...]`
+//（key 可无引号、前可有 `",`/`,`/空白/换行，片段后可有残留 `}`/反引号/空白）。兜底路径会把
+// 这段原始尾巴透传进 answer 正文 → 聊天气泡泄露。此 helper 锚定字符串末尾剥离该片段并回收
+// 其中 id。正文中间提及 citedEntryIds 的文字（非末尾、形态非 key: [...]）不受影响。
+function stripTrailingCitedIds(answer: string): { answer: string; harvested: string[] } {
+  // 贪婪前缀 [\s\S]* 锚定**最后一次** key 出现：answer 中间出现同形态文字 + 末尾挂真实片段时
+  // 只剥末尾片段（最左匹配 + lazy 扩张会把中间整段正文吞掉）。冒号兼容全角：；尾部残留字符
+  // 含 ;；。片段是捕获组 m[1]，必为原串后缀（$ 锚定），按长度切片即得保留正文。
+  const re = /[\s\S]*([\s"',，]*["']?citedEntryIds["']?\s*[:：]\s*\[([\s\S]*?)\][\s}`'"）);；]*$)/
+  const m = answer.match(re)
+  if (!m) return { answer, harvested: [] }
+  const fragment = m[1]
+  const harvested: string[] = []
+  const idRe = /["']([^"']+)["']/g
+  let im: RegExpExecArray | null
+  while ((im = idRe.exec(m[2])) !== null) harvested.push(im[1])
+  const kept = answer.slice(0, answer.length - fragment.length).replace(/[\s,，"']+$/, '')
+  return { answer: kept, harvested: [...new Set(harvested)] }
+}
+
 export function parseAnswerJson(raw: string): { answer: string; citedEntryIds: string[] } {
   let s = raw.trim()
   if (!s) throw new Error('LLM 响应为空（thinking 可能耗尽 max_tokens，试试增大或清空会话）')
@@ -595,7 +615,27 @@ export function parseAnswerJson(raw: string): { answer: string; citedEntryIds: s
     // D39: 模型偶尔返纯文本无 JSON 包裹（thinking 模型带对话历史时尤甚——推理吃 token，
     // content 末尾 JSON 没写出来，或整段退化成散文）。不硬报错——把整段当 answer 返回，
     // 免「问答出了点问题」打断对话（citedEntryIds 丢失可接受，answer 文本仍在）。
-    return { answer: s, citedEntryIds: [] }
+    // 有 `{` 无 `}`（截断 JSON 连收尾括号都没写出）：先试正则抽 answer 字段，抽不到才整段兜底。
+    if (start !== -1) {
+      const slice = s.slice(start)
+      const ansMatch = slice.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+      if (ansMatch) {
+        const answer = ansMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\')
+        const stripped = stripTrailingCitedIds(answer)
+        return { answer: stripped.answer, citedEntryIds: stripped.harvested }
+      }
+      // 无引号 key 截断（{answer: "...", ... 连收尾 } 都没写出）：与下方 catch 兜底对齐——
+      // 剥 {answer: 前缀再整段剥尾，否则 `{answer: "` 残余会泄进气泡。
+      const prefixRe = /^\s*\{\s*"?answer"?\s*:\s*"?/
+      if (prefixRe.test(slice)) {
+        const bare = slice.replace(prefixRe, '').replace(/"\s*,?\s*$/, '') || slice
+        const stripped = stripTrailingCitedIds(bare)
+        return { answer: stripped.answer, citedEntryIds: stripped.harvested }
+      }
+    }
+    // 尾部 citedEntryIds 片段剥离 + id 回收（散文末尾常挂 JS 风格片段，别透传进正文）。
+    const stripped = stripTrailingCitedIds(s)
+    return { answer: stripped.answer, citedEntryIds: stripped.harvested }
   }
   // D37: thinking 模型可能因 max_tokens 不足被截断（content 末尾 JSON 不完整）。
   // 容忍：JSON.parse 失败时 best-effort 用正则抽 answer 字段，避免整轮作废报「问答出了点问题」。
@@ -608,10 +648,13 @@ export function parseAnswerJson(raw: string): { answer: string; citedEntryIds: s
     const ansMatch = slice.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/)
     if (ansMatch) {
       const answer = ansMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\')
-      return { answer, citedEntryIds: [] }
+      const stripped = stripTrailingCitedIds(answer)
+      return { answer: stripped.answer, citedEntryIds: stripped.harvested }
     }
     // 截断且抽不出 answer 字段：把首个 { 后的整段当裸 answer（比报错强）。
-    return { answer: slice.replace(/^\s*\{\s*"?answer"?\s*:\s*"?/, '').replace(/"\s*,?\s*$/, '') || slice, citedEntryIds: [] }
+    const bare = slice.replace(/^\s*\{\s*"?answer"?\s*:\s*"?/, '').replace(/"\s*,?\s*$/, '') || slice
+    const stripped = stripTrailingCitedIds(bare)
+    return { answer: stripped.answer, citedEntryIds: stripped.harvested }
   }
   const p = parsed as Record<string, unknown>
   const answer = typeof p.answer === 'string' ? p.answer : ''
@@ -703,10 +746,25 @@ export function parseMemoryReply(raw: string): string | null {
 // UI 拿非法 id 找不到条目 → 误显「已删除」（实未删）。validIds 外的引用段整段去掉（含前导
 // 空白/标点），合法 id 保留交 UI 渲染。匹配全角括号（见…）与半角括号 (见…) 两种；
 // i18n：en 提示词让 LLM 用 "(see <id>)"，同样纳入清洗（大小写不敏感）。
-function sanitizeInlineCites(answer: string, validIds: Set<string>): string {
+// id 部分支持「、/,/,」分隔的多 id 并列（LLM 常写（见 id1、id2））：逐个校验 validIds——
+// 全合法 → 原样保留（回归行为）；部分合法 → 重建议含合法 id 的标记（保留原关键词 见/see
+// 与括号风格，分隔符统一「、」）；全非法 → 整段引用标记删除（含前导空白）。
+// export：builtinLlm.answerChat 复用（与 BYOK 路径对齐）。
+export function sanitizeInlineCites(answer: string, validIds: Set<string>): string {
   // 同时匹配前导空白，剔掉非法引用后不留多余空格。合法引用原样保留。
-  const re = /([ \t　]*[（(]\s*(?:见|see)\s+([a-zA-Z0-9_-]+)\s*[）)])/gi
-  return answer.replace(re, (full, _m, id: string) => (validIds.has(id) ? full : ''))
+  const re = /([ \t　]*[（(]\s*(见|see)\s+([a-zA-Z0-9_-]+(?:\s*[、,，]\s*[a-zA-Z0-9_-]+)*)\s*[）)])/gi
+  return answer.replace(re, (full, _m, kw: string, idList: string) => {
+    const ids = idList.split(/[、,，]/).map((s) => s.trim()).filter(Boolean)
+    const valid = ids.filter((id) => validIds.has(id))
+    if (valid.length === 0) return ''
+    if (valid.length === ids.length) return full
+    const leadWs = full.match(/^[ \t　]*/)![0]
+    const half = full.includes('(') && !full.includes('（')
+    // 分隔符跟语境：en（see）用 ", "，zh（见）用「、」——别硬编码全角进英文回答。
+    const sep = kw.toLowerCase() === 'see' ? ', ' : '、'
+    const rebuilt = half ? `(${kw} ${valid.join(sep)})` : `（${kw} ${valid.join(sep)}）`
+    return leadWs + rebuilt
+  })
 }
 
 export const openAiCompatLlm: LlmPort = {

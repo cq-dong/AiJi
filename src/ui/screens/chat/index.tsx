@@ -100,25 +100,31 @@ function renderRichText(
       return <b key={i}>{part.slice(2, -2)}</b>
     }
     // i18n：zh 提示词产「（见 <id>）」，en 产 "(see <id>)"——解析器两种 wire-format 都认。
-    const citeRegex = new RegExp('[（(]\\s*(?:见|see)\\s+([a-zA-Z0-9_-]+)\\s*[）)]', 'gi')
+    // id 部分支持「、/,/,」分隔的多 id 并列（如（见 id1、id2））：逐个 id 渲染成可点链接，
+    // 非法 id 跳过（与单 id 现状一致——找不到条目不渲染、不显「已删除」）。
+    const citeRegex = new RegExp('[（(]\\s*(?:见|see)\\s+([a-zA-Z0-9_-]+(?:\\s*[、,，]\\s*[a-zA-Z0-9_-]+)*)\\s*[）)]', 'gi')
     const citeNodes: React.ReactNode[] = []
     let lastIndex = 0
     let match: RegExpExecArray | null
     while ((match = citeRegex.exec(part)) !== null) {
-      const [fullMatch, id] = match
-      citeNodes.push(part.slice(lastIndex, match.index))
-      if (isValidId(id)) {
-        citeNodes.push(
-          <button
-            key={`cite-${i}-${match.index}`}
-            type="button"
-            onClick={() => navigate(`/detail/${id}`)}
-            className="text-pri underline hover:text-pri/80 cursor-pointer"
-          >
-            {t('chat.seeCite', { label: getLabel(id) })}
-          </button>,
-        )
-      }
+      const [fullMatch, idList] = match
+      const matchIndex = match.index
+      citeNodes.push(part.slice(lastIndex, matchIndex))
+      const ids = idList.split(/[、,，]/).map((s) => s.trim()).filter(Boolean)
+      ids.forEach((id, j) => {
+        if (isValidId(id)) {
+          citeNodes.push(
+            <button
+              key={`cite-${i}-${matchIndex}-${j}`}
+              type="button"
+              onClick={() => navigate(`/detail/${id}`)}
+              className="text-pri underline hover:text-pri/80 cursor-pointer"
+            >
+              {t('chat.seeCite', { label: getLabel(id) })}
+            </button>,
+          )
+        }
+      })
       lastIndex = match.index + fullMatch.length
     }
     citeNodes.push(part.slice(lastIndex))

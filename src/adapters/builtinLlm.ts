@@ -20,7 +20,7 @@ import {
   entryText, toLocalIso, buildPrompt, parseJson,
   buildAggregatePrompt, parseAggregateJson,
   buildIntentPrompt, parseIntentJson,
-  buildAnswerPrompt, parseAnswerJson,
+  buildAnswerPrompt, parseAnswerJson, sanitizeInlineCites,
   buildExtractMemoryPrompt, parseMemoryReply,
   collectEntryImages, inferMediaType, loadEnabledMemoryContents,
   type VisionTextPart, type VisionImagePart,
@@ -240,7 +240,10 @@ export const builtinLlm: LlmPort = {
     const parsed = parseAnswerJson(raw)
     const validIds = new Set(cites.map((c) => c.id))
     const citedEntryIds = parsed.citedEntryIds.filter((cid) => validIds.has(cid))
-    return { answer: parsed.answer, citedEntryIds } satisfies ChatAnswer
+    // 与 BYOK 路径（openAiCompatLlm.answerChat）对齐：清洗正文内联「（见 <id>）」引用，
+    // 剔掉非 validIds 的臆造 id，避免 UI 拿非法 id 渲染原始 UUID/「已删除」。
+    const answer = sanitizeInlineCites(parsed.answer, validIds)
+    return { answer, citedEntryIds } satisfies ChatAnswer
   },
 
   // AI 记忆自动提取（2026-07-22 §4）：同 buildExtractMemoryPrompt 走 /api/llm/chat + consume('llm', 1)。
