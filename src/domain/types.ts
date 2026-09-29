@@ -212,7 +212,11 @@ export interface Settings {
   vlmKeyRef?: string
   // D24: 反向地理编码 BYOK Key（高德 web 服务）。未配 → 回落 Nominatim（OSM，国内网络常超时/不可达，
   // 此时地址显示退化为坐标）。配了高德 Key → 国内地址解析稳定可靠。Key 存 SecretStorePort('geocoding:key')。
+  // 能力大补（2026-09-29）：同一 key 复用于高德天气 API（同为 Web 服务类型 key，天气查询无需新 key）。
   geocodingKeyRef?: string
+  // 网络搜索 BYOK Key（2026-09-29 能力大补）：Tavily（api.tavily.com）。Key 存 SecretStorePort('search:key')。
+  // 未配 → 问 AI 的搜索意图友好降级（answer 轮收降级数据块，引导去设置配置）。
+  searchKeyRef?: string
   // Slice B：AI 调用来源。undefined 视同 'byok'；游客强制 'byok'（store 守卫）。
   keySource?: 'byok' | 'builtin'
   // i18n（2026-07-22）：界面语言。undefined = 未固化（boot hydrate 时按系统语言 detect 并写回，
@@ -230,12 +234,25 @@ export interface Settings {
 // ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md) ───────────────────
 // MVP: 单会话（conversations 表 id=1 单行），messages 内嵌数组。多会话 schema 预留，v1.1 再用。
 
+// 问 AI 意图类别（2026-09-29 能力大补）：判别式单字段，dispatch/缓存旁路/trace 走一个 switch。
+// undefined 视同 'recall'（旧解析结果/旧客户端兼容）。
+export type ChatIntentKind = 'recall' | 'weather' | 'search' | 'action'
+
 // LLM intent 轮解析问句→结构化 query。scope 为时间约束（null=不限时间）；
 // keywords 用于本地 substring 召回；categorySlugs 可选过滤。LLM 不参与检索，只解析意图。
 export interface ChatQuery {
   scope: { type: AggregateScopeType; range: string } | null
   keywords: string[]
   categorySlugs?: string[]
+  // 能力大补（2026-09-29）：
+  kind?: ChatIntentKind // weather=查天气 / search=搜网络 / action=改条目分类；缺省=recall
+  // 问句含时间意图（今天/昨天/几点/周几，或需知道当前时间才能准确回答）→ answer 轮注入当前时间行。
+  // 与 kind 正交：recall 问题也可能需要时间。严格 ===true 才生效。
+  timeIntent?: boolean
+  city?: string // weather：intent 轮从问句提取的城市名（无则调用方回落设备定位）
+  // action：改条目分类意图。entryHint=用户指的条目线索原文（「桂花拿铁那条」）；
+  // categorySlug=命中现有类别的 slug；categoryLabel=用户说的类别名（slug 未命中时名称匹配/新类别）。
+  action?: { entryHint: string; categorySlug?: string; categoryLabel?: string }
 }
 
 // 压缩传给 answer LLM 的召回条目（token 预算：top-8 × ≤120 字 excerpt ≈ 3-4K input）。
@@ -255,7 +272,16 @@ export type ChatMessageRole = 'user' | 'assistant'
 // error 非空时 content 是失败文案、citedEntryIds 空。
 // trace：AI 消息的思维链/操作过程（理解→召回→组织），UI 默认折叠可展开。
 export interface ChatTrace {
-  intent?: { keywords: string[]; scope?: { type: string; range: string } | null; categorySlugs?: string[] }
+  intent?: {
+    keywords: string[]
+    scope?: { type: string; range: string } | null
+    categorySlugs?: string[]
+    // 能力大补（2026-09-29）：与 ChatQuery 同义，trace 面板展示用。
+    kind?: ChatIntentKind
+    timeIntent?: boolean
+    city?: string
+    actionHint?: string
+  }
   recalled?: { id: string; label: string; score?: number }[]
   error?: string // 真实失败原因（error 消息才填）
   // 思考模型推理全文（2026-09-28 流式输出）：流式期间逐帧累积实时渲染，结束后保留可回看。
@@ -271,7 +297,19 @@ export interface ChatMessage {
   trace?: ChatTrace
   // 视觉分化（2026-09-10 陪伴化）：'memoryConfirm' = 系统确认（静默/显式记忆落库回执），
   // 渲染成安静的胶囊卡片而非助手对话气泡——系统回执 ≠ 伙伴在说话。
-  kind?: 'memoryConfirm'
+  // 'actionConfirm'（2026-09-29 能力大补）= 改条目分类确认卡：AI 提议、用户点确认才执行。
+  kind?: 'memoryConfirm' | 'actionConfirm'
+  // actionConfirm 消息负载（2026-09-29）：条目/类别解析结果 + 状态机。
+  // pending=单一候选待确认；ambiguous=多候选待选；done/cancelled=终态（静态回执）；
+  // notFound=没匹配到条目（或确认时条目已删）。内存+落库双写，杀进程恢复后卡仍可操作。
+  action?: {
+    entryHint: string
+    status: 'pending' | 'ambiguous' | 'done' | 'cancelled' | 'notFound'
+    candidates: { entryId: string; label: string; fromCategory: string }[]
+    toCategorySlug: string
+    toCategoryLabel: string
+    isNewCategory?: boolean
+  }
   // 流式渲染中（2026-09-28 流式输出）：true = 该 assistant 消息正逐帧更新，UI 跳过入场
   // 动画并隐藏 LoadingBubble；结束置 false。内存态语义，Dexie 无需升版（messages 内嵌非索引）。
   streaming?: boolean

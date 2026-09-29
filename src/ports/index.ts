@@ -120,19 +120,30 @@ export interface LlmPort {
     detailLevel?: number,
     id?: string,
   ): Promise<Aggregate>
-  // AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md)。两轮：intent 解析问句→结构化 query；
+  // AI Chat (docs/design/ai-chat-impl-plan.md)。两轮：intent 解析问句→结构化 query；
   // answer 基于本地召回的 cites 作答 + 引用。调用方在两轮之间跑 localRecall。
   // intent 轮：解析「上个月关于 X 的想法」→ scope(时间 range) + keywords。无时间意图时 scope=null。
-  parseChatIntent(question: string, nowIso: string): Promise<ChatQuery>
+  // categories（2026-09-29 能力大补，可选）：现有类别列表注入 intent prompt，
+  // 提高 action 分支 categorySlug 命中率（不传=旧行为，LLM 只给 categoryLabel）。
+  parseChatIntent(
+    question: string,
+    nowIso: string,
+    categories?: { slug: string; label: string }[],
+  ): Promise<ChatQuery>
   // answer 轮：基于传入 cites（已压缩）+ 对话历史作答。铁律：citedEntryIds 必须来自 cites.id；
   // port 层后校验剔非法 id。空 cites 调用方应直接走「库内未找到依据」不调此方法。
   // onEvent（2026-09-28 流式输出）：传入时适配器走流式链路，逐帧回调 reasoning/content 增量；
   // 省略 = 旧非流式行为（向后兼容，intent/extractMemory 等调用不动）。返回值不变——
   // 流式结束仍产完整 ChatAnswer（落库/缓存收口不变）；断流有部分内容时宽容返回部分答案。
+  // conversation[].date（2026-09-29）：每条历史的本地日键（YYYY-MM-DD），prompt 渲染为
+  // [日期] 前缀，LLM 可解析「昨天说的」等跨天指代。
+  // extraSystem（2026-09-29 能力大补）：store 侧拼好的附加 system 段——当前时间行（timeIntent）/
+  // 天气数据块 / 搜索结果块，拼在 memoryBlock 之后。一个口子覆盖所有注入，prompt 本体零改动。
   answerChat(opts: {
     question: string
     cites: ChatCite[] // 已压缩的 top-K 召回条目（LLM 作答的上下文素材）
-    conversation: { role: 'user' | 'assistant'; content: string }[] // 先前多轮对话
+    conversation: { role: 'user' | 'assistant'; content: string; date?: string }[] // 先前多轮对话
+    extraSystem?: string
   }, onEvent?: (ev: ChatStreamEvent) => void): Promise<ChatAnswer>
   // AI 记忆自动提取（2026-07-22 §4；2026-09-10 陪伴化扩展）：从用户一句话提取应长期记住的
   // 事实/偏好/归类指令/进行中事项。返一句精炼记忆原文；无可记内容（普通提问）返 null。
