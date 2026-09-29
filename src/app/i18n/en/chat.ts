@@ -30,6 +30,29 @@ export const chat = {
   'chat.loading.intent': 'Understanding question…',
   'chat.loading.recall': 'Searching library…',
   'chat.loading.answer': 'Composing answer…',
+  // Capability pack (2026-09-29): new intent phases.
+  'chat.loading.weather': 'Checking weather…',
+  'chat.loading.search': 'Searching the web…',
+  // Trace panel: intent-kind labels (recall shows no label, unchanged).
+  'chat.trace.kind.weather': 'Weather',
+  'chat.trace.kind.search': 'Web search',
+  'chat.trace.kind.action': 'Change category',
+  // Weather/search degradation & failure data blocks (injected into the answer round;
+  // the LLM paraphrases warmly — not shown verbatim).
+  'chat.weather.noKey': '(No Amap key configured, live weather unavailable. You may guide the user to Settings → Geocoding to add one and retry.)',
+  'chat.weather.noCity': '(Could not determine a city: no place name in the question and location unavailable. You may ask the user to include a city name.)',
+  'chat.weather.failed': '(Weather lookup failed, likely a network or service issue. Say so honestly and suggest retrying later; do not guess the weather from memory.)',
+  'chat.search.noKey': '(No web-search key configured, cannot search the web. You may guide the user to Settings → Web search to add a Tavily key and retry.)',
+  'chat.search.failed': '(Web search failed, likely a network or service issue. Say so honestly and suggest retrying later; do not fabricate results.)',
+  // Category-change confirmation card (actionConfirm message).
+  'chat.action.notFound': 'Couldn\'t find an entry matching "{hint}" — try rephrasing with a rough time or more keywords.',
+  'chat.action.confirm': 'Confirm',
+  'chat.action.cancel': 'Cancel',
+  'chat.action.changeTo': 'change to',
+  'chat.action.newCategory': 'new category',
+  'chat.action.whichOne': 'Which one did you mean?',
+  'chat.action.doneReceipt': 'Changed "{label}" to category "{category}"',
+  'chat.action.cancelled': 'Okay, nothing changed.',
   // Empty state (2026-09-10 companion): time-aware greeting + opener chips (tap to prefill input).
   'chat.greet.morning': 'Good morning',
   'chat.greet.afternoon': 'Good afternoon',
@@ -49,7 +72,7 @@ export const chat = {
   'chat.ago.minutes': '{n} min ago',
   'chat.ago.hours': '{n} hr ago',
   'chat.ago.days': '{n}d ago',
-  'chat.privacy': 'Q&A searches locally only; your question and snippets are sent to the LLM to answer · AI will not modify your entries',
+  'chat.privacy': 'Q&A searches your local entries and can check weather or search the web on demand; your question and related content are sent to the LLM and the corresponding service · Entry changes require your confirmation first',
   'chat.errOffline': 'You are offline. Connect to the internet and ask again.',
   'chat.errNoCites': 'Nothing in your notes matches yet. Try rephrasing, or give me a rough time or keyword.',
   'chat.errGeneric': 'Something went wrong: {reason}',

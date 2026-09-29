@@ -31,6 +31,15 @@ export const settings = {
   'settings.geocodingKeyHelp': '控制台 → 应用管理 → 创建「Web 服务」类型 Key。',
   'settings.geocodingKeyPlaceholder': '在高德开放平台申请的 Web 服务 Key',
 
+  // 网络搜索（2026-09-29 能力大补：问 AI 搜索意图用，Tavily BYOK）
+  'settings.searchKey': '网络搜索 Key',
+  'settings.searchValueConfigured': 'Tavily · 已配置',
+  'settings.searchTitle': '网络搜索',
+  'settings.searchHelp': '问 AI 的联网检索（Tavily）· 自配 Key 才可用，未配时搜索意图会提示配置',
+  'settings.searchKeyLabel': 'Tavily Key',
+  'settings.searchKeyHelp': '到 tavily.com 注册，在控制台复制 API Key（免费额度 1000 次/月）。',
+  'settings.searchKeyPlaceholder': 'tvly- 开头的 Tavily API Key',
+
   // AI 模型区
   'settings.aiModels': 'AI 模型',
   'settings.aiModelsHelp': 'BYOK · 各模型独立配置 URL + Key',

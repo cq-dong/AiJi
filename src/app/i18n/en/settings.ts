@@ -30,6 +30,15 @@ export const settings = {
   'settings.geocodingKeyHelp': 'Console → App management → create a "Web service" key.',
   'settings.geocodingKeyPlaceholder': 'A "Web service" key from the Amap open platform',
 
+  // Web search (2026-09-29 capability pack: powers the chat search intent, Tavily BYOK)
+  'settings.searchKey': 'Web search key',
+  'settings.searchValueConfigured': 'Tavily · configured',
+  'settings.searchTitle': 'Web search',
+  'settings.searchHelp': 'Web search for Ask AI (Tavily) · requires your own key; search intents will prompt to configure when missing',
+  'settings.searchKeyLabel': 'Tavily key',
+  'settings.searchKeyHelp': 'Sign up at tavily.com and copy the API key from the dashboard (free tier: 1,000 credits/mo).',
+  'settings.searchKeyPlaceholder': 'Tavily API key starting with tvly-',
+
   // AI 模型区
   'settings.aiModels': 'AI models',
   'settings.aiModelsHelp': 'BYOK · configure URL + key per model',

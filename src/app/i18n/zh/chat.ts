@@ -34,6 +34,28 @@ export const chat = {
   'chat.loading.intent': '理解问题…',
   'chat.loading.recall': '检索库中…',
   'chat.loading.answer': '组织回答…',
+  // 能力大补（2026-09-29）：新意图相位。
+  'chat.loading.weather': '查天气…',
+  'chat.loading.search': '搜网络…',
+  // trace 面板：意图类别标签（recall 不显示标签，保持现状）。
+  'chat.trace.kind.weather': '查天气',
+  'chat.trace.kind.search': '搜网络',
+  'chat.trace.kind.action': '改分类',
+  // 天气/搜索降级与失败数据块（注入 answer 轮，LLM 用伙伴语气转述，不直接展示原文）。
+  'chat.weather.noKey': '（未配置高德 Key，无法查询实时天气。可引导用户去 设置→地点编码 配置后重试。）',
+  'chat.weather.noCity': '（未能确定城市：问题中未提及地名，且定位不可用。可引导用户在问题里带上城市名。）',
+  'chat.weather.failed': '（天气查询失败，可能是网络或服务问题。请诚实说明并建议稍后重试，不要凭记忆猜天气。）',
+  'chat.search.noKey': '（未配置网络搜索 Key，无法联网检索。可引导用户去 设置→网络搜索 配置 Tavily Key 后重试。）',
+  'chat.search.failed': '（网络搜索失败，可能是网络或服务问题。请诚实说明并建议稍后重试，不要凭记忆编造。）',
+  // 改分类确认卡（actionConfirm 消息）。
+  'chat.action.notFound': '没找到「{hint}」对应的条目，换个说法试试？比如带上时间或更多关键词。',
+  'chat.action.confirm': '确认',
+  'chat.action.cancel': '取消',
+  'chat.action.changeTo': '改成',
+  'chat.action.newCategory': '新类别',
+  'chat.action.whichOne': '你指的是哪一条？',
+  'chat.action.doneReceipt': '已把《{label}》改成「{category}」分类',
+  'chat.action.cancelled': '好，没有改动。',
   // 空态（2026-09-10 陪伴化）：伙伴式问候（按时段）+ 开场建议 chips（点一下填入输入框）。
   'chat.greet.morning': '早安',
   'chat.greet.afternoon': '下午好',
@@ -53,7 +75,7 @@ export const chat = {
   'chat.ago.minutes': '{n} 分钟前',
   'chat.ago.hours': '{n} 小时前',
   'chat.ago.days': '{n} 天前',
-  'chat.privacy': '问答仅本地检索，问题与片段将上送 LLM 作答 · AI 不会改动你的条目',
+  'chat.privacy': '问答检索你的本地条目，也可按需查天气、搜网络；问题与相关内容会上送 LLM 及对应服务 · 修改条目前会先经你确认',
   'chat.errOffline': '离线中，连上网再问。',
   'chat.errNoCites': '库里还没记过相关内容。可以换个问法，或告诉我大致的时间、关键词。',
   'chat.errGeneric': '问答出了点问题：{reason}',
