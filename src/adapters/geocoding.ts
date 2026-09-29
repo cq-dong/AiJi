@@ -188,6 +188,56 @@ export async function reverseGeocode(
 }
 
 /**
+ * 反查城市（2026-09-29 问 AI 天气分支定位兜底）：与 reverseGeocodeGaode 同请求，
+ * 改取 regeocode.addressComponent——city 为非空字符串直收；直辖市 city 返回空串/空数组，
+ * 回落 province。adcode 必收（天气接口可用 adcode 直查，比城市名更准）。
+ * 任何失败（HTTP 非 200 / status='0' / 超时 / 解析异常 / city 与 province 均缺 / 无 adcode）→ null。
+ * 不动现有 reverseGeocode 签名与三通道逻辑。
+ */
+export async function reverseGeocodeCity(
+  lat: number,
+  lng: number,
+  key: string,
+): Promise<{ city: string; adcode: string } | null> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 6000)
+  try {
+    // 高德 regeo 的 location 参数顺序是 `经度,纬度`（lng,lat）。
+    const params = new URLSearchParams({
+      key,
+      location: `${lng},${lat}`,
+      output: 'json',
+      extensions: 'base',
+    })
+    const res = await fetch(`${GAODE_REVERSE}?${params}`, { signal: ctrl.signal })
+    if (!res.ok) return null
+    const data = await res.json()
+    const ac = data?.status === '1' ? data?.regeocode?.addressComponent : undefined
+    if (!ac || typeof ac !== 'object' || Array.isArray(ac)) {
+      if (data?.status !== '1') console.warn('[geocoding] gaode reverseGeocodeCity non-success', data?.info, data?.infocode)
+      return null
+    }
+    const comp = ac as Record<string, unknown>
+    const cityRaw = comp.city
+    const provinceRaw = comp.province
+    const adcodeRaw = comp.adcode
+    const city =
+      typeof cityRaw === 'string' && cityRaw.trim()
+        ? cityRaw.trim()
+        : typeof provinceRaw === 'string' && provinceRaw.trim()
+          ? provinceRaw.trim()
+          : ''
+    if (!city || typeof adcodeRaw !== 'string' || !adcodeRaw.trim()) return null
+    return { city, adcode: adcodeRaw.trim() }
+  } catch (e) {
+    console.warn('[geocoding] gaode reverseGeocodeCity failed', e)
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/**
  * Enrich a GeoPoint with a reverse-geocoded address. Non-mutating — returns
  * a new object with `address` set, or the original if geocode fails or address
  * already present. Does NOT block capture save: callers fire this async after

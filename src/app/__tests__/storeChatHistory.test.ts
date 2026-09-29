@@ -71,11 +71,16 @@ vi.mock('@/app/di', () => ({
 }))
 
 // localRecall：返一条受控 cite（cites.length>0 → answerChat 被调，不走空 cites 裸答）。
-vi.mock('@/ui/screens/chat/helpers', () => ({
-  localRecall: () => [
-    { id: 'e1', createdAt: '2026-07-22', categorySlug: 'idea', tags: [], textExcerpt: '原文' },
-  ],
-}))
+// 部分 mock（2026-09-29 能力大补）：dateKey 等新纯函数走真实实现。
+vi.mock('@/ui/screens/chat/helpers', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/ui/screens/chat/helpers')>()
+  return {
+    ...actual,
+    localRecall: () => [
+      { id: 'e1', createdAt: '2026-07-22', categorySlug: 'idea', tags: [], textExcerpt: '原文' },
+    ],
+  }
+})
 
 import { useUiStore } from '@/app/store'
 

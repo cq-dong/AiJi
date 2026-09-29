@@ -279,19 +279,19 @@ export const builtinLlm: LlmPort = {
     return ag
   },
 
-  async parseChatIntent(question, nowIso) {
+  async parseChatIntent(question, nowIso, categories) {
     assertNetwork()
-    const messages = buildIntentPrompt(question, toLocalIso(nowIso))
+    const messages = buildIntentPrompt(question, toLocalIso(nowIso), categories)
     const raw = await chat(messages)
     useQuotaStore.getState().consume('llm', 1)
     return parseIntentJson(raw)
   },
 
-  async answerChat({ question, cites, conversation }, onEvent) {
+  async answerChat({ question, cites, conversation, extraSystem }, onEvent) {
     assertNetwork()
     // AI 记忆注入（2026-07-22 §3）：enabled 记忆 content 数组传入 buildAnswerPrompt。
     const memories = await loadEnabledMemoryContents()
-    const messages = buildAnswerPrompt(question, cites, conversation, memories)
+    const messages = buildAnswerPrompt(question, cites, conversation, memories, extraSystem)
     // 流式分支（2026-09-28）：onEvent 存在 → chatAnswerStreaming（SSE 逐帧分流）；
     // 省略 → 原非流式路径逐字节不变（向后兼容）。
     if (onEvent) return chatAnswerStreaming(messages, cites, onEvent)

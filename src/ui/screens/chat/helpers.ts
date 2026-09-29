@@ -4,7 +4,8 @@
 // 压缩后的 cites 喂给 answer 轮 LLM；token 预算 top-8 × ≤120 字 excerpt ≈ 4K input。
 
 import { scopeRange } from '@/domain/dateRange'
-import type { ChatCite, ChatQuery, Entry, EntryAi, Tag } from '@/domain/types'
+import type { Category, ChatCite, ChatQuery, Entry, EntryAi, Tag } from '@/domain/types'
+import { getCurrentLang } from '@/app/currentLang'
 
 // 召回参数：宁可多召回喂给 LLM（token 便宜，效果优先）。top-15 × ≤240 字 excerpt ≈ 8K input，
 // 对现代长上下文模型无压力。旧值 8×120 太省，常漏掉相关条目致 LLM 拒答。
@@ -175,4 +176,59 @@ export function localRecall(
       new Date(b.entry.createdAt).getTime() - new Date(a.entry.createdAt).getTime(),
   )
   return candidates.slice(0, RECALL_TOP_K).map(({ entry, ai }) => toCite(entry, ai))
+}
+
+// ── 能力大补（2026-09-29）：store 编排复用的纯函数 ─────────────────────────
+
+// 本地日键 YYYY-MM-DD：经 new Date(iso) 取本地年月日，兼容 +08:00 与 Z 两种 ISO
+// （与 home/helpers localDateKey 同算法；chatHistory 给每条历史带日期前缀用）。
+export function dateKey(iso: string): string {
+  const d = new Date(iso)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// timeIntent 时注入 answer 轮的当前时间行（extraSystem 第一行）：
+// zh「当前时间：2026-09-29 周二 10:30」/ en「Current time: 2026-09-29 Tue 10:30」。
+export function currentTimeLine(now: Date): string {
+  const key = dateKey(now.toISOString())
+  const [y, m, d] = key.split('-').map(Number)
+  const zh = getCurrentLang() === 'zh'
+  const weekday = new Intl.DateTimeFormat(zh ? 'zh-CN' : 'en-US', { weekday: 'short' }).format(new Date(y, m - 1, d))
+  const hh = String(now.getHours()).padStart(2, '0')
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  return zh ? `当前时间：${key} ${weekday} ${hh}:${mm}` : `Current time: ${key} ${weekday} ${hh}:${mm}`
+}
+
+// action 分支新类别 slug 化：小写、空白→连字符、去 [^a-z0-9一-龥-]；清洗后为空 →
+// 'cat-'+label 再清洗兜底（'cat-' 字符全在允许集，结果至少 'cat-'，永不返空串）。
+export function slugifyCategoryLabel(label: string): string {
+  const clean = (s: string): string =>
+    s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9一-龥-]/g, '')
+  return clean(label) || clean(`cat-${label}`)
+}
+
+// action 分支类别解析：categorySlug 命中现有类别 → 用；否则 categoryLabel 对现有类别的
+// label/aliases 做大小写不敏感匹配；都不中 → 新涌现类别（slug 化 categoryLabel）。
+export function resolveActionCategory(
+  action: { categorySlug?: string; categoryLabel?: string },
+  categories: Category[],
+): { slug: string; label: string; isNew: boolean } {
+  if (action.categorySlug) {
+    const hit = categories.find((c) => c.slug === action.categorySlug)
+    if (hit) return { slug: hit.slug, label: hit.label, isNew: false }
+  }
+  const want = (action.categoryLabel ?? '').trim().toLowerCase()
+  if (want) {
+    const hit = categories.find(
+      (c) =>
+        c.label.trim().toLowerCase() === want ||
+        c.aliases.some((al) => al.trim().toLowerCase() === want),
+    )
+    if (hit) return { slug: hit.slug, label: hit.label, isNew: false }
+  }
+  const label = action.categoryLabel?.trim() || action.categorySlug || ''
+  return { slug: slugifyCategoryLabel(label), label, isNew: true }
 }

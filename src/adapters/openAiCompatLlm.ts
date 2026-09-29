@@ -399,39 +399,55 @@ export function parseAggregateJson(raw: string): AggregateResult {
 // aggregate 一致的 ISO 格式（day=YYYY-MM-DD / week=YYYY-Www / month=YYYY-MM），以 nowIso
 // 为锚解析相对时间。ISO 周号由 LLM 给（可能偏差 1 号，但 localRecall 是结构化∪keyword
 // 召回，时间过滤错只收窄、不全丢——keyword 兜底）。无时间意图 scope=null。
-export function buildIntentPrompt(question: string, nowIso: string) {
+export function buildIntentPrompt(question: string, nowIso: string, categories?: { slug: string; label: string }[]) {
   const en = getCurrentLang() === 'en'
   const system = en
     ? `You are the retrieval-intent parser for "AiJi" (AI 记). Given a user question + the current local time, output strict JSON for local retrieval.
 
 Rules:
-1. scope: if the question contains a time intent (today/yesterday/this week/last week/last month/last N days/a specific date), parse it into an absolute time range. type is day|week|month, range uses ISO format: day=YYYY-MM-DD, week=YYYY-Www (ISO week number, Monday as the first day), month=YYYY-MM. Anchor to "the current time": today=the current day, yesterday=the previous day, this week=the current week, last week=the previous week, last month=the previous month. When there is no time intent, scope=null.
-2. keywords: extract **all concrete entities/topic words** for local retrieval matching. These include:
+1. kind: first classify the question into one of four kinds —
+   - weather: asking about live weather/temperature/rain ("is it cold in Beijing today", "will it rain tomorrow").
+   - search: current events/news/external facts that require the live web ("the latest SpaceX launch", "some breaking news").
+   - action: the user asks to change the category of one of their entries ("change the X one to the Y category", "that entry is wrong, it should be Y").
+   - recall: everything else (default).
+2. scope: if the question contains a time intent (today/yesterday/this week/last week/last month/last N days/a specific date), parse it into an absolute time range. type is day|week|month, range uses ISO format: day=YYYY-MM-DD, week=YYYY-Www (ISO week number, Monday as the first day), month=YYYY-MM. Anchor to "the current time": today=the current day, yesterday=the previous day, this week=the current week, last week=the previous week, last month=the previous month. When there is no time intent, scope=null.
+3. keywords: extract **all concrete entities/topic words** for local retrieval matching. These include:
    - Place names (Shanghai, Beijing, Wangjing, a café, "downstairs") — these often live in an entry's location.address or facets.place and are key retrieval signals; always keep them.
    - People, project names, item names, activity names (running, osmanthus latte, CapturePort, design draft).
    - Topic words (shopping, meeting, working out).
    You MUST drop pure function words (the/of/about/what/how/that/this/wrote down/stuff etc.). But keep entity nouns even if short. Better to keep too many entity words than to miss a place/person name. 1-8 items, lowercase.
-3. categorySlugs: if the question clearly points to a category (e.g. "ideas", "projects"), give the slug; if unsure, omit this field. Never fabricate.
-4. Output JSON only — no markdown fences, no explanation.
+4. categorySlugs: if the question clearly points to a category (e.g. "ideas", "projects"), give the slug; if unsure, omit this field. Never fabricate.
+5. timeIntent: set true when the question contains time words (today/yesterday/what time/which weekday) or needs the current time to be answered accurately; otherwise omit this field.
+6. city: only for kind=weather — extract the city name from the question; if the question names no city, omit this field.
+7. action: only for kind=action — {"entryHint":the user's original clue identifying the entry,"categorySlug"?:the slug of a matching existing category,"categoryLabel"?:the category name as the user said it}. Give categorySlug ONLY when it matches the provided existing category list; never fabricate a slug. For kind=action, still fill keywords as usual (they feed entry recall).
+8. Output JSON only — no markdown fences, no explanation.
 
 Output schema:
-{"scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[]}
+{"kind":"recall|weather|search|action","scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[],"timeIntent"?:boolean,"city"?:string,"action"?:{"entryHint":string,"categorySlug"?:string,"categoryLabel"?:string}}
 
 IMPORTANT: Write ALL natural-language output (category names, tags, summaries, answers) in English.`
     : `你是「AiJi」(AI 记) 的检索意图解析器。给定用户问句 + 当前本地时间，输出严格 JSON，供本地检索用。
 
 铁律：
-1. scope：若问句含时间意图（今天/昨天/本周/上周/上个月/最近X天/具体日期），解析为绝对时间范围。type 为 day|week|month，range 用 ISO 格式：day=YYYY-MM-DD、week=YYYY-Www（ISO 周号，周一为首日）、month=YYYY-MM。以「当前时间」为锚：今天=当日、昨天=前一日、本周=当前周、上周=前一周、上个月=前一月。无时间意图时 scope=null。
-2. keywords：提取**所有具体实体/主题词**用于本地检索匹配。包括：
+1. kind：先判别问句属于哪类——
+   - weather：问实时天气/气温/下不下雨（「北京今天冷吗」「明天会下雨吗」）。
+   - search：需要联网才能回答的时事/新闻/外部事实（「SpaceX 最新发射」「某某新闻」）。
+   - action：用户要求修改某条记的分类（「把 XX 那条改成 YY 分类」「那条记错了应该是 YY」）。
+   - recall：其余全部（默认）。
+2. scope：若问句含时间意图（今天/昨天/本周/上周/上个月/最近X天/具体日期），解析为绝对时间范围。type 为 day|week|month，range 用 ISO 格式：day=YYYY-MM-DD、week=YYYY-Www（ISO 周号，周一为首日）、month=YYYY-MM。以「当前时间」为锚：今天=当日、昨天=前一日、本周=当前周、上周=前一周、上个月=前一月。无时间意图时 scope=null。
+3. keywords：提取**所有具体实体/主题词**用于本地检索匹配。包括：
    - 地名/地点（上海、北京、望京、咖啡店、楼下）—— 这类常存在条目的 location.address 或 facets.place，是关键检索信号，务必保留。
    - 人名、项目名、物品名、活动名（跑步、桂花拿铁、CapturePort、设计稿）。
    - 主题词（购物、开会、健身）。
    必须去掉纯功能词（的/了/我/关于/什么/怎么/那个/这条/记了/东西 等）。但实体名词即使短也要保留。宁可多留实体词也不要漏掉地名/人名。1-8 个，小写。
-3. categorySlugs：若问句明显指向某类别（如「想法」「项目」），给 slug；不确定就省略此字段。绝不臆造。
-4. 只输出 JSON，不要 markdown 围栏、不要解释。
+4. categorySlugs：若问句明显指向某类别（如「想法」「项目」），给 slug；不确定就省略此字段。绝不臆造。
+5. timeIntent：问句含时间词（今天/昨天/几点/周几）或需要知道当前时间才能准确回答时填 true，否则省略该字段。
+6. city：仅 kind=weather 时填——从问句提取城市名；问句无城市则省略该字段。
+7. action：仅 kind=action 时填——{"entryHint":用户指的条目线索原文,"categorySlug"?:命中现有类别的 slug,"categoryLabel"?:用户说的类别名原文}。categorySlug 仅在命中下方提供的现有类别列表时才给，绝不臆造 slug。kind=action 时 keywords 仍要照常填（供条目召回）。
+8. 只输出 JSON，不要 markdown 围栏、不要解释。
 
 输出 schema：
-{"scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[]}
+{"kind":"recall|weather|search|action","scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[],"timeIntent"?:boolean,"city"?:string,"action"?:{"entryHint":string,"categorySlug"?:string,"categoryLabel"?:string}}
 
 重要：所有自然语言输出（分类名、标签、摘要、回答）用简体中文。`
   const example = en
@@ -453,7 +469,23 @@ Output: {"scope":null,"keywords":["osmanthus latte"]}
 Example 4 (this week, broad question keeps few topic words):
 Question: "what did I do this week"
 Current time: 2026-07-17T10:30:00+08:00 (2026-W29)
-Output: {"scope":{"type":"week","range":"2026-W29"},"keywords":[]}`
+Output: {"scope":{"type":"week","range":"2026-W29"},"keywords":[]}
+
+Example 5 (weather intent; timeIntent true since "today" needs the current time):
+Question: "is it cold in Beijing today"
+Current time: 2026-07-17T10:30:00+08:00
+Output: {"kind":"weather","timeIntent":true,"city":"Beijing","scope":null,"keywords":[]}
+
+Example 6 (search intent — requires the live web):
+Question: "when was the latest SpaceX launch"
+Current time: 2026-07-17T10:30:00+08:00
+Output: {"kind":"search","scope":null,"keywords":["spacex","launch"]}
+
+Example 7 (action intent — recategorize an entry; categorySlug taken from the provided existing category list, keywords still filled for entry recall):
+Question: "change the osmanthus latte one to the food category"
+Current time: 2026-07-17T10:30:00+08:00
+Existing categories: life:Life snippet, food:Food, idea:Idea
+Output: {"kind":"action","scope":null,"keywords":["osmanthus latte"],"action":{"entryHint":"the osmanthus latte one","categorySlug":"food","categoryLabel":"food"}}`
     : `示例1（时间+具体词，去泛词「想法」）：
 问句："我上个月关于跑步的想法"
 当前时间：2026-07-17T10:30:00+08:00
@@ -472,10 +504,31 @@ Output: {"scope":{"type":"week","range":"2026-W29"},"keywords":[]}`
 示例4（本周，宽泛问句留少量主题词）：
 问句："这周做了什么"
 当前时间：2026-07-17T10:30:00+08:00（2026-W29）
-输出：{"scope":{"type":"week","range":"2026-W29"},"keywords":[]}`
+输出：{"scope":{"type":"week","range":"2026-W29"},"keywords":[]}
+
+示例5（天气意图；「今天」需知道当前时间，timeIntent=true）：
+问句："北京今天冷吗"
+当前时间：2026-07-17T10:30:00+08:00
+输出：{"kind":"weather","timeIntent":true,"city":"北京","scope":null,"keywords":[]}
+
+示例6（搜索意图——需要联网才能回答）：
+问句："SpaceX 最新一次发射是什么时候"
+当前时间：2026-07-17T10:30:00+08:00
+输出：{"kind":"search","scope":null,"keywords":["spacex","发射"]}
+
+示例7（改分类意图；categorySlug 取自提供的现有类别列表，keywords 照常填供条目召回）：
+问句："把桂花拿铁那条改成美食分类"
+当前时间：2026-07-17T10:30:00+08:00
+现有类别：life:生活片段, food:美食, idea:想法
+输出：{"kind":"action","scope":null,"keywords":["桂花拿铁"],"action":{"entryHint":"桂花拿铁那条","categorySlug":"food","categoryLabel":"美食"}}`
+  // categories（2026-09-29 能力大补）：现有类别列表注入，提高 action 分支 categorySlug 命中率。
+  // 缺省（undefined/空数组）→ catLine='' → user message 与旧版逐字节一致（回归安全）。
+  const catLine = categories && categories.length > 0
+    ? `现有类别：${categories.map((c) => `${c.slug}:${c.label}`).join(', ')}\n`
+    : ''
   const user = `问句：${question}
 当前时间：${nowIso}
-输出 JSON。`
+${catLine}输出 JSON。`
   return [
     { role: 'system', content: system + '\n\n' + example },
     { role: 'user', content: user },
@@ -486,7 +539,11 @@ Output: {"scope":{"type":"week","range":"2026-W29"},"keywords":[]}`
 // 设计取向（D35）：效果优先，不省 token。召回条目可能只是弱相关（兜底近期 top-K），
 // 让 LLM 综合判断相关性并诚实作答，而非硬模板「未找到」。只有确实无任何相关条目时才说明。
 // 铁律：citedEntryIds 必须是 cites 中真实存在的 id；绝不臆造引用或条目内容。
-export function buildAnswerPrompt(question: string, cites: ChatCite[], conversation: { role: 'user' | 'assistant'; content: string }[], memories?: string[]) {
+// conversation[].date（2026-09-29 能力大补）：本地日键（YYYY-MM-DD），渲染为 [日期] 前缀，
+// LLM 可解析「昨天说的」等跨天指代；无 date 项原样渲染（旧调用逐字节不变）。
+// extraSystem（第 5 参）：store 侧拼好的附加 system 段——当前时间行（timeIntent）/天气数据块/
+// 搜索结果块，拼在 system + memoryBlock 之后；空/undefined → 与现状逐字节一致（回归安全）。
+export function buildAnswerPrompt(question: string, cites: ChatCite[], conversation: { role: 'user' | 'assistant'; content: string; date?: string }[], memories?: string[], extraSystem?: string) {
   const en = getCurrentLang() === 'en'
   // citesBlock 是召回数据注入（id/类别/摘要/地点/标签/原文摘录），保持中文标签——
   // 数据值（c.summary/c.textExcerpt 等）原样拼入不翻译，与 memoryBlock 同属「数据块」。
@@ -522,6 +579,7 @@ Your factual basis is the "recalled entries" below (the user's in-app notes, wit
 4. If the recalled entries are genuinely unrelated to the question (e.g. you ask about Shanghai but all entries are about Beijing), honestly say "I couldn't find anything relevant — try rephrasing or tell me roughly when", citedEntryIds=[]. Do not force-fit or fabricate.
 5. Do not invent specific content not present in the entries (names/numbers/event details). You may summarize and infer tone, but factual content must be backed by an entry.
 6. Answer naturally and fluently; use bullets or paragraphs as needed. Be detailed when it matters — don't sacrifice usefulness to save tokens.
+7. Conversation history may carry [YYYY-MM-DD] date prefixes — use them to resolve time references like "what I said yesterday" or "the one I mentioned last week".
 
 Recalled entries:
 ${citesBlock}
@@ -544,6 +602,7 @@ IMPORTANT: Write ALL natural-language output (category names, tags, summaries, a
 4. 若召回条目确实与问题无关（比如问上海但条目全是北京的内容），诚实说「没找到相关的，要不要换个问法或告诉我大概时间」，citedEntryIds=[]。不要硬凑也不要臆造。
 5. 不得编造条目里没有的具体内容（人名/数字/事件细节）。可以概括、可以推断语气，但事实性内容必须有条目支撑。
 6. 回答用中文，自然流畅，可分点可分段。该详细就详细，别为省字数牺牲有用性。
+7. 对话历史可能带 [YYYY-MM-DD] 日期前缀，可用它解析「昨天说的」「上周提到的」等时间指代。
 
 召回条目：
 ${citesBlock}
@@ -553,8 +612,8 @@ ${citesBlock}
 
 重要：所有自然语言输出（分类名、标签、摘要、回答）用简体中文。`
   const msgs = [
-    { role: 'system' as const, content: system + memoryBlock },
-    ...conversation,
+    { role: 'system' as const, content: system + memoryBlock + (extraSystem ? `\n\n${extraSystem}` : '') },
+    ...conversation.map((m) => ({ role: m.role, content: m.date ? `[${m.date}] ${m.content}` : m.content })),
     { role: 'user' as const, content: question },
   ]
   return msgs
@@ -582,7 +641,27 @@ export function parseIntentJson(raw: string): ChatQuery {
   }
   const keywords = asStringArray(p.keywords) ?? []
   const categorySlugs = asStringArray(p.categorySlugs)
-  return { scope, keywords, categorySlugs: categorySlugs?.length ? categorySlugs : undefined }
+  // 能力大补（2026-09-29）新字段白名单：非法值一律丢弃（undefined），不流入 ChatQuery。
+  // kind 严格 ∈ {weather,search,action}；'recall' 归一为 undefined（缺省语义，旧客户端兼容）。
+  const kind: ChatQuery['kind'] =
+    p.kind === 'weather' || p.kind === 'search' || p.kind === 'action' ? p.kind : undefined
+  // timeIntent 严格 ===true 才生效。
+  const timeIntent = p.timeIntent === true ? true : undefined
+  // city 非空 string 才收。
+  const city = typeof p.city === 'string' && p.city.trim() ? p.city : undefined
+  // action 必须含非空 entryHint，否则整体丢弃；categorySlug/categoryLabel 非空 string 才收。
+  let action: ChatQuery['action']
+  const actionRaw = asStringRecord(p.action)
+  if (actionRaw && typeof actionRaw.entryHint === 'string' && actionRaw.entryHint.trim()) {
+    action = { entryHint: actionRaw.entryHint }
+    if (typeof actionRaw.categorySlug === 'string' && actionRaw.categorySlug.trim()) {
+      action.categorySlug = actionRaw.categorySlug
+    }
+    if (typeof actionRaw.categoryLabel === 'string' && actionRaw.categoryLabel.trim()) {
+      action.categoryLabel = actionRaw.categoryLabel
+    }
+  }
+  return { scope, keywords, categorySlugs: categorySlugs?.length ? categorySlugs : undefined, kind, timeIntent, city, action }
 }
 
 // answer 轮 LLM 偶发不遵守纯 JSON 封包：输出散文 + 末尾 JS 风格 `citedEntryIds: ["id",...]`
@@ -774,7 +853,7 @@ export function sanitizeInlineCites(answer: string, validIds: Set<string>): stri
 // 收口与非流式一致：parseAnswerJson（截断宽容）→ sanitizeInlineCites → validIds 过滤。
 // 中途断流：rawAccum 有内容 → 宽容解析返回部分答案（不打断对话）；空 → 抛错走现有 error 路径。
 async function answerChatStreaming(
-  opts: { question: string; cites: ChatCite[]; conversation: { role: 'user' | 'assistant'; content: string }[] },
+  opts: { question: string; cites: ChatCite[]; conversation: { role: 'user' | 'assistant'; content: string; date?: string }[]; extraSystem?: string },
   onEvent: (ev: ChatStreamEvent) => void,
 ): Promise<ChatAnswer> {
   const settings = await di.storage.getSettings()
@@ -789,7 +868,7 @@ async function answerChatStreaming(
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
-      messages: buildAnswerPrompt(opts.question, opts.cites, opts.conversation, memories),
+      messages: buildAnswerPrompt(opts.question, opts.cites, opts.conversation, memories, opts.extraSystem),
       max_tokens: 8192,
       temperature: 0.4,
       // thinking 策略同非流式分支（不禁，见 answerChat 注释）；仅多 stream:true。
@@ -1056,7 +1135,7 @@ export const openAiCompatLlm: LlmPort = {
   },
   // AI Chat intent 轮：解析问句→{scope,keywords,categorySlugs}。nowIso 为 UTC ISO，
   // 适配器转本地带偏移 ISO 给 LLM（与 classify 一致），LLM 据此解析「上个月/本周」等相对时间。
-  async parseChatIntent(question, nowIso) {
+  async parseChatIntent(question, nowIso, categories) {
     const settings = await di.storage.getSettings()
     const apiKey = await di.secrets.get(SECRET_KEY)
     const url = settings.llmUrl
@@ -1067,7 +1146,7 @@ export const openAiCompatLlm: LlmPort = {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: buildIntentPrompt(question, toLocalIso(nowIso)),
+        messages: buildIntentPrompt(question, toLocalIso(nowIso), categories),
         max_tokens: 256,
         temperature: 0,
         ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}),
@@ -1084,10 +1163,10 @@ export const openAiCompatLlm: LlmPort = {
   },
   // AI Chat answer 轮：基于本地召回 cites + 先前对话作答。防幻觉后校验——
   // citedEntryIds 必须来自传入 cites.id 集，LLM 臆造的 id 在此剔掉（即使 prompt 已约束，仍兜底）。
-  async answerChat({ question, cites, conversation }, onEvent) {
+  async answerChat({ question, cites, conversation, extraSystem }, onEvent) {
     // 流式分支（2026-09-28）：onEvent 存在时委托流式实现；下方非流式路径逐字节不变
     // （回归安全——intent/extractMemory 等旧调用不传 onEvent）。
-    if (onEvent) return answerChatStreaming({ question, cites, conversation }, onEvent)
+    if (onEvent) return answerChatStreaming({ question, cites, conversation, extraSystem }, onEvent)
     const settings = await di.storage.getSettings()
     const apiKey = await di.secrets.get(SECRET_KEY)
     const url = settings.llmUrl
@@ -1100,7 +1179,7 @@ export const openAiCompatLlm: LlmPort = {
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model,
-        messages: buildAnswerPrompt(question, cites, conversation, memories),
+        messages: buildAnswerPrompt(question, cites, conversation, memories, extraSystem),
         max_tokens: 8192,
         temperature: 0.4,
         // 不禁 thinking：deepseek-v4-flash 是推理模型，禁了 thinking 会把规则 3「无依据」触发得太宽松，

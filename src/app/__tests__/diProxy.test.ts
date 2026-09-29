@@ -88,4 +88,30 @@ describe('di proxies', () => {
     expect(spy).toHaveBeenCalledOnce()
     expect(spy.mock.calls[0][1]).toBeUndefined()
   })
+
+  // 能力大补（2026-09-29）：llmProxy.parseChatIntent 必须把第三参 categories 透传到底层
+  // 适配器（注入 intent prompt 提高 action 分支 slug 命中率）——只转两参会静默吞掉。
+  it('byok → parseChatIntent 的 categories 三参透传到 openAiCompatLlm', async () => {
+    getSettings.mockResolvedValue({ keySource: 'byok' })
+    const spy = vi.spyOn(openAiCompatLlm, 'parseChatIntent').mockResolvedValue({ scope: null, keywords: [] })
+    const cats = [{ slug: 'food', label: '美食' }]
+    await di.llm.parseChatIntent('q', '2026-09-29T00:00:00.000Z', cats)
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy.mock.calls[0][2]).toBe(cats) // 同一引用到达底层适配器
+  })
+  it('builtin → parseChatIntent 的 categories 三参透传到 builtinLlm', async () => {
+    getSettings.mockResolvedValue({ keySource: 'builtin' })
+    const spy = vi.spyOn(builtinLlm, 'parseChatIntent').mockResolvedValue({ scope: null, keywords: [] })
+    const cats = [{ slug: 'food', label: '美食' }]
+    await di.llm.parseChatIntent('q', '2026-09-29T00:00:00.000Z', cats)
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy.mock.calls[0][2]).toBe(cats)
+  })
+  it('省略 categories → 底层收到 undefined（旧调用不破）', async () => {
+    getSettings.mockResolvedValue({ keySource: 'byok' })
+    const spy = vi.spyOn(openAiCompatLlm, 'parseChatIntent').mockResolvedValue({ scope: null, keywords: [] })
+    await di.llm.parseChatIntent('q', '2026-09-29T00:00:00.000Z')
+    expect(spy).toHaveBeenCalledOnce()
+    expect(spy.mock.calls[0][2]).toBeUndefined()
+  })
 })

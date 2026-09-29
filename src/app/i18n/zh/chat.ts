@@ -41,6 +41,8 @@ export const chat = {
   'chat.trace.kind.weather': '查天气',
   'chat.trace.kind.search': '搜网络',
   'chat.trace.kind.action': '改分类',
+  'chat.trace.cityLabel': '城市：',
+  'chat.trace.actionHintLabel': '条目：',
   // 天气/搜索降级与失败数据块（注入 answer 轮，LLM 用伙伴语气转述，不直接展示原文）。
   'chat.weather.noKey': '（未配置高德 Key，无法查询实时天气。可引导用户去 设置→地点编码 配置后重试。）',
   'chat.weather.noCity': '（未能确定城市：问题中未提及地名，且定位不可用。可引导用户在问题里带上城市名。）',

@@ -1,9 +1,11 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
 import { scopeRange } from '@/domain/dateRange'
-import { localRecall } from '@/ui/screens/chat/helpers'
+import { localRecall, dateKey, currentTimeLine, resolveActionCategory } from '@/ui/screens/chat/helpers'
 import { seedSettings } from '@/data/seed'
-import { enrichLocation } from '@/adapters/geocoding'
+import { enrichLocation, reverseGeocodeCity } from '@/adapters/geocoding'
+import { getWeatherLive } from '@/adapters/weather'
+import { webSearch } from '@/adapters/webSearch'
 import { playReminderBeep } from '@/adapters/reminderSound'
 import { extractPartialAnswer } from '@/adapters/sseStream'
 import * as summaryCache from '@/adapters/summaryCache'
@@ -84,6 +86,8 @@ interface UiState {
   setVlmConfig: (url: string, model: string, key: string) => void
   setSttConfig: (model: string, key: string) => void
   setGeocodingConfig: (key: string) => void
+  // 能力大补（2026-09-29）：Tavily 网络搜索 BYOK Key（secrets 'search:key'）。
+  setSearchConfig: (key: string) => void
   setKeySource: (source: 'byok' | 'builtin') => void
   processEntry: (entryId: string, isFresh?: boolean) => Promise<void>
   recomputeAggregate: (scope: AggregateScopeType, range?: string, detailLevel?: number) => Promise<void>
@@ -102,6 +106,10 @@ interface UiState {
   // 流式 flush 专用（2026-09-28）：纯内存 map-replace 更新当前会话的某条消息（其余消息引用
   // 不变，配合气泡 memo）。不落库——saveConversation 由 sendMessage 占位创建/流式结束两次收口。
   updateChatMessage: (msgId: string, patch: Partial<ChatMessage>) => void
+  // 能力大补（2026-09-29）：改条目分类确认卡的用户抉择。confirm={entryId} 执行改分类
+  // （串行 await：新类别 saveCategory → updateEntryAi → 日聚合 stale → chatAnswerCache.clear →
+  // 消息 done + 回执）；'cancel' 置 cancelled + 回执。条目已删 → notFound（杀进程恢复防御）。
+  resolveCategoryAction: (msgId: string, choice: { entryId: string } | 'cancel') => Promise<void>
   primeLocation: () => void
   // AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md)。多会话（2026-07-22）。
   // conversation null = 尚无当前会话（newConversation 后或首次 sendMessage lazy-create）。
@@ -109,7 +117,7 @@ interface UiState {
   // 两轮 loading 文案（intent 理解问题 / recall 检索库中 / answer 组织回答）。
   conversation: Conversation | null
   chatList: Conversation[]
-  chatLoading: 'idle' | 'intent' | 'recall' | 'answer'
+  chatLoading: 'idle' | 'intent' | 'recall' | 'answer' | 'weather' | 'search'
   sendMessage: (text: string) => Promise<void>
   // 多会话动作（docs/superpowers/specs/2026-07-22-chat-history-design.md §3）：
   // newConversation 置 conversation=null（旧会话每次 append 已落库存档，无需显式存）；
@@ -255,14 +263,16 @@ function stripStreamingFlags(conv: Conversation): Conversation {
   return { ...conv, messages: conv.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)) }
 }
 
-// 从 conversation 取最近 N 条 {role, content} 作 answer LLM 对话历史（不含当前问题——
+// 从 conversation 取最近 N 条 {role, content, date} 作 answer LLM 对话历史（不含当前问题——
 // buildAnswerPrompt 把当前问题作为最后一轮 user 追加，故此处只给先前轮次）。跳过 error 消息。
-function chatHistory(conv: Conversation | null, limit: number): { role: 'user' | 'assistant'; content: string }[] {
+// date（2026-09-29 能力大补）：每条历史的本地日键（YYYY-MM-DD），prompt 渲染 [日期] 前缀，
+// LLM 可解析「昨天说的」等跨天指代。
+function chatHistory(conv: Conversation | null, limit: number): { role: 'user' | 'assistant'; content: string; date?: string }[] {
   if (!conv) return []
   return conv.messages
     .filter((m) => !m.error)
     .slice(-limit)
-    .map((m) => ({ role: m.role, content: m.content }))
+    .map((m) => ({ role: m.role, content: m.content, date: dateKey(m.createdAt) }))
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -552,6 +562,16 @@ export const useUiStore = create<UiState>((set, get) => ({
     void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
     if (key) void di.secrets.set('geocoding:key', key).catch((e) => console.error('[store] setGeocodingKey failed', e))
     else void di.secrets.delete('geocoding:key').catch((e) => console.error('[store] deleteGeocodingKey failed', e))
+  },
+  setSearchConfig: (key) => {
+    // 能力大补（2026-09-29）：Tavily 网络搜索 BYOK Key。镜像 setGeocodingConfig——
+    // 清空 → 删 secret + 清 ref（问 AI 搜索意图友好降级）。
+    const cur = get().settings
+    const next = { ...cur, searchKeyRef: key ? 'search:key' : undefined }
+    set({ settings: next })
+    void di.storage.saveSettings(next).catch((e) => console.error('[store] saveSettings failed', e))
+    if (key) void di.secrets.set('search:key', key).catch((e) => console.error('[store] setSearchKey failed', e))
+    else void di.secrets.delete('search:key').catch((e) => console.error('[store] deleteSearchKey failed', e))
   },
   setKeySource: (source) => {
     const account = useAccountStore.getState().account
@@ -883,6 +903,86 @@ export const useUiStore = create<UiState>((set, get) => ({
       conversation: { ...cur, messages: cur.messages.map((m) => (m.id === msgId ? { ...m, ...patch } : m)) },
     })
   },
+  // ── 能力大补（2026-09-29）：改条目分类确认卡的用户抉择 ─────────────────────
+  // confirm 串行 await（D11）：新类别先 saveCategory（slug 冲突已有同名则跳过）→
+  // updateEntryAi → 日聚合 stale（拷贝 processEntry 块，range 取条目 createdAt 当日）→
+  // chatAnswerCache.clear（同问缓存含旧分类答案）→ 消息 done + 回执。
+  // cancel → cancelled + 回执。条目已删 → notFound 终态（杀进程恢复/他端删除防御）。
+  resolveCategoryAction: async (msgId, choice) => {
+    const conv = get().conversation
+    if (!conv) return
+    const msg = conv.messages.find((m) => m.id === msgId)
+    if (!msg || msg.kind !== 'actionConfirm' || !msg.action) return
+    const a = msg.action
+    if (a.status !== 'pending' && a.status !== 'ambiguous') return // 终态 → no-op
+
+    // 闭包 conv 内原位更新该消息（竞态防护照 :1045 模式：set 前查当前会话 id，
+    // 已切会话则只落库不 set 当前视图）。
+    const replaceMsg = (c: Conversation, next: ChatMessage): Conversation => ({
+      ...c,
+      messages: c.messages.map((m) => (m.id === msgId ? next : m)),
+      updatedAt: new Date().toISOString(),
+    })
+    const persist = async (next: Conversation): Promise<void> => {
+      if (get().conversation?.id === conv.id) set({ conversation: next })
+      try {
+        await di.storage.saveConversation(next)
+        await get().refreshChatList()
+      } catch (e) {
+        console.error('[store] saveConversation(resolveCategoryAction) failed', e)
+      }
+    }
+
+    if (choice === 'cancel') {
+      const cancelled: ChatMessage = { ...msg, action: { ...a, status: 'cancelled' } }
+      const receipt: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: t('chat.action.cancelled'),
+        createdAt: new Date().toISOString(),
+      }
+      await persist(appendMessage(replaceMsg(conv, cancelled), receipt))
+      return
+    }
+
+    const cand = a.candidates.find((c) => c.entryId === choice.entryId)
+    if (!cand) return // 非候选 id（UI 只会传候选 entryId）→ no-op
+    // 条目已删（杀进程恢复后条目数据变了/他端删除）→ notFound 终态，不执行改动。
+    const entry = get().entries.find((e) => e.id === choice.entryId) ?? (await di.storage.getEntry(choice.entryId))
+    if (!entry) {
+      await persist(replaceMsg(conv, { ...msg, action: { ...a, status: 'notFound' } }))
+      return
+    }
+
+    // 串行 await（D11）——任一步失败抛给调用方（UI 可提示），已完成的步骤保持落库态。
+    if (a.isNewCategory && !get().categories.some((c) => c.slug === a.toCategorySlug)) {
+      await get().saveCategory({ slug: a.toCategorySlug, label: a.toCategoryLabel, aliases: [], usageCount: 0, createdAt: new Date().toISOString() })
+    }
+    await get().updateEntryAi(choice.entryId, { category: a.toCategorySlug })
+    // 日聚合 stale（同 processEntry 块）：分类变了，条目当日摘要过期 → 置 stale 后触发重算。
+    const dayRange = scopeRange('day', new Date(entry.createdAt))
+    const existingDay = await di.storage.getAggregate('day', dayRange)
+    if (existingDay && !existingDay.stale) {
+      const staleAg: Aggregate = { ...existingDay, stale: true }
+      await di.storage.saveAggregate(staleAg)
+      set((s) => ({
+        aggregates: s.aggregates.map((ag) => (ag.id === existingDay.id ? staleAg : ag)),
+      }))
+    }
+    void get().recomputeAggregate('day', dayRange).catch((e) => console.error('[store] recomputeAggregate failed', e))
+    // 同问缓存里的答案可能引用旧分类 → 全清（比 bump Entry.updatedAt 干净）。
+    chatAnswerCache.clear()
+    // 现有类别显示名以 categories 为准（用户可能后续改过名）；新类别用 action 里的 label。
+    const toLabel = get().categories.find((c) => c.slug === a.toCategorySlug)?.label ?? a.toCategoryLabel
+    const done: ChatMessage = { ...msg, action: { ...a, status: 'done' } }
+    const receipt: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: t('chat.action.doneReceipt', { label: cand.label, category: toLabel }),
+      createdAt: new Date().toISOString(),
+    }
+    await persist(appendMessage(replaceMsg(conv, done), receipt))
+  },
   // ── AI Chat · sendMessage (docs/design/ai-chat-impl-plan.md §4) ──────────
   // intent(LLM) → 本地 localRecall → answer(LLM) → 落 conversation。离线直接拒绝（不假装降级）。
   // 防幻觉层 3：空 cites 不调 answer LLM，直接「库内未找到依据」裸答拒绝。同问缓存命中跳两轮。
@@ -935,14 +1035,121 @@ export const useUiStore = create<UiState>((set, get) => ({
     let rawAccum = ''
 
     try {
-      // 2. intent 轮：解析问句 → ChatQuery（scope/keywords/categorySlugs）。
-      const query = await di.llm.parseChatIntent(trimmed, new Date().toISOString())
-
-      // 3. 本地召回（recall 阶段，纯函数，毫秒级）。
-      // M2: seq 过期（用户已切会话/发新问）→ 不再推相位，防覆盖新轮的 chatLoading。
-      if (seq === chatSendSeq) set({ chatLoading: 'recall' })
+      // 2. intent 轮：解析问句 → ChatQuery（scope/keywords/categorySlugs + kind/timeIntent/city/action）。
+      // categories 第三参（2026-09-29 能力大补）：现有类别注入 intent prompt，提高 action 分支 slug 命中率。
+      const query = await di.llm.parseChatIntent(
+        trimmed,
+        new Date().toISOString(),
+        get().categories.map((c) => ({ slug: c.slug, label: c.label })),
+      )
+      const kind = query.kind ?? 'recall'
       const { aiByEntry, tags } = get()
-      const cites = localRecall(query, entries, aiByEntry, tags)
+
+      // 能力大补 dispatch（2026-09-29）：action=改分类确认卡（不调 answer LLM、不写缓存、
+      // 不跑记忆提取——动作类问题无可记，模板化 i18n 文案早 return）；weather/search=外部
+      // 数据块拼 extraSystem（跳过 localRecall，cites=[]）；否则旧 recall 流程（一字不动）。
+      if (kind === 'action' && query.action) {
+        const act = query.action
+        // 1. 类别解析：slug 命中 → 现有；label/aliases 大小写不敏感匹配 → 现有；都不中 → 新涌现类别。
+        const cat = resolveActionCategory(act, get().categories)
+        // 2. 条目解析：intent keywords + entryHint 去重喂 localRecall，取前 5 候选。
+        const keywords = [...new Set([...(query.keywords ?? []), act.entryHint].filter(Boolean))]
+        const candidates = localRecall({ scope: null, keywords }, entries, aiByEntry, tags)
+          .slice(0, 5)
+          .map((c) => ({
+            entryId: c.id,
+            label: aiByEntry[c.id]?.titleSuggestion || aiByEntry[c.id]?.summary || c.textExcerpt.slice(0, 20) || t('chat.entryFallback'),
+            fromCategory: aiByEntry[c.id]?.category || '',
+          }))
+        const actionTrace: ChatTrace = {
+          intent: {
+            keywords: query.keywords ?? [],
+            scope: null,
+            categorySlugs: query.categorySlugs,
+            kind: query.kind,
+            timeIntent: query.timeIntent,
+            actionHint: act.entryHint,
+          },
+          recalled: candidates.map((c) => ({ id: c.entryId, label: c.label })),
+        }
+        // 0 候选 → notFound 模板文案；1 → pending 确认卡；多 → ambiguous 候选卡（≤5）。
+        const actionMsg: ChatMessage = candidates.length === 0
+          ? { id: crypto.randomUUID(), role: 'assistant', content: t('chat.action.notFound', { hint: act.entryHint }), createdAt: new Date().toISOString(), trace: actionTrace }
+          : {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: '',
+              createdAt: new Date().toISOString(),
+              kind: 'actionConfirm',
+              trace: actionTrace,
+              action: {
+                entryHint: act.entryHint,
+                status: candidates.length === 1 ? 'pending' : 'ambiguous',
+                candidates,
+                toCategorySlug: cat.slug,
+                toCategoryLabel: cat.label,
+                isNewCategory: cat.isNew,
+              },
+            }
+        conv = appendMessage(conv, actionMsg)
+        // 竞态防护照 answer finalize（:1045 模式）：已切会话只落库不动当前视图；
+        // 自己仍是最新 seq 时复位 chatLoading（防软锁）。
+        if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
+        else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
+        void di.storage.saveConversation(conv)
+          .then(() => get().refreshChatList())
+          .catch((e) => console.error('[store] saveConversation(action) failed', e))
+        return
+      }
+      // action 缺负载（intent 解析异常）→ 防御降级 recall，不崩主流程。
+      const dispatchKind: 'recall' | 'weather' | 'search' = kind === 'action' ? 'recall' : kind
+
+      // 3. 本地召回 / 外部数据块。
+      // M2: seq 过期（用户已切会话/发新问）→ 不再推相位，防覆盖新轮的 chatLoading。
+      let cites: ChatCite[] = []
+      let extraSystem = ''
+      if (dispatchKind === 'weather') {
+        // weather 分支：city=问句地名 → 有 key 时定位反查兜底；一切失败写降级数据块（不抛错）。
+        if (seq === chatSendSeq) set({ chatLoading: 'weather' })
+        const key = await di.secrets.get('geocoding:key')
+        let city = query.city
+        if (!city && key) {
+          const loc = await di.capture.getLocation()
+          if (loc) city = (await reverseGeocodeCity(loc.lat, loc.lng, key))?.city
+        }
+        if (!key) {
+          extraSystem = t('chat.weather.noKey')
+        } else if (!city) {
+          extraSystem = t('chat.weather.noCity')
+        } else {
+          const w = await getWeatherLive(city, key)
+          extraSystem = w
+            ? `天气数据（高德，${w.reporttime} 发布）：${w.city} ${w.weather}，气温 ${w.temperature}°C，${w.winddirection}风 ${w.windpower} 级，湿度 ${w.humidity}%。以此为准回答，不要凭记忆猜天气。`
+            : t('chat.weather.failed')
+        }
+      } else if (dispatchKind === 'search') {
+        // search 分支（Tavily 唯一 provider）：结果块带 [标题](URL) 标注指令；失败写降级数据块。
+        if (seq === chatSendSeq) set({ chatLoading: 'search' })
+        const key = await di.secrets.get('search:key')
+        if (!key) {
+          extraSystem = t('chat.search.noKey')
+        } else {
+          const results = await webSearch(trimmed, key)
+          extraSystem = results && results.length > 0
+            ? '网络搜索结果（回答时用 [标题](URL) 标注来源）：\n' +
+              results.map((r, i) => `${i + 1}. ${r.title} — ${r.snippet}（${r.url}）`).join('\n')
+            : t('chat.search.failed')
+        }
+      } else {
+        // 本地召回（recall 阶段，纯函数，毫秒级）。
+        if (seq === chatSendSeq) set({ chatLoading: 'recall' })
+        cites = localRecall(query, entries, aiByEntry, tags)
+      }
+
+      // timeIntent（与 kind 正交）：当前时间行拼 extraSystem 第一行。
+      if (query.timeIntent) {
+        extraSystem = currentTimeLine(new Date()) + (extraSystem ? '\n' + extraSystem : '')
+      }
 
       // trace：思维链记录，UI 默认折叠可展开（D37）。
       const trace: ChatTrace = {
@@ -950,6 +1157,10 @@ export const useUiStore = create<UiState>((set, get) => ({
           keywords: query.keywords ?? [],
           scope: query.scope ? { type: query.scope.type, range: query.scope.range } : null,
           categorySlugs: query.categorySlugs,
+          kind: query.kind,
+          timeIntent: query.timeIntent,
+          city: query.city,
+          actionHint: query.action?.entryHint,
         },
         recalled: cites.map((c) => ({
           id: c.id,
@@ -968,7 +1179,9 @@ export const useUiStore = create<UiState>((set, get) => ({
       let streamPartial = false // 断流/失败以部分可见文本 finalize 的降级答案（不完整，不进缓存）
 
       let answer: ChatAnswer
-      if (cites.length === 0) {
+      // cites 空门槛（2026-09-29）：仅 recall 且 cites 空才裸答拒绝；weather/search 的
+      // cites=[] 照常进流式 answer（事实在 extraSystem 数据块里）。
+      if (dispatchKind === 'recall' && cites.length === 0) {
         answer = { answer: t('chat.errNoCites'), citedEntryIds: [] }
       } else {
         streamMsgId = crypto.randomUUID()
@@ -1011,7 +1224,13 @@ export const useUiStore = create<UiState>((set, get) => ({
         }
         try {
           answer = await di.llm.answerChat(
-            { question: trimmed, cites, conversation: chatHistory(conversation, CHAT_HISTORY_WINDOW) },
+            {
+              question: trimmed,
+              cites,
+              conversation: chatHistory(conversation, CHAT_HISTORY_WINDOW),
+              // 能力大补（2026-09-29）：当前时间行（timeIntent）/ 天气数据块 / 搜索结果块。
+              extraSystem: extraSystem || undefined,
+            },
             (ev) => {
               if (ev.type === 'reasoning') {
                 reasoningAccum += ev.delta
@@ -1034,7 +1253,9 @@ export const useUiStore = create<UiState>((set, get) => ({
       }
 
       // 缓存（entries 签名不变即复用）。断流降级答案不完整，不进缓存。
-      if (!streamPartial) chatAnswerCache.set(chatCacheKey(trimmed, entries), answer)
+      // 缓存门（2026-09-29）：仅 recall 且无时间意图才写——weather/search 每次查新数据、
+      // timeIntent 答案绑定发问时刻，缓存会答出过期天气/旧时间。
+      if (!streamPartial && dispatchKind === 'recall' && !query.timeIntent) chatAnswerCache.set(chatCacheKey(trimmed, entries), answer)
 
       if (streamMsgId !== null) {
         // 流式 finalize：原位替换占位消息（id/createdAt 稳定，UI 无跳变、不重播入场动画）；

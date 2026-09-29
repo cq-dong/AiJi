@@ -1,12 +1,13 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Sparkles, Square, SquarePen } from 'lucide-react'
+import { ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Sparkles, Square, SquarePen } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Chip, Spinner, cn } from '@/ui/components'
+import { Button, Chip, Spinner, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { t } from '@/app/i18n'
 import { useT } from '@/app/i18n/useT'
 import { HistorySheet } from './HistorySheet'
+import { dateKey, groupLabel } from '@/ui/screens/home/helpers'
 import type { ChatMessage, ChatTrace, Entry } from '@/domain/types'
 
 // 裸路由顶栏：返回 ‹ + 标题「问 AI」+ 历史(History) / 新会话(SquarePen) 两图标按钮。
@@ -135,6 +136,13 @@ function renderRichText(
 // D37: 思维链面板——理解问题→召回条目→组织回答的过程，默认折叠可展开。
 // m12（2026-09-28 流式验收）：流式期间有 reasoning → 强制展开实时渲染推理过程；
 // finalize（streaming=false）后回归用户手动控制（默认折叠）。
+// 能力大补（2026-09-29）：意图类别标签（recall 不显示，保持现状）。
+const KIND_TAG_KEYS = {
+  weather: 'chat.trace.kind.weather',
+  search: 'chat.trace.kind.search',
+  action: 'chat.trace.kind.action',
+} as const
+
 function TracePanel({ trace, streaming }: { trace: ChatTrace; streaming?: boolean }) {
   const [open, setOpen] = useState(false)
   const shown = open || (!!streaming && !!trace.reasoning)
@@ -151,6 +159,7 @@ function TracePanel({ trace, streaming }: { trace: ChatTrace; streaming?: boolea
         ? t('chat.trace.scopeWeek')
         : t('chat.trace.scopeMonth')
     : ''
+  const kindTagKey = intent?.kind && intent.kind !== 'recall' ? KIND_TAG_KEYS[intent.kind] : undefined
 
   return (
     <div className="mt-1.5">
@@ -166,7 +175,12 @@ function TracePanel({ trace, streaming }: { trace: ChatTrace; streaming?: boolea
         <div className="mt-1.5 rounded-card bg-page px-3 py-2 text-[11px] leading-relaxed text-t2 space-y-1.5">
           {intent && (
             <div>
-              <p className="text-t3">{t('chat.trace.intent')}</p>
+              <p className="text-t3">
+                {t('chat.trace.intent')}
+                {kindTagKey && (
+                  <span className="ml-1.5 rounded-chip bg-priS px-1.5 py-0.5 text-[10px] text-pri">{t(kindTagKey)}</span>
+                )}
+              </p>
               <p>
                 {t('chat.trace.keywordsLabel')}
                 {intent.keywords.length > 0 ? intent.keywords.join('、') : t('chat.trace.keywordsNone')}
@@ -179,6 +193,9 @@ function TracePanel({ trace, streaming }: { trace: ChatTrace; streaming?: boolea
               {intent.categorySlugs && intent.categorySlugs.length > 0 && (
                 <p>{t('chat.trace.categoriesLabel')}{intent.categorySlugs.join('、')}</p>
               )}
+              {/* 能力大补（2026-09-29）：weather 的城市 / action 的条目线索。 */}
+              {intent.city && <p>{t('chat.trace.cityLabel')}{intent.city}</p>}
+              {intent.actionHint && <p>{t('chat.trace.actionHintLabel')}{intent.actionHint}</p>}
             </div>
           )}
           {recalled.length > 0 && (
@@ -308,9 +325,14 @@ const LOADING_KEYS = {
   intent: 'chat.loading.intent',
   recall: 'chat.loading.recall',
   answer: 'chat.loading.answer',
+  // 能力大补（2026-09-29）：weather/search 意图的专属相位（store chatLoading 联合类型同步扩展）。
+  weather: 'chat.loading.weather',
+  search: 'chat.loading.search',
 } as const
 
-function LoadingBubble({ phase }: { phase: 'intent' | 'recall' | 'answer' }) {
+type ChatLoadingPhase = keyof typeof LOADING_KEYS
+
+function LoadingBubble({ phase }: { phase: ChatLoadingPhase }) {
   const t = useT()
   return (
     <div className="flex justify-start">
@@ -335,6 +357,142 @@ function MemoryConfirmBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean 
       <div className="flex max-w-[90%] items-center gap-1.5 rounded-chip bg-priS px-3 py-1.5 text-[12px] leading-relaxed text-pri">
         <Sparkles size={13} strokeWidth={2.2} className="shrink-0" />
         <span>{msg.content}</span>
+      </div>
+    </motion.div>
+  )
+}
+
+// 跨天分隔条（2026-09-29 能力大补）：微信式日期界。系统分隔 ≠ 系统回执——中性灰调
+// （不用 memoryConfirm 的 priS 主色浅底）。无入场动画（initial={false}），历史/新到都瞬显。
+// key 以 'date-' 前缀（渲染处拼），不进 seenIds——分隔条不是消息，不参与 fresh 机制。
+function DateSeparator({ label }: { label: string }) {
+  return (
+    <motion.div className="flex justify-center" initial={false} animate={{ opacity: 1 }}>
+      <span data-testid="date-separator" className="rounded-chip bg-brd/50 px-3 py-1 text-[11px] leading-relaxed text-t3">
+        {label}
+      </span>
+    </motion.div>
+  )
+}
+
+// 改分类确认卡（2026-09-29 能力大补）：kind='actionConfirm'。AI 提议、用户点确认才执行——
+// pending=单候选直接确认；ambiguous=多候选单选（未选不可确认）；done/cancelled/notFound=终态静态回执。
+// 条目名可点跳详情（同 cite chip 先例）。
+function ActionConfirmBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
+  const t = useT()
+  const navigate = useNavigate()
+  // 契约（Agent B 落地）：resolveCategoryAction(msgId, {entryId} | 'cancel')。
+  const resolve = useUiStore((s) => s.resolveCategoryAction)
+  const [busy, setBusy] = useState(false)
+  const [selected, setSelected] = useState<string | null>(null)
+  const action = msg.action
+  if (!action) return null
+
+  const interactive = (action.status === 'pending' || action.status === 'ambiguous') && !busy
+  const confirm = (entryId: string) => {
+    if (!interactive) return
+    setBusy(true) // 防重复点击：store 落定后消息转终态，卡片自然失去按钮
+    void resolve(msg.id, { entryId })
+  }
+  const cancel = () => {
+    if (!interactive) return
+    setBusy(true)
+    void resolve(msg.id, 'cancel')
+  }
+
+  return (
+    <motion.div
+      className="flex justify-center"
+      initial={fresh ? { opacity: 0, y: 8 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: 'easeOut' }}
+    >
+      <div className="w-full max-w-[85%] rounded-card border border-brd/80 bg-card px-3 py-2.5 text-[13px] leading-relaxed text-ink shadow-sm">
+        {action.status === 'pending' && action.candidates[0] && (
+          <div>
+            <p>
+              《
+              <button
+                type="button"
+                onClick={() => navigate(`/detail/${action.candidates[0]!.entryId}`)}
+                className="text-pri underline hover:text-pri/80 cursor-pointer"
+              >
+                {action.candidates[0].label}
+              </button>
+              》 {t('chat.action.changeTo')} 「{action.toCategoryLabel}」
+              {action.isNewCategory ? `（${t('chat.action.newCategory')}）` : ''}
+            </p>
+            <div className="mt-2 flex gap-2">
+              <Button variant="secondary" size="sm" className="h-8 flex-1" disabled={busy} onClick={cancel}>
+                {t('chat.action.cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                className="h-8 flex-1"
+                disabled={busy}
+                onClick={() => confirm(action.candidates[0]!.entryId)}
+              >
+                {t('chat.action.confirm')}
+              </Button>
+            </div>
+          </div>
+        )}
+        {action.status === 'ambiguous' && (
+          <div>
+            <p>{t('chat.action.whichOne')}</p>
+            <ul className="mt-1.5 space-y-1">
+              {action.candidates.slice(0, 5).map((c) => (
+                <li key={c.entryId}>
+                  <button
+                    type="button"
+                    onClick={() => setSelected(c.entryId)}
+                    aria-pressed={selected === c.entryId}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-btn border px-2.5 py-1.5 text-left transition duration-base ease-out active:scale-[0.99]',
+                      selected === c.entryId ? 'border-pri/60 bg-priS' : 'border-brd/80 bg-page',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'flex size-4 shrink-0 items-center justify-center rounded-full border',
+                        selected === c.entryId ? 'border-pri bg-pri' : 'border-t3',
+                      )}
+                    >
+                      {selected === c.entryId && <span className="size-1.5 rounded-full bg-white" />}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                    <span className="shrink-0 text-[11px] text-t3">{c.fromCategory}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 flex gap-2">
+              <Button variant="secondary" size="sm" className="h-8 flex-1" disabled={busy} onClick={cancel}>
+                {t('chat.action.cancel')}
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                className="h-8 flex-1"
+                disabled={busy || !selected}
+                onClick={() => selected && confirm(selected)}
+              >
+                {t('chat.action.confirm')}
+              </Button>
+            </div>
+          </div>
+        )}
+        {action.status === 'done' && (
+          <p className="flex items-center gap-1.5 text-t2">
+            <Check size={14} strokeWidth={2.5} className="shrink-0 text-catProject" />
+            <span>
+              《{action.candidates[0]?.label ?? action.entryHint}》 → 「{action.toCategoryLabel}」
+            </span>
+          </p>
+        )}
+        {action.status === 'cancelled' && <p className="text-t3">{t('chat.action.cancelled')}</p>}
+        {action.status === 'notFound' && <p className="text-t3">{t('chat.action.notFound', { hint: action.entryHint })}</p>}
       </div>
     </motion.div>
   )
@@ -475,20 +633,37 @@ export default function Chat() {
               }}
             />
           )}
-          {messages.map((m) => {
-            // 流式消息（2026-09-28）：创建即记 seen——占位气泡不播入场动画（流式逐字本身就是
-            // 入场感，叠加 fade/行级渐显会每帧重播）；finalize 原位替换同 id 也不重播。
-            if (m.streaming) seenIds.current?.add(m.id)
-            const fresh = !seenIds.current?.has(m.id)
-            return m.role === 'user' ? (
-              <UserBubble key={m.id} msg={m} fresh={fresh} />
-            ) : m.kind === 'memoryConfirm' ? (
-              <MemoryConfirmBubble key={m.id} msg={m} fresh={fresh} />
-            ) : (
-              <AiBubble key={m.id} msg={m} fresh={fresh} />
-            )
-          })}
-          {/* Loading 阶段切换：crossfade 过渡（intent→recall→answer 不硬切文案）。
+          {(() => {
+            // 跨天分隔条（2026-09-29）：消息日键与前条不同 → 先插 DateSeparator（首条也插）。
+            // todayKey 用真实今日（非 home 的 entry 锚定变体）——对话是真实时间流。
+            const todayKey = dateKey(new Date().toISOString())
+            const nodes: React.ReactNode[] = []
+            let prevDay: string | null = null
+            for (const m of messages) {
+              // 流式消息（2026-09-28）：创建即记 seen——占位气泡不播入场动画（流式逐字本身就是
+              // 入场感，叠加 fade/行级渐显会每帧重播）；finalize 原位替换同 id 也不重播。
+              if (m.streaming) seenIds.current?.add(m.id)
+              const fresh = !seenIds.current?.has(m.id)
+              const day = dateKey(m.createdAt)
+              if (day !== prevDay) {
+                nodes.push(<DateSeparator key={`date-${day}`} label={groupLabel(m.createdAt, todayKey)} />)
+                prevDay = day
+              }
+              nodes.push(
+                m.role === 'user' ? (
+                  <UserBubble key={m.id} msg={m} fresh={fresh} />
+                ) : m.kind === 'memoryConfirm' ? (
+                  <MemoryConfirmBubble key={m.id} msg={m} fresh={fresh} />
+                ) : m.kind === 'actionConfirm' ? (
+                  <ActionConfirmBubble key={m.id} msg={m} fresh={fresh} />
+                ) : (
+                  <AiBubble key={m.id} msg={m} fresh={fresh} />
+                ),
+              )
+            }
+            return nodes
+          })()}
+          {/* Loading 阶段切换：crossfade 过渡（intent→recall→answer/weather/search 不硬切文案）。
               流式中隐藏——占位气泡 + 打字光标已接管「正在回答」的感知。 */}
           <AnimatePresence mode="wait" initial={false}>
             {loading && !hasStreamingMsg && (
@@ -499,7 +674,9 @@ export default function Chat() {
                 exit={{ opacity: 0, y: -6 }}
                 transition={{ duration: 0.15, ease: 'easeOut' }}
               >
-                <LoadingBubble phase={chatLoading as 'intent' | 'recall' | 'answer'} />
+                {/* loading=true 已保证非 'idle'（loading=chatLoading!=='idle' 的别名窄化，
+                    显式比较会撞 TS2367）——cast 到相位联合。 */}
+                <LoadingBubble phase={chatLoading as ChatLoadingPhase} />
               </motion.div>
             )}
           </AnimatePresence>

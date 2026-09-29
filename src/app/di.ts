@@ -70,8 +70,10 @@ const llmProxy: LlmPort = {
   classify: (id) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.classify(id) : openAiCompatLlm.classify(id))),
   aggregate: (ids, scope, range, d, id) => readKeySource().then((k) =>
     k === 'builtin' ? builtinLlm.aggregate(ids, scope, range, d, id) : openAiCompatLlm.aggregate(ids, scope, range, d, id)),
-  parseChatIntent: (q, now) => readKeySource().then((k) =>
-    k === 'builtin' ? builtinLlm.parseChatIntent(q, now) : openAiCompatLlm.parseChatIntent(q, now)),
+  // parseChatIntent 三参透传（2026-09-29 能力大补）：categories 注入 intent prompt
+  // 提高 action 分支 slug 命中率；与 answerChat onEvent 同理必须显式透传（旧只转两参会吞掉）。
+  parseChatIntent: (q, now, categories) => readKeySource().then((k) =>
+    k === 'builtin' ? builtinLlm.parseChatIntent(q, now, categories) : openAiCompatLlm.parseChatIntent(q, now, categories)),
   // answerChat 必须双参透传（2026-09-28 流式修复 B1）：旧实现只转单参吞掉 onEvent，
   // 真链路（builtin/byok 经 DI）流式全灭——单测全 mock di.llm 漏检，diProxy.test 已补透传断言。
   answerChat: (o, onEvent) => readKeySource().then((k) =>

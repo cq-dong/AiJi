@@ -68,9 +68,12 @@ vi.mock('@/app/di', () => ({
   },
 }))
 
-vi.mock('@/ui/screens/chat/helpers', () => ({
-  localRecall: (...a: unknown[]) => mocks.localRecall(...a),
-}))
+vi.mock('@/ui/screens/chat/helpers', async (importOriginal) => {
+  // 部分 mock（2026-09-29 能力大补）：localRecall 受控，dateKey/currentTimeLine/resolveActionCategory
+  // 等新纯函数走真实实现（chatHistory 每条历史带 date 会调 dateKey）。
+  const actual = await importOriginal<typeof import('@/ui/screens/chat/helpers')>()
+  return { ...actual, localRecall: (...a: unknown[]) => mocks.localRecall(...a) }
+})
 
 import { useUiStore } from '@/app/store'
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, Archive, Brain, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, Plus, RefreshCw, Share2, Sparkles, Timer, Trash2, X } from 'lucide-react'
+import { AlertCircle, Archive, Brain, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Globe, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, Plus, RefreshCw, Share2, Sparkles, Timer, Trash2, X } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
@@ -20,6 +20,7 @@ import { importSampleData } from '@/adapters/dexieStorage'
 import { BUILTIN_VLM_URL, BUILTIN_VLM_MODEL, BUILTIN_STT_URL_STREAM, BUILTIN_STT_URL_WHISPER, BUILTIN_STT_MODEL_STREAM, BUILTIN_STT_MODEL_WHISPER } from '@/adapters/builtinDefaults'
 import { Toggle } from './Toggle'
 import { AccountSection } from './AccountSection'
+import { SearchSheet } from './SearchSheet'
 import { RowDivider, RowIcon, SettingsGroup, SettingsRow } from './group'
 import type { UpdateInfo, DownloadProgress } from '@/ports'
 import type { EntryPart, Settings as SettingsType } from '@/domain/types'
@@ -1312,6 +1313,7 @@ export default function Settings() {
   const [editingVlm, setEditingVlm] = useState(false)
   const [editingAbout, setEditingAbout] = useState(false)
   const [editingGeo, setEditingGeo] = useState(false)
+  const [editingSearch, setEditingSearch] = useState(false)
   const [editingMemory, setEditingMemory] = useState(false)
   const [editingLanguage, setEditingLanguage] = useState(false)
   // D9: 导入示例数据状态。导入后 rehydrate 刷新 store；错误显红字提示。
@@ -1476,6 +1478,18 @@ export default function Settings() {
               : t('settings.memoryNotSet')
           }
           onClick={() => setEditingMemory(true)}
+        />
+        <RowDivider />
+        {/* 网络搜索 Key（2026-09-29 能力大补）：Tavily BYOK，问 AI 搜索意图用。未配 → 搜索意图友好降级。 */}
+        <SettingsRow
+          icon={<Globe size={15} strokeWidth={2.2} />}
+          label={t('settings.searchKey')}
+          value={
+            settings.searchKeyRef
+              ? t('settings.searchValueConfigured')
+              : t('settings.keyNotConfigured')
+          }
+          onClick={() => setEditingSearch(true)}
         />
       </SettingsGroup>
 
@@ -1663,6 +1677,7 @@ export default function Settings() {
       {editingVlm && <VlmSheet onClose={() => setEditingVlm(false)} />}
       {editingAbout && <AboutSheet onClose={() => setEditingAbout(false)} />}
       {editingGeo && <GeocodingSheet onClose={() => setEditingGeo(false)} />}
+      {editingSearch && <SearchSheet onClose={() => setEditingSearch(false)} />}
       {editingMemory && <MemorySheet onClose={() => setEditingMemory(false)} />}
       {editingLanguage && <LanguageSheet onClose={() => setEditingLanguage(false)} />}
       {zipConfirm && (

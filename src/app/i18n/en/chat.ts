@@ -37,6 +37,8 @@ export const chat = {
   'chat.trace.kind.weather': 'Weather',
   'chat.trace.kind.search': 'Web search',
   'chat.trace.kind.action': 'Change category',
+  'chat.trace.cityLabel': 'City: ',
+  'chat.trace.actionHintLabel': 'Entry: ',
   // Weather/search degradation & failure data blocks (injected into the answer round;
   // the LLM paraphrases warmly — not shown verbatim).
   'chat.weather.noKey': '(No Amap key configured, live weather unavailable. You may guide the user to Settings → Geocoding to add one and retry.)',
