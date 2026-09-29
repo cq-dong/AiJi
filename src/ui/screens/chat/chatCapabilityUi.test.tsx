@@ -210,6 +210,26 @@ describe('chat 屏能力大补 UI', () => {
     expect(resolveMock).toHaveBeenCalledWith('m-act', { entryId: 'e2' })
   })
 
+  // Finding 2（2026-09-29 rc9）：resolve 抛错时 busy 不得永真——catch 复位，按钮恢复可点，消息仍 pending。
+  it('reject：resolveCategoryAction 抛错 → 按钮恢复可用，消息仍 pending', async () => {
+    const resolveMock = vi.fn().mockRejectedValue(new Error('network down'))
+    render([actionMsg('m-act', pendingAction)], {
+      resolveCategoryAction: resolveMock,
+    } as unknown as UiStatePatch)
+    await mount()
+
+    const confirmBtn = buttonByText('确认')
+    expect(confirmBtn.disabled).toBe(false)
+    await click(confirmBtn)
+    expect(resolveMock).toHaveBeenCalledWith('m-act', { entryId: 'e1' })
+
+    // 抛错已 catch 复位 busy：按钮恢复可用（不卡死至刷新）
+    expect(buttonByText('确认').disabled).toBe(false)
+    expect(buttonByText('取消').disabled).toBe(false)
+    // 消息仍 pending（store 未改动，可重试）
+    expect(useUiStore.getState().conversation!.messages.find((m) => m.id === 'm-act')!.action!.status).toBe('pending')
+  })
+
   it('done：静态回执（条目 → 新分类），无按钮', async () => {
     render([
       actionMsg('m-act', {

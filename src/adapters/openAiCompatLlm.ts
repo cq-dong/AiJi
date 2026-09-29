@@ -580,6 +580,7 @@ Your factual basis is the "recalled entries" below (the user's in-app notes, wit
 5. Do not invent specific content not present in the entries (names/numbers/event details). You may summarize and infer tone, but factual content must be backed by an entry.
 6. Answer naturally and fluently; use bullets or paragraphs as needed. Be detailed when it matters — don't sacrifice usefulness to save tokens.
 7. Conversation history may carry [YYYY-MM-DD] date prefixes — use them to resolve time references like "what I said yesterday" or "the one I mentioned last week".
+8. The [date] prefixes on history messages are metadata only — never begin your answer text with a [date] prefix.
 
 Recalled entries:
 ${citesBlock}
@@ -603,6 +604,7 @@ IMPORTANT: Write ALL natural-language output (category names, tags, summaries, a
 5. 不得编造条目里没有的具体内容（人名/数字/事件细节）。可以概括、可以推断语气，但事实性内容必须有条目支撑。
 6. 回答用中文，自然流畅，可分点可分段。该详细就详细，别为省字数牺牲有用性。
 7. 对话历史可能带 [YYYY-MM-DD] 日期前缀，可用它解析「昨天说的」「上周提到的」等时间指代。
+8. 历史消息里的 [日期] 前缀仅是元数据；回答正文不要以 [日期] 开头。
 
 召回条目：
 ${citesBlock}

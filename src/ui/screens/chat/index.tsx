@@ -392,12 +392,14 @@ function ActionConfirmBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean 
   const confirm = (entryId: string) => {
     if (!interactive) return
     setBusy(true) // 防重复点击：store 落定后消息转终态，卡片自然失去按钮
-    void resolve(msg.id, { entryId })
+    // Finding 2 修复：store 约定失败抛给调用方——catch 复位 busy（否则按钮永久禁用卡死至刷新）；
+    // 消息保持 pending 可重试，无需 toast。
+    void resolve(msg.id, { entryId }).catch(() => setBusy(false))
   }
   const cancel = () => {
     if (!interactive) return
     setBusy(true)
-    void resolve(msg.id, 'cancel')
+    void resolve(msg.id, 'cancel').catch(() => setBusy(false))
   }
 
   return (

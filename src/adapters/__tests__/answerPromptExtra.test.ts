@@ -61,4 +61,16 @@ describe('buildAnswerPrompt · conversation date 前缀', () => {
     expect(en).toContain('[YYYY-MM-DD]')
     expect(en).toContain('date prefix')
   })
+
+  // Finding 5（2026-09-29 rc9）：模型模仿历史 [日期] 前缀格式，把回答正文以 [YYYY-MM-DD] 开头——
+  // prompt 侧引导：[日期] 前缀仅是元数据，回答正文不要以 [日期] 开头。
+  it('prompt 规则含「回答正文不要以 [日期] 开头」（zh+en）', () => {
+    const zh = buildAnswerPrompt('q?', cites, [])[0].content as string
+    expect(zh).toContain('前缀仅是元数据')
+    expect(zh).toContain('回答正文不要以 [日期] 开头')
+    setCurrentLang('en')
+    const en = buildAnswerPrompt('q?', cites, [])[0].content as string
+    expect(en).toContain('metadata only')
+    expect(en).toContain('never begin your answer')
+  })
 })

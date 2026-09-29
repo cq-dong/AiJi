@@ -535,6 +535,47 @@ describe('resolveCategoryAction', () => {
     await useUiStore.getState().resolveCategoryAction(p2.msgId, { entryId: '不存在' })
     expect(mocks.saveEntryAi).not.toHaveBeenCalled()
   })
+
+  // Finding 1（2026-09-29 rc9）回归：确认在途（多个 await 窗口）期间 sendMessage 追加的
+  // 新消息不得被旧 conv 快照整体覆写——persist 前重取当前会话，在新鲜 messages 上消息级 merge。
+  it('在途竞态：确认期间会话追加新消息 → 完成后新消息仍在（内存+落库），卡 done + 回执正确', async () => {
+    const { msgId } = seedActionConv()
+    // 把确认挂在 saveEntryAi 的 await 上，制造在途窗口
+    let releaseSave!: () => void
+    mocks.saveEntryAi.mockImplementation(
+      () => new Promise<void>((res) => { releaseSave = res }),
+    )
+
+    const p = useUiStore.getState().resolveCategoryAction(msgId, { entryId: 'e1' })
+    await flushMicro()
+    expect(mocks.saveEntryAi).toHaveBeenCalledTimes(1) // 已挂在落库 await 上
+
+    // 模拟在途期间 sendMessage 的同步用户消息追加（appendMessage + set，同会话 id）。
+    const before = useUiStore.getState().conversation!
+    const newMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: '在途新消息',
+      createdAt: '2026-09-29T09:01:00+08:00',
+    }
+    useUiStore.setState({
+      conversation: { ...before, messages: [...before.messages, newMsg], updatedAt: newMsg.createdAt },
+    })
+
+    releaseSave()
+    await p
+
+    const msgs = useUiStore.getState().conversation!.messages
+    // 新消息未被旧快照覆写；目标卡 done；回执在最后
+    expect(msgs.some((m) => m.content === '在途新消息')).toBe(true)
+    expect(msgs.find((m) => m.id === msgId)!.action!.status).toBe('done')
+    expect(msgs.at(-1)!.content).toBe('已把《桂花拿铁测评》改成「美食」分类')
+    // 落库入参同样保留新消息与终态卡
+    const saved = mocks.saveConversation.mock.calls.at(-1)![0] as Conversation
+    expect(saved.messages.some((m) => m.content === '在途新消息')).toBe(true)
+    expect(saved.messages.find((m) => m.id === msgId)!.action!.status).toBe('done')
+    expect(saved.messages.at(-1)!.content).toContain('已把')
+  })
 })
 
 describe('缓存门与 timeIntent', () => {
@@ -597,6 +638,31 @@ describe('chatHistory 日期', () => {
     const src = msgs.filter((m) => !m.error).slice(-6)
     expect(opts.conversation.map((h) => h.date)).toEqual(src.map((m) => dateKey(m.createdAt)))
     expect(opts.conversation.map((h) => h.content)).toEqual(src.map((m) => m.content))
+  })
+})
+
+describe('答案 [日期] 前缀剥离（Finding 5）', () => {
+  it('answer 以 [YYYY-MM-DD] 开头 → 落库/内存消息无前缀；正文中间的日期引用保留', async () => {
+    mocks.answerChat.mockResolvedValue({
+      answer: '[2026-09-29] 好的，[2026-09-29] 那天你说的事我记得。',
+      citedEntryIds: [],
+    } as ChatAnswer)
+    await useUiStore.getState().sendMessage('前缀问题-d1')
+
+    const ai = useUiStore.getState().conversation!.messages.at(-1)!
+    expect(ai.role).toBe('assistant')
+    expect(ai.content).toBe('好的，[2026-09-29] 那天你说的事我记得。')
+
+    // 落库收口同样无前缀
+    const saved = mocks.saveConversation.mock.calls.at(-1)![0] as Conversation
+    expect(saved.messages.at(-1)!.content).toBe('好的，[2026-09-29] 那天你说的事我记得。')
+
+    // 缓存里也是剥离后的文本：同问句命中缓存，消息仍无前缀
+    await useUiStore.getState().sendMessage('前缀问题-d1')
+    expect(mocks.answerChat).toHaveBeenCalledTimes(1)
+    expect(useUiStore.getState().conversation!.messages.at(-1)!.content).toBe(
+      '好的，[2026-09-29] 那天你说的事我记得。',
+    )
   })
 })
 

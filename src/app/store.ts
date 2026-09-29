@@ -250,6 +250,13 @@ function appendMessage(c: Conversation, m: ChatMessage): Conversation {
   return { ...c, messages: [...c.messages, m], updatedAt: m.createdAt }
 }
 
+// Finding 5 兜底（2026-09-29 rc9）：历史注入 prompt 带 [YYYY-MM-DD] 前缀，模型可能模仿该格式
+// 把回答正文以 [日期] 开头（prompt 规则引导之外的第二道防线）。只 strip 开头一处——
+// 正文中间的合法日期引用（如「[2026-09-29] 那天…」非开头）不动。
+function stripLeadingDatePrefix(text: string): string {
+  return text.replace(/^\s*\[\d{4}-\d{2}-\d{2}\]\s*/, '')
+}
+
 // M2（2026-09-28 流式验收）：chatLoading 所有权序号。每次 sendMessage 递增并记录本轮 seq；
 // 离开/切换会话（newConversation/loadConversation 异 id/deleteChatConversation 当前条）同样递增——
 // 旧轮随即放弃 chatLoading 所有权：相位推入点（recall/answer）仅在 seq 最新时生效，
@@ -923,8 +930,17 @@ export const useUiStore = create<UiState>((set, get) => ({
       messages: c.messages.map((m) => (m.id === msgId ? next : m)),
       updatedAt: new Date().toISOString(),
     })
-    const persist = async (next: Conversation): Promise<void> => {
-      if (get().conversation?.id === conv.id) set({ conversation: next })
+    // Finding 1 修复（2026-09-29 rc9）：在途多个 await 期间 sendMessage 可能已向同会话
+    // 追加新消息——persist 前重取 get().conversation，是同一会话则在**新鲜** messages 上做
+    // 消息级 merge（原位更新目标卡 + append 回执），不用 :912 旧快照整体覆写；
+    // 会话已切 → 沿用旧守卫语义，只落库（旧快照派生）不 set 当前视图。
+    const persist = async (target: ChatMessage, receipt?: ChatMessage): Promise<void> => {
+      const fresh = get().conversation
+      const same = fresh !== null && fresh.id === conv.id
+      const base = same && fresh ? fresh : conv
+      const replaced = replaceMsg(base, target)
+      const next = receipt ? appendMessage(replaced, receipt) : replaced
+      if (same) set({ conversation: next })
       try {
         await di.storage.saveConversation(next)
         await get().refreshChatList()
@@ -941,7 +957,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         content: t('chat.action.cancelled'),
         createdAt: new Date().toISOString(),
       }
-      await persist(appendMessage(replaceMsg(conv, cancelled), receipt))
+      await persist(cancelled, receipt)
       return
     }
 
@@ -950,7 +966,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     // 条目已删（杀进程恢复后条目数据变了/他端删除）→ notFound 终态，不执行改动。
     const entry = get().entries.find((e) => e.id === choice.entryId) ?? (await di.storage.getEntry(choice.entryId))
     if (!entry) {
-      await persist(replaceMsg(conv, { ...msg, action: { ...a, status: 'notFound' } }))
+      await persist({ ...msg, action: { ...a, status: 'notFound' } })
       return
     }
 
@@ -981,7 +997,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       content: t('chat.action.doneReceipt', { label: cand.label, category: toLabel }),
       createdAt: new Date().toISOString(),
     }
-    await persist(appendMessage(replaceMsg(conv, done), receipt))
+    await persist(done, receipt)
   },
   // ── AI Chat · sendMessage (docs/design/ai-chat-impl-plan.md §4) ──────────
   // intent(LLM) → 本地 localRecall → answer(LLM) → 落 conversation。离线直接拒绝（不假装降级）。
@@ -1251,6 +1267,10 @@ export const useUiStore = create<UiState>((set, get) => ({
           cancelFlush()
         }
       }
+
+      // Finding 5 兜底：剥掉回答正文开头的 [YYYY-MM-DD] 前缀（模型模仿历史格式的回显）。
+      // 在缓存写入与落库/ finalize 之前统一清洗，缓存命中路径复用的也是干净文本。
+      answer = { ...answer, answer: stripLeadingDatePrefix(answer.answer) }
 
       // 缓存（entries 签名不变即复用）。断流降级答案不完整，不进缓存。
       // 缓存门（2026-09-29）：仅 recall 且无时间意图才写——weather/search 每次查新数据、
