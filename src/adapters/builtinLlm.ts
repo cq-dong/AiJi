@@ -108,29 +108,40 @@ async function chatAnswerStreaming(
   useQuotaStore.getState().consume('llm', 1)
   if (!res.body) throw new Error('builtinLlm 响应无 body（流式读取失败）')
   let rawAccum = ''
-  try {
-    for await (const payload of iterateSse(res.body)) {
-      let frame: unknown
-      try {
-        frame = JSON.parse(payload)
-      } catch {
-        continue // 坏帧跳过（代理噪声/半截帧），不毁整轮
+  // rc9 实锤（2026-09-29）：老服务端未升级流式、忽略 stream:true，按旧格式返回 JSON {reply}
+  // （content-type: application/json）——按 SSE 读会一无所获报「缺 content」。
+  // 兼容：服务端显式声明 JSON → 按旧格式一次性解析，模拟一次 content 事件让 UI 正常出字；
+  // content-type 为 text/event-stream（新服务端）或缺省 → SSE 路径逐字节不变。
+  if ((res.headers.get('content-type') ?? '').includes('application/json')) {
+    const data: unknown = await res.json().catch(() => null)
+    const reply = (data as { reply?: unknown } | null)?.reply
+    if (typeof reply === 'string') rawAccum = reply
+    if (rawAccum) onEvent({ type: 'content', delta: rawAccum })
+  } else {
+    try {
+      for await (const payload of iterateSse(res.body)) {
+        let frame: unknown
+        try {
+          frame = JSON.parse(payload)
+        } catch {
+          continue // 坏帧跳过（代理噪声/半截帧），不毁整轮
+        }
+        const delta = (frame as {
+          choices?: { delta?: { reasoning_content?: unknown; content?: unknown } }[]
+        })?.choices?.[0]?.delta
+        if (!delta) continue // finish_reason / usage 帧无 delta
+        if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+          onEvent({ type: 'reasoning', delta: delta.reasoning_content })
+        }
+        if (typeof delta.content === 'string' && delta.content) {
+          rawAccum += delta.content
+          onEvent({ type: 'content', delta: delta.content })
+        }
       }
-      const delta = (frame as {
-        choices?: { delta?: { reasoning_content?: unknown; content?: unknown } }[]
-      })?.choices?.[0]?.delta
-      if (!delta) continue // finish_reason / usage 帧无 delta
-      if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
-        onEvent({ type: 'reasoning', delta: delta.reasoning_content })
-      }
-      if (typeof delta.content === 'string' && delta.content) {
-        rawAccum += delta.content
-        onEvent({ type: 'content', delta: delta.content })
-      }
+    } catch (e) {
+      // 中途断流：一无所获 → 抛错走 store 现有错误路径；有内容 → 落到下方宽容解析。
+      if (!rawAccum.trim()) throw e
     }
-  } catch (e) {
-    // 中途断流：一无所获 → 抛错走 store 现有错误路径；有内容 → 落到下方宽容解析。
-    if (!rawAccum.trim()) throw e
   }
   if (!rawAccum.trim()) throw new Error('builtinLlm 响应缺 content')
   const parsed = parseAnswerJson(rawAccum)

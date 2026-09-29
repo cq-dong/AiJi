@@ -189,6 +189,35 @@ describe('builtinLlm.answerChat 流式分支', () => {
       builtinLlm.answerChat({ question: 'q', cites, conversation: [] }, () => {}),
     ).rejects.toThrow('builtinLlm 响应缺 content')
   })
+
+  // rc9 实锤（2026-09-29）：老服务端未升级流式、忽略 stream:true，照 JSON {reply} 返回
+  // （content-type: application/json）——前端按 SSE 解析一无所获报「缺 content」。
+  // 修复：content-type 显式 application/json → 按旧格式一次性解析（新服务端 SSE 路径不变）。
+  it('老服务端 JSON 回落：忽略 stream:true 返回 {reply} → 一次性解析成功（事件只发一次完整 content）', async () => {
+    const reply = '{"answer":"老服务端回答（见 e1）","citedEntryIds":["e1","bogus"]}'
+    mockFetchOnce(JSON.stringify({ reply }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+    const events: ChatStreamEvent[] = []
+    const ans = await builtinLlm.answerChat(
+      { question: 'q', cites, conversation: [] },
+      (ev) => events.push(ev),
+    )
+    expect(ans).toEqual({ answer: '老服务端回答（见 e1）', citedEntryIds: ['e1'] })
+    expect(events).toEqual([{ type: 'content', delta: reply }])
+    expect(consumeFn).toHaveBeenCalledWith('llm', 1)
+  })
+
+  it('JSON 回落但 reply 缺失/非字符串 → 仍抛「缺 content」', async () => {
+    mockFetchOnce(JSON.stringify({}), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    })
+    await expect(
+      builtinLlm.answerChat({ question: 'q', cites, conversation: [] }, () => {}),
+    ).rejects.toThrow('builtinLlm 响应缺 content')
+  })
 })
 
 describe('builtinLlm.answerChat 非流式分支（回归）', () => {
