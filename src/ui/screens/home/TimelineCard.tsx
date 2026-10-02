@@ -52,9 +52,12 @@ export function TimelineCard({ entry, ai, catLabel, catAccent, index = 99 }: Car
   return <ProcessingCard entry={entry} catAccent={catAccent} index={index} />
 }
 
-// 右侧 48×48 媒体缩略图：图片直出，视频取首帧（#t=0.1）。seed 无 blob → 占位灰块。
-function MediaThumb({ mediaRef }: { mediaRef: string }) {
-  const [url, setUrl] = useState<string | null>(null)
+// 右侧 48×48 媒体缩略图：图片 <img> 直出；视频用 <video preload="metadata"> 取首帧
+// （#t=0.1 媒体片段逼出 0.1s 解码帧）。rc10 实锤：此前视频 blob 也塞 <img>——img 无法
+// 解码视频 → 主页显示裂图。判别用 blob.type：photo 虽是 video part（durationSec=0）
+// 但 MIME 仍是 image/*，天然走对分支。seed 无 blob → 占位灰块。
+export function MediaThumb({ mediaRef }: { mediaRef: string }) {
+  const [media, setMedia] = useState<{ url: string; isVideo: boolean } | null>(null)
   useEffect(() => {
     let cancelled = false
     let created: string | null = null
@@ -63,24 +66,30 @@ function MediaThumb({ mediaRef }: { mediaRef: string }) {
       if (cancelled) return
       if (!blob) return
       created = URL.createObjectURL(blob)
-      setUrl(created)
+      setMedia({ url: created, isVideo: blob.type.startsWith('video/') })
     })()
     return () => {
       cancelled = true
       if (created) URL.revokeObjectURL(created)
     }
   }, [mediaRef])
-  if (!url) {
+  if (!media) {
     return <div className="size-12 shrink-0 rounded-[10px] bg-page ring-1 ring-brd/60" aria-hidden="true" />
   }
-  return (
-    <img
-      src={url}
-      alt=""
-      loading="lazy"
-      className="size-12 shrink-0 rounded-[10px] object-cover ring-1 ring-brd/60"
-    />
-  )
+  const cls = 'size-12 shrink-0 rounded-[10px] object-cover ring-1 ring-brd/60'
+  if (media.isVideo) {
+    return (
+      <video
+        src={`${media.url}#t=0.1`}
+        preload="metadata"
+        muted
+        playsInline
+        className={cls}
+        aria-hidden="true"
+      />
+    )
+  }
+  return <img src={media.url} alt="" loading="lazy" className={cls} />
 }
 
 function ReadyCard({ entry, ai, catLabel, catAccent, index = 99 }: CardProps) {
