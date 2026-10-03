@@ -183,6 +183,9 @@ export interface Settings {
   apiKeyRef?: string
   llmUrl?: string // BYOK endpoint (OpenAI-compatible chat completions)
   llmModel?: string // e.g. 'deepseek-v4-flash'
+  // embedding 模型（2026-10-03 P-B 语义召回，BYOK 先行）：缺省 'text-embedding-3-small'。
+  // 本期无设置页 UI，字段为未来留口；复用 BYOK baseUrl/key。
+  embeddingModel?: string
   sttProvider: string
   sttModel?: string // e.g. 'paraformer-realtime-v2' (DashScope realtime WS, BYOK)
   sttKeyRef?: string // 'stt:key' when a key is set in SecretStorePort
@@ -321,6 +324,23 @@ export interface Conversation {
   // 账号分区键（同 Entry）。saveConversation 强制盖章 getCurrentOwner()。
   ownerId?: string
   messages: ChatMessage[]
+  updatedAt: string
+  // 滚动对话摘要（2026-10-03 P-B）：messages 前缀 [0, summarizedCount) 已被压缩进
+  // rollingSummary；最近 6 条永远保持原文（与 chatHistory 窗口同边界）。
+  // 非索引字段，Dexie 无需升版。清空对话/新会话时两字段一并清空；
+  // summarizedCount > messages.length（杀进程恢复）按 0 处理重算。
+  rollingSummary?: string
+  summarizedCount?: number
+}
+
+// 条目向量（2026-10-03 P-B 语义召回）：Dexie v10 embeddings 表行。
+// textHash 是被嵌文本的 hash——条目文本变了 → 重嵌；model 是第二重失效键（换模型重嵌）。
+export interface EntryEmbedding {
+  entryId: string // 主键
+  ownerId: string
+  vector: number[]
+  model: string
+  textHash: string
   updatedAt: string
 }
 

@@ -328,6 +328,11 @@ export const builtinLlm: LlmPort = {
     return parseMemoryReply(raw)
   },
 
+  // P-B 契约桩（2026-10-03）：让 typecheck 过契约 commit，agent A 替换为真实实现。
+  async summarizeConversation() {
+    throw new Error('P-B summarizeConversation 未实现（契约桩）')
+  },
+
   // ping 签名必须接受可选 opts（LlmPort.ping(opts?)），即使 builtin 忽略 opts。
   async ping(_opts?: { url?: string; model?: string; key?: string }) {
     try {

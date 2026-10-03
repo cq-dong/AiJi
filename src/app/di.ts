@@ -78,8 +78,16 @@ const llmProxy: LlmPort = {
   // 真链路（builtin/byok 经 DI）流式全灭——单测全 mock di.llm 漏检，diProxy.test 已补透传断言。
   answerChat: (o, onEvent) => readKeySource().then((k) =>
     k === 'builtin' ? builtinLlm.answerChat(o, onEvent) : openAiCompatLlm.answerChat(o, onEvent)),
-  extractMemory: (text) => readKeySource().then((k) =>
-    k === 'builtin' ? builtinLlm.extractMemory(text) : openAiCompatLlm.extractMemory(text)),
+  // extractMemory 必须双参透传（2026-10-03 实锤 bug）：旧实现只转 text 吞掉 knownMemories，
+  // 真实 DI 链路记忆判重全灭（单测 mock di.llm 漏检）——与 answerChat onEvent B1 同类。
+  extractMemory: (text, known) => readKeySource().then((k) =>
+    k === 'builtin' ? builtinLlm.extractMemory(text, known) : openAiCompatLlm.extractMemory(text, known)),
+  // embed（2026-10-03 P-B 语义召回）：builtin 老服务端无 embed 端点 → null（调用方降级
+  // 纯关键词召回）；byok 透传 openAiCompatLlm.embed（可选方法，缺席同样 → null）。
+  embed: (texts) => readKeySource().then((k) =>
+    k === 'builtin' ? null : (openAiCompatLlm.embed?.(texts) ?? null)),
+  summarizeConversation: (prior, chunk) => readKeySource().then((k) =>
+    k === 'builtin' ? builtinLlm.summarizeConversation(prior, chunk) : openAiCompatLlm.summarizeConversation(prior, chunk)),
   ping: (o) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.ping(o) : openAiCompatLlm.ping(o))),
 }
 

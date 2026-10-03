@@ -158,6 +158,25 @@ export class AiJiDB extends Dexie {
       syncMedia: 'ref',
       syncState: 'key',
     })
+    // v10: 语义召回（2026-10-03 P-B）——embeddings 表（entryId 主键，ownerId/updatedAt
+    // 索引，账号分区同其他分区表）。纯加表，无 keyPath 变更 → 无 upgrade 回调。
+    // .stores() 非增量——所有 store 逐字重声明（现有索引逐字保留，仅追加 embeddings）。
+    this.version(10).stores({
+      entries: 'id, createdAt, updatedAt, status, deletedAt, ownerId',
+      entryAi: 'id, entryId, version',
+      categories: 'slug, usageCount, ownerId',
+      tags: 'slug, usageCount, ownerId',
+      aggregates: 'id, scope.type, scope.range, stale, ownerId',
+      settings: '++id',
+      reminders: 'id, dueAt, status, entryId, ownerId',
+      drafts: 'id, updatedAt',
+      conversations: 'id, updatedAt, ownerId',
+      memories: 'id, ownerId, updatedAt',
+      syncOutbox: '++seq, &[ownerId+kind+id], ownerId',
+      syncMedia: 'ref',
+      syncState: 'key',
+      embeddings: 'entryId, ownerId, updatedAt',
+    })
   }
 }
 

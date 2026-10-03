@@ -1234,6 +1234,10 @@ export const openAiCompatLlm: LlmPort = {
     if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
     return parseMemoryReply(raw)
   },
+  // P-B 契约桩（2026-10-03）：让 typecheck 过契约 commit，agent A 替换为真实实现。
+  async summarizeConversation() {
+    throw new Error('P-B summarizeConversation 未实现（契约桩）')
+  },
   async ping(opts?: { url?: string; model?: string; key?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
     const settings = await di.storage.getSettings()
     // opts：设置页连通性测试传表单未保存值（测新填配置）；省略时回落已落库 settings + secrets。

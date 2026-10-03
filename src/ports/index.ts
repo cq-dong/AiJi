@@ -151,6 +151,19 @@ export interface LlmPort {
   // knownMemories = 现有 enabled 记忆原文（去重：已覆盖的信息应返 NULL，避免逐轮重复累积）。
   // 失败静默（不影响主问答）。
   extractMemory(text: string, knownMemories?: string[]): Promise<string | null>
+  // 文本向量化（2026-10-03 P-B 语义召回，可选方法）：适配器不实现（undefined）= 该链路
+  // 无 embedding 能力（builtin 老服务端无端点）——调用方 di.llm.embed?.(...) ?? null 兜底，
+  // 静默降级纯关键词召回。返回 null 同上语义。抛错 = 调用失败（网络/key），调用方 catch
+  // 后同样降级。**任何失败都不允许影响问答主流程。** BYOK：POST {baseUrl}/embeddings，
+  // model 读 settings.embeddingModel（缺省 text-embedding-3-small）。
+  embed?(texts: string[]): Promise<number[][] | null>
+  // 滚动对话摘要（2026-10-03 P-B，必需方法）：把对话片段压缩成第三人称摘要，prior 为
+  // 已有摘要（并入输出合并后的新摘要）。保留事实/约定/进行中事项/用户偏好与状态，丢弃
+  // 寒暄。max_tokens ~300 / temperature 0。失败抛错由调用方吞掉（摘要失败不影响问答）。
+  summarizeConversation(
+    prior: string | null,
+    chunk: { role: 'user' | 'assistant'; content: string; date?: string }[],
+  ): Promise<string>
   // Connectivity probe：tiniest chat ping（max_tokens:1）。设置页连通性测试用。
   // opts 传入时直接用表单值（url/model/key），不读 Dexie/secrets——测未保存的新配置；
   // 省略时回落 settings + secrets（测已落库配置）。key 为空串视为省略（回落已存 key）。
