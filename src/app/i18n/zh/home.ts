@@ -32,6 +32,12 @@ export const home = {
   'home.ptr.pull': '下拉刷新',
   'home.ptr.release': '松开刷新',
 
+  // P-D 主动触达 · 伙伴问候卡（CompanionCard）：LLM 问候失败/无料时的模板兜底句 + aria
+  'home.companion.fallback': '今天有什么想记的？',
+  'home.companion.aria': '伙伴问候，点按进入对话',
+  'home.companion.close': '关闭问候',
+  'home.companion.avatar': '记',
+
   // 底部导航第 5 tab（common 未收 nav.reminders，补在此屏片段）
   'nav.reminders': '提醒',
 

@@ -8,6 +8,9 @@ import { useT } from '@/app/i18n/useT'
 import type { Entry } from '@/domain/types'
 import { dateKey, groupLabel, todayKeyFrom, topDateLabel, windowGroups } from './helpers'
 import { HomeHeader } from './HomeHeader'
+import { CompanionCard } from './CompanionCard'
+import { dismissGreeting, maybeGreeting } from '@/app/proactive'
+import { di } from '@/app/di'
 import { JustSavedToast, OfflineBanner, PullIndicator } from './Banners'
 import { TimelineCard } from './TimelineCard'
 import { usePullToRefresh } from './usePullToRefresh'
@@ -46,6 +49,39 @@ export default function Home() {
     const id = window.setTimeout(() => clearJustSaved(), 3500)
     return () => window.clearTimeout(id)
   }, [justSaved, clearJustSaved])
+
+  // P-D 主动触达（2026-10-03 spec §3）：开屏问候，唯一触发点 = home mount。
+  // fire-and-forget——频控/当日缓存/dismiss/模板兜底全在 maybeGreeting 内（src/app/proactive.ts）；
+  // 返 null（频控中/当日已 dismiss）不渲染卡。ref 守卫挡 StrictMode 双跑（双跑会重复调 LLM）。
+  const [greeting, setGreeting] = useState<string | null>(null)
+  const greetedRef = useRef(false)
+  useEffect(() => {
+    if (greetedRef.current) return
+    greetedRef.current = true
+    let alive = true
+    void maybeGreeting({
+      now: new Date(),
+      listEntries: () => di.storage.listEntries(),
+      listMemories: () => di.storage.listMemories(),
+      listReminders: () => di.storage.listReminders(),
+      getConversation: () => di.storage.getConversation('1'), // MVP 单会话固定 id=1
+      greet: (ctx) => di.llm.proactiveGreeting(ctx),
+      fallbackText: () => t('home.companion.fallback'),
+    })
+      .then((r) => {
+        if (alive && r) setGreeting(r.text)
+      })
+      .catch(() => {}) // maybeGreeting 内部已兜底，这里只防意外 rejection
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 mount 触发一次（spec §3 唯一触发点）
+  }, [])
+
+  const handleDismissGreeting = useCallback(() => {
+    dismissGreeting(new Date()) // 当日不再出现（aiji.pd.dismissedDate=今天）
+    setGreeting(null)
+  }, [])
 
   // P-A 性能（2026-10-03）：排序/分组/索引 useMemo——此前每次 render 全量重算。
   const sorted = useMemo(
@@ -106,6 +142,13 @@ export default function Home() {
       </motion.div>
 
       <HomeHeader topDateLabel={topDateLabel(todayKey)} todayCount={todayCount} />
+
+      {/* P-D 伙伴问候卡：问候语区之下、横幅之上（spec §4）。点卡片跳 /chat；× 当日 dismiss。 */}
+      {greeting && (
+        <div className="mt-3">
+          <CompanionCard text={greeting} onOpenChat={() => navigate('/chat')} onDismiss={handleDismissGreeting} />
+        </div>
+      )}
 
       {hasTop && (
         <div className="mt-3 flex flex-col gap-3">

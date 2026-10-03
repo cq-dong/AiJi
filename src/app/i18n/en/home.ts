@@ -32,6 +32,12 @@ export const home = {
   'home.ptr.pull': 'Pull to refresh',
   'home.ptr.release': 'Release to refresh',
 
+  // P-D proactive companion card (CompanionCard): template fallback when LLM greeting fails + aria
+  'home.companion.fallback': 'Anything on your mind to jot down?',
+  'home.companion.aria': 'Companion greeting, tap to open chat',
+  'home.companion.close': 'Dismiss greeting',
+  'home.companion.avatar': 'Ji',
+
   // 5th nav tab (common has no nav.reminders)
   'nav.reminders': 'Reminders',
 
