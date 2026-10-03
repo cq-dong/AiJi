@@ -1,5 +1,5 @@
 import type { LlmPort, ChatStreamEvent } from '@/ports'
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Entry, EntryAi, Facets, MediaType, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Entry, EntryAi, Facets, MediaType, MemoryVerdict, Tag } from '@/domain/types'
 import { di } from '@/app/di'
 import { getCurrentLang } from '@/app/currentLang'
 import { compressImage, extractFrame, pickFrameTimes } from '@/adapters/visionMedia'
@@ -217,9 +217,11 @@ function isDeepSeek(url: string, model: string): boolean {
 // AI 记忆注入（2026-07-22 §3）：拉取当前 owner 的 enabled 记忆，按 updatedAt 倒序取前 20 条
 // content 文本数组（listMemories 已按 updatedAt 倒序）。空库/全停用 → 空数组（prompt 不注入，
 // 与无记忆时逐字节一致）。builtinLlm 复用此 helper，双路径注入一致。
+// 归档过滤（2026-10-03 P-C §4）：archivedAt 非空 = 过期自动归档，不进 prompt——
+// classify/answerChat（含流式）记忆注入都走此 helper，单点过滤全覆盖。
 export async function loadEnabledMemoryContents(): Promise<string[]> {
   const all = await di.storage.listMemories()
-  return all.filter((m) => m.enabled).slice(0, 20).map((m) => m.content)
+  return all.filter((m) => m.enabled && !m.archivedAt).slice(0, 20).map((m) => m.content)
 }
 
 function asStringArray(v: unknown): string[] | undefined {
@@ -871,6 +873,85 @@ export function parseMemoryReply(raw: string): string | null {
   return unquoted
 }
 
+// 记忆冲突裁决 prompt（2026-10-03 P-C §3）：向量初筛命中 ≤3 条相似旧记忆后，让 LLM 判
+// 新记忆与旧记忆的关系，输出四选一 JSON：add（无关新事实）/ replace{oldId}（同一事实的
+// 新值，如搬家换工作）/ merge{oldId,merged}（同主题互补，输出合并后单条原文）/ skip{oldId}
+//（新信息已被覆盖）。similar 带 id 渲染，oldId 必须原样取自 given id。只输出 JSON、禁围栏。
+// builtinLlm 复用此 helper（双路径 prompt 一致，照 buildConversationSummaryPrompt 模式）。
+export function buildMemoryAdjudicationPrompt(
+  newMemory: string,
+  similar: { id: string; content: string }[],
+): ChatMessage[] {
+  const en = getCurrentLang() === 'en'
+  const system = en
+    ? `You are the memory adjudicator for "AiJi" (AI 记). Given one newly extracted memory and a few similar existing memories (with ids), judge the relationship between the new memory and the existing ones, and output ONE of four JSON actions.
+
+Rules:
+1. add — the new memory is unrelated to all existing memories (brand-new fact): {"action":"add"}
+2. replace — the new memory is the NEW VALUE of the same fact recorded by an existing memory (e.g. moved to another city, changed jobs, changed a preference): {"action":"replace","oldId":"<existing memory id>"}
+3. merge — the new memory and an existing memory are on the same topic with complementary information that should be combined into one: {"action":"merge","oldId":"<existing memory id>","merged":"<the merged single memory text>"}
+4. skip — the new memory's information is already covered by an existing memory, nothing to add: {"action":"skip","oldId":"<existing memory id>"}
+5. oldId MUST be copied verbatim from the existing memory ids given below — never fabricate one.
+6. Output JSON only — no markdown fences, no explanation.
+
+IMPORTANT: The "merged" field (and all natural-language output) MUST be in English.`
+    : `你是「AiJi」(AI 记) 的记忆裁决器。给定一条新提取的记忆和若干条相似的已有记忆（带 id），判断新记忆与已有记忆的关系，输出四选一 JSON。
+
+铁律：
+1. add——新记忆与所有已有记忆无关，是全新信息：{"action":"add"}
+2. replace——新记忆是某条已有记忆所记同一事实的新值（如搬家、换工作、改了偏好）：{"action":"replace","oldId":"<已有记忆 id>"}
+3. merge——新记忆与某条已有记忆同主题、信息互补，应合并成一条：{"action":"merge","oldId":"<已有记忆 id>","merged":"<合并后的单条记忆原文>"}
+4. skip——新记忆的信息已被某条已有记忆覆盖，无需新增：{"action":"skip","oldId":"<已有记忆 id>"}
+5. oldId 必须从下方给出的已有记忆 id 中原样选取，绝不臆造。
+6. 只输出 JSON，不要 markdown 围栏、不要解释。
+
+重要：merged 字段（及所有自然语言输出）用简体中文。`
+  const lines = similar.map((s) => `- id=${s.id} 内容="${s.content}"`).join('\n')
+  const user = en
+    ? `New memory: ${newMemory}\nSimilar existing memories:\n${lines}\n\nOutput JSON.`
+    : `新记忆：${newMemory}\n相似已有记忆：\n${lines}\n\n输出 JSON。`
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ]
+}
+
+// 解析 adjudicateMemory 响应（白名单，照 parseIntentJson 模式）：
+// - JSON 坏 / 非对象 → 抛错（调用方 store 兜底默认 ADD——宁可多存不丢信息）。
+// - 非法 action、replace/merge 缺 oldId、merge 缺 merged（或空白）、**任何给出的 oldId
+//   不在 similar id 集** → 统一降级 { action: 'add' }（oldId 校验放解析层，调用方零负担）。
+// - skip 的 oldId 可选；给了就必须合法。容忍 markdown 围栏。
+export function parseAdjudicationJson(raw: string, validOldIds: Set<string>): MemoryVerdict {
+  let s = raw.trim()
+  const fence = s.match(/```(?:json)?\s*([\s\S]*?)```/i)
+  if (fence) s = fence[1].trim()
+  const start = s.indexOf('{')
+  const end = s.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) throw new Error('LLM 未返回 JSON')
+  const parsed = JSON.parse(s.slice(start, end + 1))
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('LLM 未返回 JSON 对象')
+  }
+  const p = parsed as Record<string, unknown>
+  const ADD: MemoryVerdict = { action: 'add' }
+  const validOldId = (v: unknown): v is string => typeof v === 'string' && validOldIds.has(v)
+  switch (p.action) {
+    case 'add':
+      return ADD
+    case 'replace':
+      return validOldId(p.oldId) ? { action: 'replace', oldId: p.oldId } : ADD
+    case 'merge': {
+      const merged = typeof p.merged === 'string' && p.merged.trim() ? p.merged.trim() : undefined
+      return validOldId(p.oldId) && merged ? { action: 'merge', oldId: p.oldId, merged } : ADD
+    }
+    case 'skip':
+      if (p.oldId === undefined || p.oldId === null) return { action: 'skip' }
+      return validOldId(p.oldId) ? { action: 'skip', oldId: p.oldId } : ADD
+    default:
+      return ADD
+  }
+}
+
 // D29: 清洗 answer 正文里的内联引用「（见 <id>）」。LLM 常臆造短别名（如 e3）或错配 id，
 // UI 拿非法 id 找不到条目 → 误显「已删除」（实未删）。validIds 外的引用段整段去掉（含前导
 // 空白/标点），合法 id 保留交 UI 渲染。匹配全角括号（见…）与半角括号 (见…) 两种；
@@ -1340,9 +1421,34 @@ export const openAiCompatLlm: LlmPort = {
     if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
     return raw.trim()
   },
-  // P-C 契约桩（2026-10-03）：typecheck 过契约 commit，A 路替换真实实现。
-  async adjudicateMemory() {
-    throw new Error('P-C adjudicateMemory 未实现（契约桩）')
+  // 记忆冲突裁决（2026-10-03 P-C §3）：chat completions 通道照 extractMemory 模式，
+  // max_tokens 200 / temperature 0。解析白名单 + oldId ∈ similar 校验在 parseAdjudicationJson
+  // 内完成（非法统一降级 add）；抛错 = 裁决失败，调用方 store 兜底默认 ADD。
+  async adjudicateMemory(newMemory, similar) {
+    const settings = await di.storage.getSettings()
+    const apiKey = await di.secrets.get(SECRET_KEY)
+    const url = settings.llmUrl
+    const model = settings.llmModel || 'deepseek-v4-flash'
+    if (!apiKey || !url) throw new Error('LLM BYOK 未配置（url/key 缺失）')
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: buildMemoryAdjudicationPrompt(newMemory, similar),
+        max_tokens: 200,
+        temperature: 0,
+        ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}),
+      }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      throw new Error(`LLM HTTP ${res.status}: ${t.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    const raw = data?.choices?.[0]?.message?.content
+    if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
+    return parseAdjudicationJson(raw, new Set(similar.map((s) => s.id)))
   },
   async ping(opts?: { url?: string; model?: string; key?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
     const settings = await di.storage.getSettings()

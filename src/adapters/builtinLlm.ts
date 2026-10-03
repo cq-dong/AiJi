@@ -24,6 +24,7 @@ import {
   buildAnswerPrompt, parseAnswerJson, sanitizeInlineCites,
   buildExtractMemoryPrompt, parseMemoryReply,
   buildConversationSummaryPrompt,
+  buildMemoryAdjudicationPrompt, parseAdjudicationJson,
   collectEntryImages, inferMediaType, loadEnabledMemoryContents,
   type VisionTextPart, type VisionImagePart,
 } from '@/adapters/openAiCompatLlm'
@@ -341,9 +342,14 @@ export const builtinLlm: LlmPort = {
     return raw.trim()
   },
 
-  // P-C 契约桩（2026-10-03）：typecheck 过契约 commit，A 路替换真实实现。
-  async adjudicateMemory() {
-    throw new Error('P-C adjudicateMemory 未实现（契约桩）')
+  // 记忆冲突裁决（2026-10-03 P-C §3）：prompt/解析与 BYOK 同源（buildMemoryAdjudicationPrompt
+  // + parseAdjudicationJson），走 /api/llm/chat + consume('llm', 1)。抛错由调用方兜底默认 ADD。
+  async adjudicateMemory(newMemory, similar) {
+    assertNetwork()
+    const messages = buildMemoryAdjudicationPrompt(newMemory, similar)
+    const raw = await chat(messages)
+    useQuotaStore.getState().consume('llm', 1)
+    return parseAdjudicationJson(raw, new Set(similar.map((s) => s.id)))
   },
 
   // ping 签名必须接受可选 opts（LlmPort.ping(opts?)），即使 builtin 忽略 opts。
