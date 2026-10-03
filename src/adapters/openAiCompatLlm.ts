@@ -1,4 +1,4 @@
-import type { LlmPort, ChatStreamEvent } from '@/ports'
+import type { LlmPort, ChatStreamEvent, ProactiveGreetingContext } from '@/ports'
 import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Entry, EntryAi, Facets, MediaType, MemoryVerdict, Tag } from '@/domain/types'
 import { di } from '@/app/di'
 import { getCurrentLang } from '@/app/currentLang'
@@ -952,6 +952,94 @@ export function parseAdjudicationJson(raw: string, validOldIds: Set<string>): Me
   }
 }
 
+// P-D 主动触达 prompt（2026-10-03 §2）：开屏问候——以伙伴人格写一句主动问候（≤40 字，
+// 最多一个问题）。有可承接的具体线索（openLoops 原文/rollingSummary/到期提醒/多天没记）
+// 就承接，没有输出字面 NULL（调用方走模板兜底卡）；不编造 context 里没有的事。
+// user message 渲染 context 各字段：daypart 中文时段、计数、openLoops 列表、rollingSummary
+// （缺席则该行省略）、dueReminderCount。数据注入（openLoops/rollingSummary 原文）不翻译。
+// builtinLlm 复用此 helper（双路径 prompt 一致，照 buildConversationSummaryPrompt 模式）。
+const DAYPART_ZH: Record<ProactiveGreetingContext['daypart'], string> = {
+  morning: '早上',
+  afternoon: '下午',
+  evening: '晚上',
+  night: '深夜',
+}
+const DAYPART_EN: Record<ProactiveGreetingContext['daypart'], string> = {
+  morning: 'morning',
+  afternoon: 'afternoon',
+  evening: 'evening',
+  night: 'late night',
+}
+export function buildProactiveGreetingPrompt(context: ProactiveGreetingContext): ChatMessage[] {
+  const en = getCurrentLang() === 'en'
+  const system = en
+    ? `You are the user's AI companion inside "AiJi" (AI 记). The user just opened the app — say one proactive greeting as a friend who knows them.
+
+Rules:
+1. ONE sentence only, ≤40 characters, warm and natural, like greeting someone you know well — never stiff or generic.
+2. Only follow up when there is a concrete thread to pick up: an open loop (from the user's memories), the previous conversation summary, a reminder due today, or several days without any entry. If one is relevant, pick it up naturally (e.g. "Three days quiet — how did that plan you mentioned turn out?").
+3. When there is NO concrete thread to follow up on, output NULL (three uppercase letters) — do not force a generic greeting.
+4. NEVER invent anything not present in the context below (names/events/plans/numbers).
+5. At most one question — no question-mark barrage; zero questions is also fine.
+6. Output ONLY the greeting text or NULL — no JSON, no quotes, no explanation.
+
+IMPORTANT: Write ALL natural-language output in English.`
+    : `你是「AiJi」(AI 记) 里陪伴用户的 AI 伙伴。用户刚打开 App，你要以朋友身份主动开口说一句问候。
+
+铁律：
+1. 只说一句，≤40 字，自然有温度，像熟人打招呼，不刻板不套话。
+2. 有具体可承接的线索才承接：进行中事项（用户记忆原文）、上次聊天摘要、今天到期的提醒、多天没记。线索相关就自然承接（如「三天没记了，上次说的方案后来怎么样了？」）。
+3. 没有任何具体线索可承接时，输出 NULL（三个大写字母）——不要硬凑泛泛问候。
+4. 绝不编造下方 context 里没有的事（人名/事件/计划/数字）。
+5. 最多问一个问题，不要问号轰炸；也可以不问。
+6. 只输出问候原文或 NULL——不要 JSON、不要引号、不要解释。
+
+重要：所有自然语言输出用简体中文。`
+  const daypart = en ? DAYPART_EN[context.daypart] : DAYPART_ZH[context.daypart]
+  const since = context.daysSinceLastEntry === null
+    ? (en ? 'never recorded' : '从未记过')
+    : (en ? `${context.daysSinceLastEntry} day(s)` : `${context.daysSinceLastEntry} 天`)
+  const loops = context.openLoops.length > 0
+    ? context.openLoops.map((c) => `- ${c}`).join('\n')
+    : (en ? '(none)' : '（无）')
+  const summaryLine = context.rollingSummary
+    ? (en ? `Previous conversation summary: ${context.rollingSummary}\n` : `上次聊天摘要：${context.rollingSummary}\n`)
+    : ''
+  const user = en
+    ? `Daypart: ${daypart}
+Entries in last 7 days: ${context.recentEntryCount7d}
+Since last entry: ${since}
+Open loops (the user's own memory texts — judge whether any is worth following up):
+${loops}
+${summaryLine}Reminders due today or overdue: ${context.dueReminderCount}
+
+Output: one greeting sentence or NULL.`
+    : `当前时段：${daypart}
+最近 7 天条目数：${context.recentEntryCount7d}
+距上次记录：${since}
+进行中事项（用户记忆原文，供你判断是否有可承接的线索）：
+${loops}
+${summaryLine}今天到期或已逾期的提醒：${context.dueReminderCount} 条
+
+输出：一句问候或 NULL。`
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ]
+}
+
+// 解析 proactiveGreeting 响应：trim 后空 / NULL（大小写不敏感，同 parseMemoryReply 先例）
+// → null（无特别可说，调用方走模板兜底卡）；否则返问候原文。容忍 LLM 偶发首尾引号包裹。
+export function parseProactiveGreetingReply(raw: string): string | null {
+  const s = raw.trim()
+  if (!s) return null
+  if (/^null$/i.test(s)) return null
+  const unquoted = s.replace(/^["'“”‘’「」『』]+|["'“”‘’「」『』]+$/g, '').trim()
+  if (!unquoted) return null
+  if (/^null$/i.test(unquoted)) return null
+  return unquoted
+}
+
 // D29: 清洗 answer 正文里的内联引用「（见 <id>）」。LLM 常臆造短别名（如 e3）或错配 id，
 // UI 拿非法 id 找不到条目 → 误显「已删除」（实未删）。validIds 外的引用段整段去掉（含前导
 // 空白/标点），合法 id 保留交 UI 渲染。匹配全角括号（见…）与半角括号 (见…) 两种；
@@ -1451,8 +1539,35 @@ export const openAiCompatLlm: LlmPort = {
     return parseAdjudicationJson(raw, new Set(similar.map((s) => s.id)))
   },
   // P-D 契约桩（2026-10-03）：typecheck 过契约 commit，A 路替换真实实现。
-  async proactiveGreeting() {
-    throw new Error('P-D proactiveGreeting 未实现（契约桩）')
+  // P-D 主动触达（2026-10-03 §2）：BYOK chat completions 通道照 extractMemory 模式，
+  // max_tokens 80 / temperature 0.7（问候比事实任务要一点温度）。响应 NULL/空 → null
+  //（调用方走模板兜底卡）；HTTP 非 2xx / 缺 content → 抛错（调用方同样兜底模板 + warn）。
+  // 触发/频控/当日缓存全在调用方（home mount、6h、date+daypart），端口无状态。
+  async proactiveGreeting(context) {
+    const settings = await di.storage.getSettings()
+    const apiKey = await di.secrets.get(SECRET_KEY)
+    const url = settings.llmUrl
+    const model = settings.llmModel || 'deepseek-v4-flash'
+    if (!apiKey || !url) throw new Error('LLM BYOK 未配置（url/key 缺失）')
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: buildProactiveGreetingPrompt(context),
+        max_tokens: 80,
+        temperature: 0.7,
+        ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}),
+      }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      throw new Error(`LLM HTTP ${res.status}: ${t.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    const raw = data?.choices?.[0]?.message?.content
+    if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
+    return parseProactiveGreetingReply(raw)
   },
   async ping(opts?: { url?: string; model?: string; key?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
     const settings = await di.storage.getSettings()

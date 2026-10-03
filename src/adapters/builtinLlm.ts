@@ -25,6 +25,7 @@ import {
   buildExtractMemoryPrompt, parseMemoryReply,
   buildConversationSummaryPrompt,
   buildMemoryAdjudicationPrompt, parseAdjudicationJson,
+  buildProactiveGreetingPrompt, parseProactiveGreetingReply,
   collectEntryImages, inferMediaType, loadEnabledMemoryContents,
   type VisionTextPart, type VisionImagePart,
 } from '@/adapters/openAiCompatLlm'
@@ -353,8 +354,14 @@ export const builtinLlm: LlmPort = {
   },
 
   // P-D 契约桩（2026-10-03）：typecheck 过契约 commit，A 路替换真实实现。
-  async proactiveGreeting() {
-    throw new Error('P-D proactiveGreeting 未实现（契约桩）')
+  // P-D 主动触达（2026-10-03 §2）：prompt/NULL 解析与 BYOK 同源（buildProactiveGreetingPrompt
+  // + parseProactiveGreetingReply），走 /api/llm/chat + consume('llm', 1)。
+  // null = 无特别可说 → 调用方走模板兜底卡；抛错由调用方同样兜底模板 + console.warn。
+  async proactiveGreeting(context) {
+    assertNetwork()
+    const raw = await chat(buildProactiveGreetingPrompt(context))
+    useQuotaStore.getState().consume('llm', 1)
+    return parseProactiveGreetingReply(raw)
   },
 
   // ping 签名必须接受可选 opts（LlmPort.ping(opts?)），即使 builtin 忽略 opts。

@@ -160,6 +160,8 @@ const storeMocks = vi.hoisted(() => ({
 
 vi.mock('@/app/di', () => ({
   di: {
+    // P-C：saveMemory 读 di.llm.embed 做相似初筛——此 mock 无 embed（缺席）→ 走 ADD 旧路径。
+    llm: {},
     storage: {
       listMemories: () => storeMocks.listMemories(),
       saveMemory: (m: unknown) => storeMocks.saveMemory(m),
