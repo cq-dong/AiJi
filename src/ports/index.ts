@@ -107,6 +107,17 @@ export interface SttPort {
 // 提取可见文本渲染）。BYOK/builtin 两条链路共用此契约。
 export type ChatStreamEvent = { type: 'reasoning' | 'content'; delta: string }
 
+// P-D 主动触达 context（2026-10-03）：store 按可得性拼装，**不瞎编**——openLoops 是
+// enabled 未归档记忆原文（≤5 截断），LLM 自判相关性；daysSinceLastEntry null = 从未记过。
+export interface ProactiveGreetingContext {
+  daypart: 'morning' | 'afternoon' | 'evening' | 'night'
+  recentEntryCount7d: number
+  daysSinceLastEntry: number | null
+  openLoops: string[]
+  rollingSummary?: string
+  dueReminderCount: number
+}
+
 export interface LlmPort {
   classify(entryId: string): Promise<EntryAi>
   // range = the period key the store wants this digest scoped to ('2026-07-16' / '2026-W28' / '2026-07').
@@ -172,6 +183,12 @@ export interface LlmPort {
     newMemory: string,
     similar: { id: string; content: string }[],
   ): Promise<MemoryVerdict>
+  // P-D 主动触达（2026-10-03，必需方法）：开屏问候——以伙伴人格写一句主动问候
+  // （≤40 字，最多一个问题），无可承接的具体线索返 null（调用方走模板兜底卡）。
+  // 不编造 context 里没有的事。max_tokens ~80 / temperature 0.7。抛错 = 调用失败，
+  // 调用方同样兜底模板卡 + console.warn。触发/频控/当日缓存全在调用方（home mount、
+  // 6h、date+daypart），端口无状态。
+  proactiveGreeting(context: ProactiveGreetingContext): Promise<string | null>
   // Connectivity probe：tiniest chat ping（max_tokens:1）。设置页连通性测试用。
   // opts 传入时直接用表单值（url/model/key），不读 Dexie/secrets——测未保存的新配置；
   // 省略时回落 settings + secrets（测已落库配置）。key 为空串视为省略（回落已存 key）。

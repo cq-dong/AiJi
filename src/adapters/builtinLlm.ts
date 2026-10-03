@@ -352,6 +352,11 @@ export const builtinLlm: LlmPort = {
     return parseAdjudicationJson(raw, new Set(similar.map((s) => s.id)))
   },
 
+  // P-D 契约桩（2026-10-03）：typecheck 过契约 commit，A 路替换真实实现。
+  async proactiveGreeting() {
+    throw new Error('P-D proactiveGreeting 未实现（契约桩）')
+  },
+
   // ping 签名必须接受可选 opts（LlmPort.ping(opts?)），即使 builtin 忽略 opts。
   async ping(_opts?: { url?: string; model?: string; key?: string }) {
     try {

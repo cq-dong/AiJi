@@ -1450,6 +1450,10 @@ export const openAiCompatLlm: LlmPort = {
     if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
     return parseAdjudicationJson(raw, new Set(similar.map((s) => s.id)))
   },
+  // P-D 契约桩（2026-10-03）：typecheck 过契约 commit，A 路替换真实实现。
+  async proactiveGreeting() {
+    throw new Error('P-D proactiveGreeting 未实现（契约桩）')
+  },
   async ping(opts?: { url?: string; model?: string; key?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
     const settings = await di.storage.getSettings()
     // opts：设置页连通性测试传表单未保存值（测新填配置）；省略时回落已落库 settings + secrets。

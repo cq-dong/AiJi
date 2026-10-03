@@ -90,6 +90,8 @@ const llmProxy: LlmPort = {
     k === 'builtin' ? builtinLlm.summarizeConversation(prior, chunk) : openAiCompatLlm.summarizeConversation(prior, chunk)),
   adjudicateMemory: (n, sim) => readKeySource().then((k) =>
     k === 'builtin' ? builtinLlm.adjudicateMemory(n, sim) : openAiCompatLlm.adjudicateMemory(n, sim)),
+  proactiveGreeting: (ctx) => readKeySource().then((k) =>
+    k === 'builtin' ? builtinLlm.proactiveGreeting(ctx) : openAiCompatLlm.proactiveGreeting(ctx)),
   ping: (o) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.ping(o) : openAiCompatLlm.ping(o))),
 }
 
