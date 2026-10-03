@@ -7,6 +7,7 @@ export const home = {
   'home.empty.title': '还没有记下任何东西',
   'home.empty.subtitle': '点下方的麦克风，记一笔',
   'home.empty.action': '记一笔',
+  'home.loadMore': '加载更多',
 
   // 首页头部（「今天 X 条」的量词，数字单独 span 加粗）
   'home.header.unit': '条',

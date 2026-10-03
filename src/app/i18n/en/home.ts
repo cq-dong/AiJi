@@ -7,6 +7,7 @@ export const home = {
   'home.empty.title': 'Nothing here yet',
   'home.empty.subtitle': 'Tap the mic below to jot something',
   'home.empty.action': 'Jot',
+  'home.loadMore': 'Load more',
 
   // home header (the count stays in its own styled span)
   'home.header.unit': 'items',

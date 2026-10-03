@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { MapPin } from 'lucide-react'
 import type { EntryPart, GeoPoint } from '@/domain/types'
 import { Card } from '@/ui/components'
-import { di } from '@/app/di'
+import { acquireMediaUrl, releaseMediaUrl } from '@/app/mediaCache'
 import { t } from '@/app/i18n'
 import { useT } from '@/app/i18n/useT'
 import { formatDateTime, formatDuration, partTypeLabel } from './helpers'
@@ -159,18 +159,16 @@ export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durat
 
   useEffect(() => {
     let cancelled = false
-    let createdUrl: string | null = null
     void (async () => {
-      const blob = await di.storage.getMedia(mediaRef)
-      if (cancelled) return
-      if (!blob) { setStatus('none'); return }
-      createdUrl = URL.createObjectURL(blob)
-      setUrl(createdUrl)
+      const r = await acquireMediaUrl(mediaRef)
+      if (cancelled) { releaseMediaUrl(mediaRef); return }
+      if (!r) { setStatus('none'); return }
+      setUrl(r.url)
       setStatus('ready')
     })()
     return () => {
       cancelled = true
-      if (createdUrl) URL.revokeObjectURL(createdUrl)
+      releaseMediaUrl(mediaRef)
     }
   }, [mediaRef])
 
@@ -226,18 +224,16 @@ export function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durati
 
   useEffect(() => {
     let cancelled = false
-    let createdUrl: string | null = null
     void (async () => {
-      const blob = await di.storage.getMedia(mediaRef)
-      if (cancelled) return
-      if (!blob) { setStatus('none'); return }
-      createdUrl = URL.createObjectURL(blob)
-      setUrl(createdUrl)
+      const r = await acquireMediaUrl(mediaRef)
+      if (cancelled) { releaseMediaUrl(mediaRef); return }
+      if (!r) { setStatus('none'); return }
+      setUrl(r.url)
       setStatus('ready')
     })()
     return () => {
       cancelled = true
-      if (createdUrl) URL.revokeObjectURL(createdUrl)
+      releaseMediaUrl(mediaRef)
     }
   }, [mediaRef])
 

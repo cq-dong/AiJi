@@ -110,3 +110,26 @@ export function firstThumbRef(parts: EntryPart[]): string | undefined {
   }
   return undefined
 }
+
+// P-A 性能（2026-10-03）：窗口化分组。按组顺序累计渲染到 limit 截断（组内允许截断——
+// 该组剩余条目下次加载再出）。纯函数，jsdom 可测。
+export interface EntryGroup<E> {
+  key: string
+  label: string
+  entries: E[]
+}
+
+export function windowGroups<E>(
+  groups: ReadonlyArray<EntryGroup<E>>,
+  limit: number,
+): { visible: EntryGroup<E>[]; rendered: number } {
+  const visible: EntryGroup<E>[] = []
+  let rendered = 0
+  for (const g of groups) {
+    if (rendered >= limit) break
+    const slice = g.entries.slice(0, limit - rendered)
+    visible.push({ ...g, entries: slice })
+    rendered += slice.length
+  }
+  return { visible, rendered }
+}

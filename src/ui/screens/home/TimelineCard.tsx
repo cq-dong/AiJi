@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import type { Entry, EntryAi } from '@/domain/types'
 import { Chip, cn } from '@/ui/components'
-import { di } from '@/app/di'
+import { acquireMediaUrl, releaseMediaUrl } from '@/app/mediaCache'
 import { useT } from '@/app/i18n/useT'
 import type { I18nKey } from '@/app/i18n'
 import { firstText, firstThumbRef, modalityLabel, timeLabel } from './helpers'
@@ -60,17 +60,17 @@ export function MediaThumb({ mediaRef }: { mediaRef: string }) {
   const [media, setMedia] = useState<{ url: string; isVideo: boolean } | null>(null)
   useEffect(() => {
     let cancelled = false
-    let created: string | null = null
     void (async () => {
-      const blob = await di.storage.getMedia(mediaRef)
-      if (cancelled) return
-      if (!blob) return
-      created = URL.createObjectURL(blob)
-      setMedia({ url: created, isVideo: blob.type.startsWith('video/') })
+      const r = await acquireMediaUrl(mediaRef)
+      if (cancelled) {
+        releaseMediaUrl(mediaRef)
+        return
+      }
+      if (r) setMedia({ url: r.url, isVideo: r.mime.startsWith('video/') })
     })()
     return () => {
       cancelled = true
-      if (created) URL.revokeObjectURL(created)
+      releaseMediaUrl(mediaRef)
     }
   }, [mediaRef])
   if (!media) {

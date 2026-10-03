@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion, useTransform } from 'framer-motion'
 import { Mic, Trash2 } from 'lucide-react'
@@ -6,11 +6,14 @@ import { Button, EmptyState, SwipeableCard } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import type { Entry } from '@/domain/types'
-import { dateKey, groupLabel, todayKeyFrom, topDateLabel } from './helpers'
+import { dateKey, groupLabel, todayKeyFrom, topDateLabel, windowGroups } from './helpers'
 import { HomeHeader } from './HomeHeader'
 import { JustSavedToast, OfflineBanner, PullIndicator } from './Banners'
 import { TimelineCard } from './TimelineCard'
 import { usePullToRefresh } from './usePullToRefresh'
+
+// 增量渲染页大小：首屏 30 条足够填满视口数倍，之后每次滚动到底再 +30。
+const PAGE = 30
 
 export default function Home() {
   const navigate = useNavigate()
@@ -44,9 +47,13 @@ export default function Home() {
     return () => window.clearTimeout(id)
   }, [justSaved, clearJustSaved])
 
-  const sorted = [...entries].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  // P-A 性能（2026-10-03）：排序/分组/索引 useMemo——此前每次 render 全量重算。
+  const sorted = useMemo(
+    () => [...entries].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [entries],
+  )
 
-  const groups = (() => {
+  const groups = useMemo(() => {
     const map = new Map<string, Entry[]>()
     for (const e of sorted) {
       const k = dateKey(e.createdAt)
@@ -57,10 +64,29 @@ export default function Home() {
     return [...map.keys()]
       .sort((a, b) => b.localeCompare(a))
       .map((k) => ({ key: k, label: groupLabel(k, todayKey), entries: map.get(k)! }))
-  })()
+  }, [sorted, todayKey])
 
-  const catMap = new Map(categories.map((c) => [c.slug, c]))
-  const aiMap = new Map(Object.entries(aiByEntry))
+  const catMap = useMemo(() => new Map(categories.map((c) => [c.slug, c])), [categories])
+  const aiMap = useMemo(() => new Map(Object.entries(aiByEntry)), [aiByEntry])
+
+  // P-A 性能（2026-10-03）：哨兵式增量渲染。首屏 PAGE 条，哨兵进视口再加载 PAGE 条；
+  // 无 IntersectionObserver 的环境（老 WebView / jsdom）回落「加载更多」按钮。
+  const [limit, setLimit] = useState(PAGE)
+  const { visible, rendered } = windowGroups(groups, limit)
+  const hasMore = rendered < sorted.length
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver(
+      (list) => {
+        if (list.some((x) => x.isIntersecting)) setLimit((l) => l + PAGE)
+      },
+      { rootMargin: '200px' },
+    )
+    io.observe(el)
+    return () => io.disconnect()
+  }, [hasMore])
 
   const banner = showOffline ? <OfflineBanner /> : showJustSaved ? <JustSavedToast /> : null
   const hasTop = banner !== null
@@ -105,7 +131,7 @@ export default function Home() {
           />
         ) : (
           <div className="flex flex-col gap-6">
-            {groups.map((g, gi) => (
+            {visible.map((g, gi) => (
               <section key={g.key}>
                 <h2 className="mb-2.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-t3">
                   {g.label}
@@ -148,6 +174,14 @@ export default function Home() {
             ))}
           </div>
         )}
+          {hasMore &&
+            (typeof IntersectionObserver === 'undefined' ? (
+              <Button variant="ghost" size="sm" className="mx-auto" onClick={() => setLimit((l) => l + PAGE)}>
+                {t('home.loadMore')}
+              </Button>
+            ) : (
+              <div ref={sentinelRef} className="h-1" aria-hidden="true" />
+            ))}
       </div>
     </div>
   )
