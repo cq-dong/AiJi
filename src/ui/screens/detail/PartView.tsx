@@ -158,17 +158,24 @@ export function AudioPlayer({ mediaRef, durationSec }: { mediaRef: string; durat
   const audioRef = useRef<HTMLAudioElement>(null)
 
   useEffect(() => {
+    // settled 协议（accept-pa F1，2026-10-03）：cleanup 仅在 acquire settle 后 release。
     let cancelled = false
+    let settled = false
     void (async () => {
-      const r = await acquireMediaUrl(mediaRef)
-      if (cancelled) { releaseMediaUrl(mediaRef); return }
-      if (!r) { setStatus('none'); return }
-      setUrl(r.url)
-      setStatus('ready')
+      try {
+        const r = await acquireMediaUrl(mediaRef)
+        settled = true
+        if (cancelled) { releaseMediaUrl(mediaRef); return }
+        if (!r) { setStatus('none'); return }
+        setUrl(r.url)
+        setStatus('ready')
+      } catch {
+        if (!cancelled) setStatus('none')
+      }
     })()
     return () => {
       cancelled = true
-      releaseMediaUrl(mediaRef)
+      if (settled) releaseMediaUrl(mediaRef)
     }
   }, [mediaRef])
 
@@ -223,17 +230,24 @@ export function VideoThumb({ mediaRef, durationSec }: { mediaRef: string; durati
   const [url, setUrl] = useState<string | null>(null)
 
   useEffect(() => {
+    // settled 协议（accept-pa F1，2026-10-03）：cleanup 仅在 acquire settle 后 release。
     let cancelled = false
+    let settled = false
     void (async () => {
-      const r = await acquireMediaUrl(mediaRef)
-      if (cancelled) { releaseMediaUrl(mediaRef); return }
-      if (!r) { setStatus('none'); return }
-      setUrl(r.url)
-      setStatus('ready')
+      try {
+        const r = await acquireMediaUrl(mediaRef)
+        settled = true
+        if (cancelled) { releaseMediaUrl(mediaRef); return }
+        if (!r) { setStatus('none'); return }
+        setUrl(r.url)
+        setStatus('ready')
+      } catch {
+        if (!cancelled) setStatus('none')
+      }
     })()
     return () => {
       cancelled = true
-      releaseMediaUrl(mediaRef)
+      if (settled) releaseMediaUrl(mediaRef)
     }
   }, [mediaRef])
 

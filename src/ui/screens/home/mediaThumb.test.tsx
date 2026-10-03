@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MediaThumb } from '@/ui/screens/home/TimelineCard'
 
@@ -22,10 +22,14 @@ async function renderThumb(mediaRef: string): Promise<{ container: HTMLDivElemen
   return { container, root }
 }
 
+let urlSeq = 0
+
 beforeEach(() => {
   document.body.innerHTML = ''
   getMediaFn.mockReset()
-  URL.createObjectURL = vi.fn(() => 'blob:mock-url')
+  urlSeq = 0
+  // 每次调用返回唯一 url——压力测试要靠 url 字符串区分被 revoke 的是谁。
+  URL.createObjectURL = vi.fn(() => `blob:mock-url-${++urlSeq}`)
   URL.revokeObjectURL = vi.fn()
 })
 
@@ -35,7 +39,7 @@ describe('home MediaThumb（视频缩略图修复）', () => {
     const { container } = await renderThumb('ref-v1')
     const video = container.querySelector('video')
     expect(video).not.toBeNull()
-    expect(video!.getAttribute('src')).toBe('blob:mock-url#t=0.1')
+    expect(video!.getAttribute('src')).toBe('blob:mock-url-1#t=0.1')
     expect(video!.getAttribute('preload')).toBe('metadata')
     expect((video as HTMLVideoElement).muted).toBe(true) // React 以 property 方式设 muted（非 attribute）
     expect(video!.hasAttribute('playsinline')).toBe(true)
@@ -47,7 +51,7 @@ describe('home MediaThumb（视频缩略图修复）', () => {
     const { container } = await renderThumb('ref-i1')
     const img = container.querySelector('img')
     expect(img).not.toBeNull()
-    expect(img!.getAttribute('src')).toBe('blob:mock-url')
+    expect(img!.getAttribute('src')).toBe('blob:mock-url-1')
     expect(container.querySelector('video')).toBeNull()
   })
 
@@ -57,5 +61,41 @@ describe('home MediaThumb（视频缩略图修复）', () => {
     expect(container.querySelector('img')).toBeNull()
     expect(container.querySelector('video')).toBeNull()
     expect(container.querySelector('div[aria-hidden="true"]')).not.toBeNull()
+  })
+
+  it('StrictMode 双效应下在屏缩略图 refs>0（accept-pa F1 回归）：淘汰压力下在屏 url 不被 revoke', async () => {
+    // F1 场景实锤：缓存命中时 refs++ 与 cleanup 可在 continuation 前交错，无 settled 守卫
+    // 会单次 acquire 双 release → 在屏媒体 refs=0 → LRU 压力下入屏 url 被 revoke（裂图）。
+    // 本测试复现该压力：StrictMode 挂载（双效应）后保持挂载，再填满 70 个零引用条目
+    // 逼出淘汰，断言在屏 url 存活。
+    const { acquireMediaUrl, releaseMediaUrl } = await import('@/app/mediaCache')
+    getMediaFn.mockResolvedValue(new Blob(['fake-img'], { type: 'image/png' }))
+    // 预热缓存（refs 归 0 的缓存条目）——F1  buggy 路径只在「缓存命中 + StrictMode」
+    // 交错下出现：命中时 refs++ 同步执行，随后 cleanup/continuation 交错释放。
+    await acquireMediaUrl('ref-sm')
+    releaseMediaUrl('ref-sm')
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <MediaThumb mediaRef="ref-sm" />
+        </StrictMode>,
+      )
+    })
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    const mountedUrl = img!.getAttribute('src')!
+    expect(getMediaFn).toHaveBeenCalledTimes(1)
+    // 逼淘汰：70 个一次性条目（acquire 后立即 release，refs=0）
+    for (let i = 0; i < 70; i++) {
+      await acquireMediaUrl(`ref-pressure-${i}`)
+      releaseMediaUrl(`ref-pressure-${i}`)
+    }
+    expect(URL.revokeObjectURL).not.toHaveBeenCalledWith(mountedUrl)
+    await act(async () => {
+      root.unmount()
+    })
   })
 })

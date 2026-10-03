@@ -65,9 +65,11 @@ export async function acquireMediaUrl(mediaRef: string): Promise<{ url: string; 
       }
     } else {
       // 并发去重：共享 in-flight Promise，结果由首个等待者落缓存。
+      // load() reject 时本分支 await 同步 reject 传播（finally 已清 inflight，下轮重试），
+      // 消费方须自行 catch（三处组件均已 catch 兜底）。
       await pending
       entry = cache.get(mediaRef)
-      if (!entry) return null // 防御：首个等待者的加载抛错（其 catch 已清 inflight）
+      if (!entry) return null // 纯防御：正常路径不可达（首等待者必落缓存或抛错）
     }
   }
   entry.refs++

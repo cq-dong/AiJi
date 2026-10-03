@@ -59,18 +59,27 @@ export function TimelineCard({ entry, ai, catLabel, catAccent, index = 99 }: Car
 export function MediaThumb({ mediaRef }: { mediaRef: string }) {
   const [media, setMedia] = useState<{ url: string; isVideo: boolean } | null>(null)
   useEffect(() => {
+    // settled 协议（accept-pa F1，2026-10-03）：cleanup 仅在 acquire settle 后 release——
+    // 缓存命中时 refs++ 与 cleanup 可在 continuation 前交错（dev StrictMode 双效应），
+    // 无 settled 守卫会单次 acquire 双 release，refs 欠计。
     let cancelled = false
+    let settled = false
     void (async () => {
-      const r = await acquireMediaUrl(mediaRef)
-      if (cancelled) {
-        releaseMediaUrl(mediaRef)
-        return
+      try {
+        const r = await acquireMediaUrl(mediaRef)
+        settled = true
+        if (cancelled) {
+          releaseMediaUrl(mediaRef)
+          return
+        }
+        if (r) setMedia({ url: r.url, isVideo: r.mime.startsWith('video/') })
+      } catch {
+        // getMedia 失败（IDB 异常）：保持灰块占位，不冒 unhandled rejection。
       }
-      if (r) setMedia({ url: r.url, isVideo: r.mime.startsWith('video/') })
     })()
     return () => {
       cancelled = true
-      releaseMediaUrl(mediaRef)
+      if (settled) releaseMediaUrl(mediaRef)
     }
   }, [mediaRef])
   if (!media) {
