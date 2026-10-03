@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { Entry } from '@/domain/types'
@@ -152,6 +152,34 @@ describe('home 屏问候卡挂载', () => {
     await renderHome()
     expect(container.querySelector('[aria-label="伙伴问候，点按进入对话"]')).toBeNull()
     expect(greetFn).not.toHaveBeenCalled()
+  })
+
+  it('StrictMode 双跑下问候卡仍渲染，且 LLM 只调一次（F-1 回归）', async () => {
+    greetFn.mockResolvedValue('早上好')
+    useUiStore.setState({
+      entries: [entryOf(0)],
+      aiByEntry: {},
+      categories: [],
+      online: true,
+      justSaved: null,
+    })
+    await act(async () => {
+      root.render(
+        <StrictMode>
+          <MemoryRouter initialEntries={['/']}>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/chat" element={<div>CHAT_SCREEN</div>} />
+            </Routes>
+          </MemoryRouter>
+        </StrictMode>,
+      )
+    })
+    // dev StrictMode 假卸载不得误杀 setGreeting（run1 promise resolve 时 cleanup 置 alive=false 的旧 bug）
+    expect(container.querySelector('[aria-label="伙伴问候，点按进入对话"]')).not.toBeNull()
+    expect(container.textContent).toContain('早上好')
+    // greetedRef 守卫：双跑不重复调 LLM
+    expect(greetFn).toHaveBeenCalledTimes(1)
   })
 
   it('点 × → 卡片消失 + 写当日 dismiss（重进不再出）', async () => {

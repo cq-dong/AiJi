@@ -53,12 +53,14 @@ export default function Home() {
   // P-D 主动触达（2026-10-03 spec §3）：开屏问候，唯一触发点 = home mount。
   // fire-and-forget——频控/当日缓存/dismiss/模板兜底全在 maybeGreeting 内（src/app/proactive.ts）；
   // 返 null（频控中/当日已 dismiss）不渲染卡。ref 守卫挡 StrictMode 双跑（双跑会重复调 LLM）。
+  // 注意：不做「卸载后置 alive=false」cleanup——StrictMode dev 双跑会把 run1 的 alive 置 false，
+  // promise resolve 时误杀 setGreeting（F-1：dev 下问候卡永不渲染）。React 18+ 对已卸载组件
+  // setState 是静默 no-op（警告已移除），真卸载无危害。
   const [greeting, setGreeting] = useState<string | null>(null)
   const greetedRef = useRef(false)
   useEffect(() => {
     if (greetedRef.current) return
     greetedRef.current = true
-    let alive = true
     void maybeGreeting({
       now: new Date(),
       listEntries: () => di.storage.listEntries(),
@@ -69,12 +71,9 @@ export default function Home() {
       fallbackText: () => t('home.companion.fallback'),
     })
       .then((r) => {
-        if (alive && r) setGreeting(r.text)
+        if (r) setGreeting(r.text)
       })
       .catch(() => {}) // maybeGreeting 内部已兜底，这里只防意外 rejection
-    return () => {
-      alive = false
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 mount 触发一次（spec §3 唯一触发点）
   }, [])
 
