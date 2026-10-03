@@ -64,13 +64,19 @@ export function mergeCites(
 }
 
 // 问句向量进程内 LRU(50)（spec §1：同问免调 embed）。进程内生命周期——刷新/杀进程即空，
-// 可接受（embed 单价极低）。key 归一化 trim+lowercase（同问不同大小写/首尾空格命中同槽）。
+// 可接受（embed 单价极低）。key = `${model}\n${问句归一化}`：问句归一化 trim+lowercase
+// （同问不同大小写/首尾空格命中同槽）；**模型名入键**（accept-pb 修 2）——换 embeddingModel
+// 后旧模型向量不得命中（维数/语义空间不同，跨模型比相似度是 garbage）。
 const QUERY_VECTOR_CACHE_CAP = 50
 const queryVectorMap = new Map<string, number[]>()
 
+function cacheKey(model: string, question: string): string {
+  return `${model}\n${question.trim().toLowerCase()}`
+}
+
 export const queryVectorCache = {
-  get(question: string): number[] | undefined {
-    const key = question.trim().toLowerCase()
+  get(model: string, question: string): number[] | undefined {
+    const key = cacheKey(model, question)
     const v = queryVectorMap.get(key)
     // LRU 刷新：命中删再 set，提到最新位。
     if (v !== undefined) {
@@ -79,8 +85,8 @@ export const queryVectorCache = {
     }
     return v
   },
-  set(question: string, vector: number[]): void {
-    const key = question.trim().toLowerCase()
+  set(model: string, question: string, vector: number[]): void {
+    const key = cacheKey(model, question)
     queryVectorMap.delete(key)
     queryVectorMap.set(key, vector)
     // 超帽逐最旧（Map 迭代序 = 插入序，第一个 key 即最久未用）。

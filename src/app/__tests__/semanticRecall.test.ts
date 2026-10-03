@@ -159,29 +159,37 @@ describe('mergeCites（关键词在前保序，语义追加去重，cap 12）', 
   })
 })
 
-describe('queryVectorCache（进程内 LRU 50）', () => {
+describe('queryVectorCache（进程内 LRU 50，键含模型名）', () => {
   beforeEach(() => queryVectorCache.clear())
 
   it('set 后 get 命中；key 归一化（trim+lowercase）', () => {
-    queryVectorCache.set(' 那家咖啡店 ', [1, 0])
-    expect(queryVectorCache.get('那家咖啡店')).toEqual([1, 0])
-    expect(queryVectorCache.get('那家咖啡店 '.trim().toLowerCase())).toEqual([1, 0])
-    queryVectorCache.set('Hello World', [0, 1])
-    expect(queryVectorCache.get('hello world')).toEqual([0, 1])
+    queryVectorCache.set('m1', ' 那家咖啡店 ', [1, 0])
+    expect(queryVectorCache.get('m1', '那家咖啡店')).toEqual([1, 0])
+    queryVectorCache.set('m1', 'Hello World', [0, 1])
+    expect(queryVectorCache.get('m1', 'hello world')).toEqual([0, 1])
   })
   it('未命中 → undefined', () => {
-    expect(queryVectorCache.get('没存过的问题')).toBeUndefined()
+    expect(queryVectorCache.get('m1', '没存过的问题')).toBeUndefined()
+  })
+  it('跨模型同问句不串（键含模型名——换模型后旧向量不得命中）', () => {
+    queryVectorCache.set('text-embedding-3-small', '那家咖啡店', [1, 0])
+    expect(queryVectorCache.get('text-embedding-3-large', '那家咖啡店')).toBeUndefined()
+    expect(queryVectorCache.get('text-embedding-3-small', '那家咖啡店')).toEqual([1, 0])
+    // 两模型各占独立槽位
+    queryVectorCache.set('text-embedding-3-large', '那家咖啡店', [0, 1])
+    expect(queryVectorCache.get('text-embedding-3-small', '那家咖啡店')).toEqual([1, 0])
+    expect(queryVectorCache.get('text-embedding-3-large', '那家咖啡店')).toEqual([0, 1])
   })
   it('超 50 逐最旧（LRU eviction）', () => {
-    for (let i = 0; i < 51; i++) queryVectorCache.set(`q${i}`, [i])
-    expect(queryVectorCache.get('q0')).toBeUndefined() // 最旧被逐
-    expect(queryVectorCache.get('q50')).toEqual([50])
+    for (let i = 0; i < 51; i++) queryVectorCache.set('m1', `q${i}`, [i])
+    expect(queryVectorCache.get('m1', 'q0')).toBeUndefined() // 最旧被逐
+    expect(queryVectorCache.get('m1', 'q50')).toEqual([50])
   })
   it('get 命中刷新热度，不被逐出', () => {
-    for (let i = 0; i < 50; i++) queryVectorCache.set(`q${i}`, [i])
-    queryVectorCache.get('q0') // 刷新 q0 到最新位
-    queryVectorCache.set('q-new', [999]) // 触发逐出 → 应逐 q1 而非 q0
-    expect(queryVectorCache.get('q0')).toEqual([0])
-    expect(queryVectorCache.get('q1')).toBeUndefined()
+    for (let i = 0; i < 50; i++) queryVectorCache.set('m1', `q${i}`, [i])
+    queryVectorCache.get('m1', 'q0') // 刷新 q0 到最新位
+    queryVectorCache.set('m1', 'q-new', [999]) // 触发逐出 → 应逐 q1 而非 q0
+    expect(queryVectorCache.get('m1', 'q0')).toEqual([0])
+    expect(queryVectorCache.get('m1', 'q1')).toBeUndefined()
   })
 })

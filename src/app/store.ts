@@ -298,19 +298,24 @@ async function withSemanticArm(
   const embed = di.llm.embed
   if (!embed) return cites
   try {
-    // 问句向量：进程内 LRU(50) 同问免调；每问至多 1 次 embed 调用。
-    let qv = queryVectorCache.get(question)
+    // model 与适配器同源（accept-pb 修 1）：读 di.storage.getSettings()（适配器 embed
+    // 同读 Dexie settings），不用 uiStore 内存态——两侧失步会「戳≠实际模型」致重复重嵌。
+    // 读失败回退缺省模型，不阻断召回。
+    const settings = await di.storage.getSettings().catch(() => null)
+    const model = settings?.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
+    // 问句向量：进程内 LRU(50) 同问免调（键含模型名，换模型不串）；每问至多 1 次 embed 调用。
+    let qv = queryVectorCache.get(model, question)
     if (!qv) {
       const vecs = await embed.call(di.llm, [question]).catch(() => null)
       qv = vecs?.[0] ?? undefined
-      if (qv && qv.length > 0) queryVectorCache.set(question, qv)
+      if (qv && qv.length > 0) queryVectorCache.set(model, question, qv)
     }
     if (!qv) return cites
     // 只召回当前条目集内的向量（回收站/已删条目的残留向量自然出局）。
     const entryIds = new Set(entries.map((e) => e.id))
     const rows = (await listEmbeddings()).filter((r) => entryIds.has(r.entryId))
     // 惰性回填：发现无向量/文本已变的 ready 条目 → 后台补嵌（每轮 ≤20），本轮不等。
-    void backfillEmbeddings(rows, entries, aiByEntry)
+    void backfillEmbeddings(rows, entries, aiByEntry, model)
     const sem = semanticArm(qv, rows)
     if (sem.length === 0) return cites
     const mergedIds = mergeCites(cites.map((c) => c.id), sem)
@@ -336,16 +341,17 @@ async function withSemanticArm(
 
 // 惰性回填（spec §1）：语义臂激活时，无向量或文本已变（textHash/model 不等）的 ready
 // 条目 → fire-and-forget 批量补嵌，每轮最多 20 条（防首轮爆配额）。失败静默。
+// model 由调用方（withSemanticArm）传入——与本轮 embed 实际用模同源，免二次 IDB 读。
 async function backfillEmbeddings(
   existing: EntryEmbedding[],
   entries: Entry[],
   aiByEntry: Record<string, EntryAi>,
+  model: string,
 ): Promise<void> {
   const embed = di.llm.embed
   if (!embed) return
   try {
     const byEntryId = new Map(existing.map((r) => [r.entryId, r]))
-    const model = useUiStore.getState().settings.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
     const targets: { entry: Entry; text: string; hash: string }[] = []
     for (const entry of entries) {
       if (entry.status !== 'ready') continue // STT/分类失败的条目不嵌
@@ -386,7 +392,9 @@ async function embedEntryNow(entry: Entry, ai: EntryAi): Promise<void> {
   try {
     const text = buildEmbeddingText(entry, ai)
     if (!text.trim()) return
-    const model = useUiStore.getState().settings.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
+    // model 与适配器同源（accept-pb 修 1）：读 Dexie settings，不用 uiStore 内存态。
+    const settings = await di.storage.getSettings().catch(() => null)
+    const model = settings?.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
     const vecs = await embed.call(di.llm, [text]).catch(() => null)
     const v = vecs?.[0]
     if (!v || v.length === 0) return

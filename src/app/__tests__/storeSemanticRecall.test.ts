@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   embedFn: null as ((texts: string[]) => Promise<number[][] | null>) | null,
   listEmbeddings: vi.fn(),
   saveEmbedding: vi.fn(),
+  getSettings: vi.fn(),
   getEntry: vi.fn(),
   saveEntry: vi.fn(),
   saveEntryAi: vi.fn(),
@@ -45,7 +46,7 @@ vi.mock('@/app/di', () => ({
       getEntry: (id: string) => mocks.getEntry(id),
       saveEntry: (e: Entry) => mocks.saveEntry(e),
       saveEntryAi: (a: EntryAi) => mocks.saveEntryAi(a),
-      getSettings: vi.fn().mockResolvedValue({}),
+      getSettings: () => mocks.getSettings(),
       getAggregate: vi.fn().mockResolvedValue(undefined),
       saveAggregate: vi.fn().mockResolvedValue(undefined),
       listCategories: vi.fn().mockResolvedValue([]),
@@ -130,6 +131,7 @@ beforeEach(() => {
   localRecallMock.mockReturnValue([KW_CITE])
   mocks.listEmbeddings.mockResolvedValue([])
   mocks.saveEmbedding.mockResolvedValue(undefined)
+  mocks.getSettings.mockResolvedValue({})
 })
 
 describe('防回归：embed 缺席/失败 → 与纯关键词召回逐字节一致', () => {
@@ -189,6 +191,21 @@ describe('语义臂合并', () => {
     )
     expect(questionCalls).toHaveLength(1)
   })
+
+  it('LRU 键含模型：换 embeddingModel 后同问句重新调 embed（accept-pb 修 2）', async () => {
+    mocks.embedFn = vi.fn().mockImplementation((texts: string[]) => Promise.resolve(texts.map(() => [1, 0])))
+    mocks.getSettings.mockResolvedValue({ embeddingModel: 'embed-a' })
+    useUiStore.setState({ entries: [mkEntry('e1', '关键词命中条目', '2026-10-01T08:00:00+08:00')] })
+    await useUiStore.getState().sendMessage('同一句问题-lru2')
+    // 换模型 + 改 entries 签名 → 旧模型问句向量不得命中，必须重新 embed。
+    mocks.getSettings.mockResolvedValue({ embeddingModel: 'embed-b' })
+    useUiStore.setState({ entries: [mkEntry('e1', '关键词命中条目', '2026-10-02T08:00:00+08:00')] })
+    await useUiStore.getState().sendMessage('同一句问题-lru2')
+    const questionCalls = (mocks.embedFn as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c) => (c[0] as string[]).length === 1 && (c[0] as string[])[0] === '同一句问题-lru2',
+    )
+    expect(questionCalls).toHaveLength(2)
+  })
 })
 
 describe('惰性回填', () => {
@@ -218,6 +235,23 @@ describe('惰性回填', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(mocks.saveEmbedding).not.toHaveBeenCalled()
   })
+
+  it('model 戳与适配器同源：读 di.storage.getSettings 的 embeddingModel（accept-pb 修 1）', async () => {
+    // settings（Dexie，适配器 embed 同源）说模型是 embed-custom；行内向量 model 戳同为
+    // embed-custom 且 textHash 新鲜 → 不重嵌。若 store 误用 uiStore 内存态（无
+    // embeddingModel → 默认模型），双键不匹配会误重嵌——本用例即为该回归的哨兵。
+    const e1 = mkEntry('e1', '关键词命中条目')
+    const freshText = buildEmbeddingText(e1, undefined)
+    mocks.getSettings.mockResolvedValue({ embeddingModel: 'embed-custom' })
+    mocks.embedFn = vi.fn().mockImplementation((texts: string[]) => Promise.resolve(texts.map(() => [0.5, 0.5])))
+    mocks.listEmbeddings.mockResolvedValue([
+      { entryId: 'e1', ownerId: 'local', vector: [1, 0], model: 'embed-custom', textHash: textHash(freshText), updatedAt: 't' },
+    ] as EntryEmbedding[])
+    useUiStore.setState({ entries: [e1] })
+    await useUiStore.getState().sendMessage('同源模型戳-bf3')
+    await new Promise((r) => setTimeout(r, 20))
+    expect(mocks.saveEmbedding).not.toHaveBeenCalled()
+  })
 })
 
 describe('processEntry 增量嵌', () => {
@@ -233,6 +267,8 @@ describe('processEntry 增量嵌', () => {
     mocks.classify.mockResolvedValue(ai1)
     mocks.aggregate.mockResolvedValue({ id: 'ag1', scope: { type: 'day', range: '2026-10-01' }, summary: 's', entryIds: [], modelUsed: 'm', createdAt: 't', stale: false })
     mocks.embedFn = vi.fn().mockResolvedValue([[0.3, 0.4]])
+    // model 戳同源（accept-pb 修 1）：Dexie settings 的 embeddingModel 须落到行上。
+    mocks.getSettings.mockResolvedValue({ embeddingModel: 'embed-x' })
     useUiStore.setState({ entries: [e1] })
 
     await useUiStore.getState().processEntry('e1', false)
@@ -240,6 +276,7 @@ describe('processEntry 增量嵌', () => {
     const row = mocks.saveEmbedding.mock.calls[0][0] as EntryEmbedding
     expect(row.entryId).toBe('e1')
     expect(row.vector).toEqual([0.3, 0.4])
+    expect(row.model).toBe('embed-x')
     // 被嵌文本含正文 + summary + tags（buildEmbeddingText 同一组装逻辑）
     const embedCalls = (mocks.embedFn as ReturnType<typeof vi.fn>).mock.calls
     expect((embedCalls[0][0] as string[])[0]).toContain('今天跑了五公里')
