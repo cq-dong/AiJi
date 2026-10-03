@@ -46,6 +46,9 @@ export const chat = {
   'chat.weather.failed': '(Weather lookup failed, likely a network or service issue. Say so honestly and suggest retrying later; do not guess the weather from memory.)',
   'chat.search.noKey': '(No web-search key configured, cannot search the web. You may guide the user to Settings → Web search to add a Tavily key and retry.)',
   'chat.search.failed': '(Web search failed, likely a network or service issue. Say so honestly and suggest retrying later; do not fabricate results.)',
+  // Rolling conversation summary injection (2026-10-03 P-B): extraSystem section alongside
+  // the time line / weather block; only injected when a summary exists.
+  'chat.rollingSummary': 'Earlier conversation summary: {summary}',
   // Category-change confirmation card (actionConfirm message).
   'chat.action.notFound': 'Couldn\'t find an entry matching "{hint}" — try rephrasing with a rough time or more keywords.',
   'chat.action.confirm': 'Confirm',

@@ -1,7 +1,10 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryEmbedding, EntryPart, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
 import { scopeRange } from '@/domain/dateRange'
-import { localRecall, dateKey, currentTimeLine, resolveActionCategory } from '@/ui/screens/chat/helpers'
+import { localRecall, dateKey, currentTimeLine, resolveActionCategory, toCite } from '@/ui/screens/chat/helpers'
+import { semanticArm, mergeCites, queryVectorCache, DEFAULT_EMBEDDING_MODEL } from '@/app/semanticRecall'
+import { buildEmbeddingText, textHash, listEmbeddings, saveEmbedding } from '@/data/embeddings'
+import { getCurrentOwner } from '@/app/currentOwner'
 import { seedSettings } from '@/data/seed'
 import { enrichLocation, reverseGeocodeCity } from '@/adapters/geocoding'
 import { getWeatherLive } from '@/adapters/weather'
@@ -280,6 +283,157 @@ function chatHistory(conv: Conversation | null, limit: number): { role: 'user' |
     .filter((m) => !m.error)
     .slice(-limit)
     .map((m) => ({ role: m.role, content: m.content, date: dateKey(m.createdAt) }))
+}
+
+// ── P-B 语义召回（2026-10-03 spec §1）────────────────────────────────────
+// 语义臂：embed 可用时按问句向量补召回——关键词 cites 在前保序，语义命中且未中关键词的
+// 条目按 sim 降序追加（总长 ≤12，ChatTrace.recalled 照旧记录合并后列表，prompt 零改动）。
+// embed 缺席/抛错/返 null → 原样返回关键词 cites（行为与纯关键词召回逐字节一致）。
+async function withSemanticArm(
+  question: string,
+  cites: ChatCite[],
+  entries: Entry[],
+  aiByEntry: Record<string, EntryAi>,
+): Promise<ChatCite[]> {
+  const embed = di.llm.embed
+  if (!embed) return cites
+  try {
+    // 问句向量：进程内 LRU(50) 同问免调；每问至多 1 次 embed 调用。
+    let qv = queryVectorCache.get(question)
+    if (!qv) {
+      const vecs = await embed.call(di.llm, [question]).catch(() => null)
+      qv = vecs?.[0] ?? undefined
+      if (qv && qv.length > 0) queryVectorCache.set(question, qv)
+    }
+    if (!qv) return cites
+    // 只召回当前条目集内的向量（回收站/已删条目的残留向量自然出局）。
+    const entryIds = new Set(entries.map((e) => e.id))
+    const rows = (await listEmbeddings()).filter((r) => entryIds.has(r.entryId))
+    // 惰性回填：发现无向量/文本已变的 ready 条目 → 后台补嵌（每轮 ≤20），本轮不等。
+    void backfillEmbeddings(rows, entries, aiByEntry)
+    const sem = semanticArm(qv, rows)
+    if (sem.length === 0) return cites
+    const mergedIds = mergeCites(cites.map((c) => c.id), sem)
+    const citeById = new Map(cites.map((c) => [c.id, c]))
+    const entryById = new Map(entries.map((e) => [e.id, e]))
+    const merged: ChatCite[] = []
+    for (const id of mergedIds) {
+      const hit = citeById.get(id)
+      if (hit) {
+        merged.push(hit)
+        continue
+      }
+      // 语义臂新命中：复用 localRecall 同一压缩逻辑造 ChatCite（形状与关键词臂一致）。
+      const e = entryById.get(id)
+      if (e) merged.push(toCite(e, aiByEntry[e.id]))
+    }
+    return merged
+  } catch (e) {
+    console.warn('[store] semantic arm failed, fallback to keyword recall', e)
+    return cites
+  }
+}
+
+// 惰性回填（spec §1）：语义臂激活时，无向量或文本已变（textHash/model 不等）的 ready
+// 条目 → fire-and-forget 批量补嵌，每轮最多 20 条（防首轮爆配额）。失败静默。
+async function backfillEmbeddings(
+  existing: EntryEmbedding[],
+  entries: Entry[],
+  aiByEntry: Record<string, EntryAi>,
+): Promise<void> {
+  const embed = di.llm.embed
+  if (!embed) return
+  try {
+    const byEntryId = new Map(existing.map((r) => [r.entryId, r]))
+    const model = useUiStore.getState().settings.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
+    const targets: { entry: Entry; text: string; hash: string }[] = []
+    for (const entry of entries) {
+      if (entry.status !== 'ready') continue // STT/分类失败的条目不嵌
+      const text = buildEmbeddingText(entry, aiByEntry[entry.id])
+      if (!text.trim()) continue
+      const hash = textHash(text)
+      const row = byEntryId.get(entry.id)
+      if (row && row.textHash === hash && row.model === model) continue // 双键新鲜 → 跳过
+      targets.push({ entry, text, hash })
+      if (targets.length >= 20) break
+    }
+    if (targets.length === 0) return
+    const vecs = await embed.call(di.llm, targets.map((x) => x.text)).catch(() => null)
+    if (!vecs) return
+    const now = new Date().toISOString()
+    for (let i = 0; i < targets.length; i++) {
+      const v = vecs[i]
+      if (!v || v.length === 0) continue
+      await saveEmbedding({
+        entryId: targets[i].entry.id,
+        ownerId: getCurrentOwner(),
+        vector: v,
+        model,
+        textHash: targets[i].hash,
+        updatedAt: now,
+      })
+    }
+  } catch (e) {
+    console.warn('[store] embedding backfill failed', e)
+  }
+}
+
+// 增量嵌（spec §1）：processEntry classify 成功后 fire-and-forget 嵌该条目。
+// embed 缺席/失败静默——绝不影响条目处理主流程。
+async function embedEntryNow(entry: Entry, ai: EntryAi): Promise<void> {
+  const embed = di.llm.embed
+  if (!embed) return
+  try {
+    const text = buildEmbeddingText(entry, ai)
+    if (!text.trim()) return
+    const model = useUiStore.getState().settings.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
+    const vecs = await embed.call(di.llm, [text]).catch(() => null)
+    const v = vecs?.[0]
+    if (!v || v.length === 0) return
+    await saveEmbedding({
+      entryId: entry.id,
+      ownerId: getCurrentOwner(),
+      vector: v,
+      model,
+      textHash: textHash(text),
+      updatedAt: new Date().toISOString(),
+    })
+  } catch (e) {
+    console.warn('[store] embedEntry failed', e)
+  }
+}
+
+// ── P-B 滚动对话摘要（2026-10-03 spec §2）────────────────────────────────
+// 答案落库后 fire-and-forget：积攒 >10 条未压缩 → 把 [summarizedCount, len-6) 区间压进
+// rollingSummary（最近 6 条永保原文，与 chatHistory 窗口同边界，摘要与原文不重叠）。
+// 本轮问答不等摘要——摘要为下一轮准备。失败仅 console.warn，不影响问答。
+async function maybeRollSummary(conv: Conversation): Promise<void> {
+  if (typeof di.llm.summarizeConversation !== 'function') return
+  try {
+    const total = conv.messages.length
+    // 防御：summarizedCount 越界（杀进程恢复/历史脏数据）按 0 重算。
+    let start = conv.summarizedCount ?? 0
+    if (start < 0 || start > total) start = 0
+    if (total - start <= 10) return
+    const end = total - 6
+    const chunk = conv.messages
+      .slice(start, end)
+      .filter((m) => !m.error)
+      .map((m) => ({ role: m.role, content: m.content, date: dateKey(m.createdAt) }))
+    if (chunk.length === 0) return
+    const summary = await di.llm.summarizeConversation(conv.rollingSummary ?? null, chunk)
+    if (!summary) return
+    // 竞态：await 期间用户可能已发新消息。以最新会话为底合并摘要字段——messages 只增
+    // 不改，end 作为前缀位置仍合法（≤ 最新长度），不会盖住后到的消息。
+    const cur = useUiStore.getState().conversation
+    const base = cur?.id === conv.id ? cur : await di.storage.getConversation(conv.id)
+    if (!base) return
+    const next: Conversation = { ...base, rollingSummary: summary, summarizedCount: Math.min(end, base.messages.length) }
+    if (cur?.id === conv.id) useUiStore.setState({ conversation: next })
+    await di.storage.saveConversation(next)
+  } catch (e) {
+    console.warn('[store] rolling summary failed', e)
+  }
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -663,6 +817,8 @@ export const useUiStore = create<UiState>((set, get) => ({
           categories,
           tags,
         }))
+        // P-B 增量嵌（2026-10-03）：classify 成功后后台嵌该条目；embed 缺席/失败静默。
+        void embedEntryNow(updated, ai)
       }
       // 保存后弹窗：仅新建条目（finishSave→isFresh=true）+ LLM 检出 reminderSuggestion 时置，
       // AppShell 渲全局 ReminderPopup 让用户即时确认。detail 的 reprocess 走 isFresh=false 不弹。
@@ -1039,6 +1195,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       void di.storage.saveConversation(conv)
         .then(() => get().refreshChatList())
         .catch((e) => console.error('[store] saveConversation(cached) failed', e))
+      // P-B 滚动摘要（2026-10-03）：缓存答案同样落库计条，积攒 >10 条未压缩 → 后台压缩。
+      void maybeRollSummary(conv)
       return
     }
 
@@ -1160,11 +1318,20 @@ export const useUiStore = create<UiState>((set, get) => ({
         // 本地召回（recall 阶段，纯函数，毫秒级）。
         if (seq === chatSendSeq) set({ chatLoading: 'recall' })
         cites = localRecall(query, entries, aiByEntry, tags)
+        // P-B 语义臂（2026-10-03）：embed 可用时按问句向量补召回合并进 cites；
+        // 缺席/失败静默降级，行为与纯关键词召回逐字节一致。
+        cites = await withSemanticArm(trimmed, cites, entries, aiByEntry)
       }
 
       // timeIntent（与 kind 正交）：当前时间行拼 extraSystem 第一行。
       if (query.timeIntent) {
         extraSystem = currentTimeLine(new Date()) + (extraSystem ? '\n' + extraSystem : '')
+      }
+
+      // 滚动摘要注入（2026-10-03 P-B）：有摘要才拼「早前对话摘要：…」段，
+      // 与时间行/天气块/搜索块并列（extraSystem 一个口子，answer prompt 本体零改动）。
+      if (conv.rollingSummary) {
+        extraSystem = t('chat.rollingSummary', { summary: conv.rollingSummary }) + (extraSystem ? '\n' + extraSystem : '')
       }
 
       // trace：思维链记录，UI 默认折叠可展开（D37）。
@@ -1297,6 +1464,10 @@ export const useUiStore = create<UiState>((set, get) => ({
       void di.storage.saveConversation(conv)
         .then(() => get().refreshChatList())
         .catch((e) => console.error('[store] saveConversation(answer) failed', e))
+
+      // P-B 滚动摘要（2026-10-03）：积攒 >10 条未压缩 → 后台压缩早期对话（本轮不等，
+      // 摘要为下一轮准备；独立 try/catch，失败仅 console.warn）。
+      void maybeRollSummary(conv)
 
       // 回答成功落库后：自动记忆提取（2026-09-10 陪伴化——每轮都尝试，不再仅限「记住」类意图）。
       // 闸门与分流：

@@ -49,6 +49,8 @@ export const chat = {
   'chat.weather.failed': '（天气查询失败，可能是网络或服务问题。请诚实说明并建议稍后重试，不要凭记忆猜天气。）',
   'chat.search.noKey': '（未配置网络搜索 Key，无法联网检索。可引导用户去 设置→网络搜索 配置 Tavily Key 后重试。）',
   'chat.search.failed': '（网络搜索失败，可能是网络或服务问题。请诚实说明并建议稍后重试，不要凭记忆编造。）',
+  // 滚动对话摘要注入段（2026-10-03 P-B）：extraSystem 与时间行/天气块并列，有摘要才注入。
+  'chat.rollingSummary': '早前对话摘要：{summary}',
   // 改分类确认卡（actionConfirm 消息）。
   'chat.action.notFound': '没找到「{hint}」对应的条目，换个说法试试？比如带上时间或更多关键词。',
   'chat.action.confirm': '确认',

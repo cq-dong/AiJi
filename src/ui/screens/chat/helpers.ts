@@ -20,7 +20,9 @@ function entryText(entry: Entry): string {
     .join('\n')
 }
 
-function toCite(entry: Entry, ai: EntryAi | undefined): ChatCite {
+// export（2026-10-03 P-B）：store 语义臂合并时为语义召回命中的条目补造 ChatCite，
+// 复用同一压缩逻辑（excerpt/tags/summary/place 形状与关键词臂一致）。
+export function toCite(entry: Entry, ai: EntryAi | undefined): ChatCite {
   const full = entryText(entry)
   const textExcerpt =
     full.length > EXCERPT_MAX ? full.slice(0, EXCERPT_MAX) + '…' : full

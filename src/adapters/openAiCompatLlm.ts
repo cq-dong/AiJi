@@ -808,6 +808,53 @@ Output: NULL`
   ]
 }
 
+// 滚动对话摘要 prompt（2026-10-03 P-B §2）：把对话片段压缩成一段第三人称摘要，保留
+// 事实/约定/进行中事项/用户透露的偏好与状态，丢弃寒暄；prior（已有摘要，可为 null）
+// 作为上文并入，输出合并后的新摘要。chunk 里 date 有的条目带 [YYYY-MM-DD] 前缀渲染。
+// 输出只要摘要正文（不输出 JSON/围栏/引号）。builtinLlm 复用此 helper（双路径 prompt 一致）。
+export function buildConversationSummaryPrompt(
+  prior: string | null,
+  chunk: { role: 'user' | 'assistant'; content: string; date?: string }[],
+): ChatMessage[] {
+  const en = getCurrentLang() === 'en'
+  const system = en
+    ? `You are the conversation summarizer for "AiJi" (AI 记). Compress the given conversation chunk into one third-person English summary paragraph.
+
+Rules:
+1. Keep facts, agreements, ongoing matters/goals, and the preferences and states the user has revealed; drop small talk and greetings.
+2. If an existing summary is provided, treat it as prior context and merge it in — output the MERGED new summary (not a summary of only the new chunk).
+3. Write in third person ("the user ..."), one coherent paragraph.
+4. Output ONLY the summary text — no JSON, no markdown fences, no quotes, no explanation.
+
+IMPORTANT: Write ALL natural-language output in English.`
+    : `你是「AiJi」(AI 记) 的对话摘要器。把用户给出的对话片段压缩成一段第三人称中文摘要。
+
+铁律：
+1. 保留事实/约定/进行中事项/用户透露的偏好与状态，丢弃寒暄与客套。
+2. 若给出已有摘要，将其作为上文并入——输出合并后的新摘要（而非只总结新增片段）。
+3. 用第三人称（「用户……」），写成一段连贯文字。
+4. 只输出摘要正文——不要 JSON、不要 markdown 围栏、不要引号、不要解释。
+
+重要：所有自然语言输出用简体中文。`
+  // prior 块：null → ''（无「已有摘要」段，与首段压缩逐字节一致）。prior 是数据注入，原文不翻译。
+  const priorBlock = prior
+    ? (en ? `Existing summary (merge as prior context):\n${prior}\n\n` : `已有摘要（作为上文并入）：\n${prior}\n\n`)
+    : ''
+  const lines = chunk
+    .map((m) => {
+      const who = m.role === 'user' ? (en ? 'User' : '用户') : (en ? 'Companion' : '伙伴')
+      return `${m.date ? `[${m.date}] ` : ''}${who}：${m.content}`
+    })
+    .join('\n')
+  const user = en
+    ? `${priorBlock}Conversation chunk:\n${lines}\n\nOutput the merged new summary.`
+    : `${priorBlock}对话片段：\n${lines}\n\n输出合并后的新摘要。`
+  return [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ]
+}
+
 // 解析 extractMemory 响应：NULL/空 → null（无可记）；否则返记忆原文（去围栏/引号）。
 // 容忍 LLM 偶发围栏与首尾引号；大小写不敏感识别 NULL。
 export function parseMemoryReply(raw: string): string | null {
@@ -1234,9 +1281,64 @@ export const openAiCompatLlm: LlmPort = {
     if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
     return parseMemoryReply(raw)
   },
-  // P-B 契约桩（2026-10-03）：让 typecheck 过契约 commit，agent A 替换为真实实现。
-  async summarizeConversation() {
-    throw new Error('P-B summarizeConversation 未实现（契约桩）')
+  // 文本向量化（2026-10-03 P-B §1 语义召回，BYOK 唯一 embed 链路）：embeddings URL 由
+  // llmUrl 派生（/chat/completions → /embeddings）；llmUrl 非标准结尾（用户配了非标准
+  // 端点）→ null 不瞎猜路径。降级语义：缺 key/url → null；HTTP 非 2xx → null（embedding
+  // 是增强路径，HTTP 错误降级即可）；响应形状坏 → null；fetch 抛错（网络层异常）→ 抛错
+  //（spec：抛错=调用失败）。**任何失败路径都不能影响问答主流程**——调用方
+  // di.llm.embed?.() ?? null + try/catch 双层兜底。
+  async embed(texts) {
+    const settings = await di.storage.getSettings()
+    const apiKey = await di.secrets.get(SECRET_KEY)
+    const url = settings.llmUrl
+    if (!apiKey || !url) return null
+    const embUrl = url.replace(/\/chat\/completions\s*$/, '/embeddings')
+    if (embUrl === url) return null // 非 /chat/completions 结尾 → 不支持派生，静默降级
+    const model = settings.embeddingModel || 'text-embedding-3-small'
+    const res = await fetch(embUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, input: texts }),
+    })
+    if (!res.ok) return null
+    const data = await res.json().catch(() => null)
+    const arr = (data as { data?: unknown } | null)?.data
+    if (!Array.isArray(arr) || arr.length !== texts.length) return null
+    const out: number[][] = []
+    for (const item of arr) {
+      const v = (item as { embedding?: unknown })?.embedding
+      if (!Array.isArray(v) || v.some((n) => typeof n !== 'number')) return null
+      out.push(v as number[])
+    }
+    return out
+  },
+  // 滚动对话摘要（2026-10-03 P-B §2）：现有 chat completions 通道，max_tokens 300 /
+  // temperature 0。失败路径与 extractMemory 一致抛错（调用方 store 吞掉，摘要失败不影响问答）。
+  async summarizeConversation(prior, chunk) {
+    const settings = await di.storage.getSettings()
+    const apiKey = await di.secrets.get(SECRET_KEY)
+    const url = settings.llmUrl
+    const model = settings.llmModel || 'deepseek-v4-flash'
+    if (!apiKey || !url) throw new Error('LLM BYOK 未配置（url/key 缺失）')
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: buildConversationSummaryPrompt(prior, chunk),
+        max_tokens: 300,
+        temperature: 0,
+        ...(isDeepSeek(url, model) ? { thinking: { type: 'disabled' } } : {}),
+      }),
+    })
+    if (!res.ok) {
+      const t = await res.text().catch(() => '')
+      throw new Error(`LLM HTTP ${res.status}: ${t.slice(0, 200)}`)
+    }
+    const data = await res.json()
+    const raw = data?.choices?.[0]?.message?.content
+    if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
+    return raw.trim()
   },
   async ping(opts?: { url?: string; model?: string; key?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
     const settings = await di.storage.getSettings()

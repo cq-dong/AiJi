@@ -23,6 +23,7 @@ import {
   buildIntentPrompt, parseIntentJson,
   buildAnswerPrompt, parseAnswerJson, sanitizeInlineCites,
   buildExtractMemoryPrompt, parseMemoryReply,
+  buildConversationSummaryPrompt,
   collectEntryImages, inferMediaType, loadEnabledMemoryContents,
   type VisionTextPart, type VisionImagePart,
 } from '@/adapters/openAiCompatLlm'
@@ -328,9 +329,16 @@ export const builtinLlm: LlmPort = {
     return parseMemoryReply(raw)
   },
 
-  // P-B 契约桩（2026-10-03）：让 typecheck 过契约 commit，agent A 替换为真实实现。
-  async summarizeConversation() {
-    throw new Error('P-B summarizeConversation 未实现（契约桩）')
+  // 滚动对话摘要（2026-10-03 P-B §2）：同 buildConversationSummaryPrompt 走 /api/llm/chat
+  //（老服务端已支持）+ consume('llm', 1)。失败抛错由调用方吞掉（摘要失败不影响问答）。
+  // builtin 不实现 embed——老服务端无 embeddings 端点，缺席 → proxy 侧 embed?.() 为
+  // undefined → 调用方 ?? null 静默降级纯关键词召回（spec §1：BYOK 先行）。
+  async summarizeConversation(prior, chunk) {
+    assertNetwork()
+    const messages = buildConversationSummaryPrompt(prior, chunk)
+    const raw = await chat(messages)
+    useQuotaStore.getState().consume('llm', 1)
+    return raw.trim()
   },
 
   // ping 签名必须接受可选 opts（LlmPort.ping(opts?)），即使 builtin 忽略 opts。
