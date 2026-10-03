@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { Aggregate, Category, Conversation, Draft, Entry, EntryAi, Memory, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, Category, Conversation, Draft, Entry, EntryAi, EntryEmbedding, Memory, Reminder, Settings, Tag } from '@/domain/types'
 import type { OutboxRow, SyncMediaTrackRow, SyncStateRow } from '@/domain/sync'
 
 // IndexedDB schema (PRD §7.3). UI 层先用 mock 适配器，schema 已就位待接入。
@@ -28,6 +28,9 @@ export class AiJiDB extends Dexie {
   syncOutbox!: Table<OutboxRow, number>
   syncMedia!: Table<SyncMediaTrackRow, string>
   syncState!: Table<SyncStateRow, string>
+  // P-B 语义召回（2026-10-03，v10）：条目 embedding 向量。entryId 主键；textHash 失效
+  // 重嵌、model 换模型失效。无 upgrade 回填——惰性回填由 store 语义臂驱动。
+  embeddings!: Table<EntryEmbedding, string>
 
   constructor() {
     super('aiji')
