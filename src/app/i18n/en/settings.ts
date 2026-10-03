@@ -99,6 +99,10 @@ export const settings = {
   'settings.memoryPlaceholder': 'e.g. "File all talks with my wife under Family"',
   'settings.memoryActiveCount': '{count} active',
   'settings.memoryNotSet': 'Not set',
+  // P-C memory lifecycle: auto-archived after 90 days unconfirmed (collapsed group) + restore.
+  'settings.memoryArchived': 'Archived ({count})',
+  'settings.memoryArchivedHint': 'Memories unconfirmed for 90 days are auto-archived and no longer injected into AI chats; restore anytime.',
+  'settings.memoryRestore': 'Restore',
 
   // 导出与分享
   'settings.exportShare': 'Export & share',

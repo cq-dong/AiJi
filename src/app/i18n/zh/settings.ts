@@ -100,6 +100,10 @@ export const settings = {
   'settings.memoryPlaceholder': '如「和老婆的对话都归到家庭类」',
   'settings.memoryActiveCount': '{count} 条生效',
   'settings.memoryNotSet': '未设置',
+  // P-C 记忆生命周期：90 天未确认自动归档组（折叠置底）+ 恢复。
+  'settings.memoryArchived': '已归档（{count}）',
+  'settings.memoryArchivedHint': '90 天未再确认的记忆会自动归档，不再注入 AI 对话；可随时恢复。',
+  'settings.memoryRestore': '恢复',
 
   // 导出与分享
   'settings.exportShare': '导出与分享',

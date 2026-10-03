@@ -1,8 +1,9 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryEmbedding, EntryPart, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryEmbedding, EntryPart, GeoPoint, Memory, MemoryVerdict, Reminder, Settings, Tag } from '@/domain/types'
 import { scopeRange } from '@/domain/dateRange'
 import { localRecall, dateKey, currentTimeLine, resolveActionCategory, toCite } from '@/ui/screens/chat/helpers'
 import { semanticArm, mergeCites, queryVectorCache, DEFAULT_EMBEDDING_MODEL } from '@/app/semanticRecall'
+import { topSimilarMemories, isStaleMemory, applyMemoryVerdict } from '@/app/memoryLifecycle'
 import { buildEmbeddingText, textHash, listEmbeddings, saveEmbedding } from '@/data/embeddings'
 import { getCurrentOwner } from '@/app/currentOwner'
 import { seedSettings } from '@/data/seed'
@@ -141,6 +142,12 @@ interface UiState {
   saveMemory: (content: string) => Promise<void>
   deleteMemory: (id: string) => Promise<void>
   toggleMemory: (id: string) => Promise<void>
+  // P-C（2026-10-03）：恢复归档记忆（清 archivedAt + 刷 lastConfirmedAt，保持 enabled）。
+  restoreMemory: (id: string) => Promise<void>
+  // P-C：90 天过期扫描——enabled && 未归档 && 距今(lastConfirmedAt ?? createdAt)>90d → 盖 archivedAt。
+  // 时机：hydrate 完成后一次 + saveMemory 成功后（spec §4）。nowIso 可注入（测试边界）。
+  // 返回本次归档条数。
+  archiveStaleMemories: (nowIso?: string) => Promise<number>
 }
 
 const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined, title: undefined }
@@ -510,6 +517,9 @@ export const useUiStore = create<UiState>((set, get) => ({
         const top = get().chatList[0]
         set({ conversation: top ? stripStreamingFlags(top) : null })
       } catch (e) { console.error('[store] hydrate chatList failed', e) }
+      // P-C 记忆生命周期（spec §4 时机）：hydrate 完成后扫一次 90 天过期归档（fire-and-forget，
+      // 失败不阻断 UI；saveMemory 成功后另有一次）。
+      void get().archiveStaleMemories().catch((e) => console.error('[store] archiveStaleMemories failed', e))
     } catch (e) {
       // D9: 载入失败保持空状态（不再 seed 兜底），标记已尝试避免反复重试（存储失败不阻断 UI）
       console.error('[store] hydrate failed', e)
@@ -1490,7 +1500,8 @@ export const useUiStore = create<UiState>((set, get) => ({
         const explicit = /记住|记一下|以后.*记|别忘了|给我记/.test(trimmed)
         if (!explicit && get().settings.autoMemory === false) return
         // memories 数组新者在首（saveMemory prepend）；截 50 条防 prompt 膨胀。
-        const known = get().memories.filter((m) => m.enabled).map((m) => m.content).slice(0, 50)
+        // P-C：归档记忆不进 prompt 注入，也不参与提取去重（视为不再已知，允许重新记住）。
+        const known = get().memories.filter((m) => m.enabled && !m.archivedAt).map((m) => m.content).slice(0, 50)
         let memoryContent: string | null
         try {
           memoryContent = await di.llm.extractMemory(trimmed, known)
@@ -1606,13 +1617,78 @@ export const useUiStore = create<UiState>((set, get) => ({
   // ── AI 记忆 actions（2026-07-22）──────────────────────────────────────────
   // 风格照抄 reminder 相关 action：save upsert + 内存态替换、delete 落库 + 过滤、toggle 翻转 enabled。
   // prompt 注入由 classify/answerChat 调用点自行 di.storage.listMemories() 拉取，store 不参与注入逻辑。
+  // P-C 生命周期编排（2026-10-03 spec §2/§3）：embed 一次 batch 初筛（cosine≥0.85 top-3）→
+  // adjudicateMemory 四选一 → applyMemoryVerdict 执行落库。降级矩阵（spec §5）：embed 缺席/
+  // 抛错/返 null、无相似命中、裁决失败 → 全部走 ADD（与旧行为逐字节一致的新增路径）。
   saveMemory: async (content) => {
     const trimmed = content.trim()
     if (!trimmed) return
+    const nowIso = new Date().toISOString()
+    // 初筛候选 = enabled && 未归档（spec §2「enabled 记忆原文」；归档行不再参与判重）。
+    const candidates = get().memories.filter((m) => m.enabled && !m.archivedAt)
+    let similar: { id: string; content: string }[] = []
+    const embed = di.llm.embed
+    if (embed && candidates.length > 0) {
+      try {
+        const vecs = await embed([trimmed, ...candidates.map((m) => m.content)])
+        if (vecs && vecs.length === candidates.length + 1 && vecs[0]) {
+          const hits = topSimilarMemories(
+            vecs[0],
+            candidates.map((m, i) => ({ id: m.id, content: m.content, vec: vecs[i + 1] ?? [] })),
+          )
+          similar = hits.map(({ id, content }) => ({ id, content }))
+        }
+      } catch {
+        similar = [] // embed 抛错 → 降级 ADD（spec §5，静默）
+      }
+    }
+    let verdict: MemoryVerdict = { action: 'add' }
+    if (similar.length > 0) {
+      try {
+        verdict = await di.llm.adjudicateMemory(trimmed, similar)
+      } catch (e) {
+        // 裁决失败兜底（spec §3）：默认 ADD 宁可多存不丢信息。
+        console.warn('[store] adjudicateMemory failed, default ADD', e)
+        verdict = { action: 'add' }
+      }
+    }
+    const upserts = applyMemoryVerdict({
+      memories: get().memories,
+      newContent: trimmed,
+      verdict,
+      similar,
+      nowIso,
+      newId: crypto.randomUUID(),
+    })
+    for (const row of upserts) await di.storage.saveMemory(row)
+    // 内存态合并：新行 prepend（新者在首），已有行原位替换。
+    set((s) => {
+      const byId = new Map(upserts.map((r) => [r.id, r]))
+      const fresh = upserts.filter((r) => !s.memories.some((m) => m.id === r.id))
+      return { memories: [...fresh, ...s.memories.map((m) => byId.get(m.id) ?? m)] }
+    })
+    // 归档扫描时机之一（spec §4）：saveMemory 成功后。await 保测试确定性；全表几十条开销可忽略。
+    await get().archiveStaleMemories()
+  },
+  restoreMemory: async (id) => {
+    const cur = get().memories.find((m) => m.id === id)
+    if (!cur) return
     const now = new Date().toISOString()
-    const m: Memory = { id: crypto.randomUUID(), content: trimmed, enabled: true, createdAt: now, updatedAt: now }
-    await di.storage.saveMemory(m)
-    set((s) => ({ memories: [m, ...s.memories] }))
+    // 清 archivedAt + 刷 lastConfirmedAt + 保持 enabled（spec §4「恢复即回到 enabled」）。
+    const updated: Memory = { ...cur, archivedAt: undefined, lastConfirmedAt: now, updatedAt: now }
+    await di.storage.saveMemory(updated)
+    set((s) => ({ memories: s.memories.map((m) => (m.id === id ? updated : m)) }))
+  },
+  archiveStaleMemories: async (nowIso) => {
+    const nowMs = Date.parse(nowIso ?? new Date().toISOString())
+    const stamp = new Date(nowMs).toISOString()
+    const stale = get().memories.filter((m) => isStaleMemory(m, nowMs))
+    if (stale.length === 0) return 0
+    const rows = stale.map((m): Memory => ({ ...m, archivedAt: stamp }))
+    for (const r of rows) await di.storage.saveMemory(r)
+    const byId = new Map(rows.map((r) => [r.id, r]))
+    set((s) => ({ memories: s.memories.map((m) => byId.get(m.id) ?? m) }))
+    return rows.length
   },
   deleteMemory: async (id) => {
     await di.storage.deleteMemory(id)

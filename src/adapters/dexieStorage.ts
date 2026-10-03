@@ -350,11 +350,15 @@ export const dexieStorage: StoragePort = {
   },
   // AI 记忆（2026-07-22）：用户明确记忆/偏好，classify 与 answerChat 注入 prompt。
   // 分区语义同 reminders：list 按 getCurrentOwner 过滤、save 强制盖章、delete 先 get 验 owner。
-  async listMemories(): Promise<Memory[]> {
+  // P-C（2026-10-03 spec §4）：opts.activeOnly=true 只返 prompt 注入集（enabled && 未归档）；
+  // 缺省返回全部（设置页要展示归档组）。可选参数——StoragePort 签名同步前调用方
+  // （openAiCompatLlm.loadEnabledMemoryContents）仍按无参调用，行为逐字节不变。
+  async listMemories(opts?: { activeOnly?: boolean }): Promise<Memory[]> {
     const owner = getCurrentOwner()
     const all = await db.memories.where('ownerId').equals(owner).toArray()
     // 最近更新在上——prompt 注入取 enabled 按 updatedAt 倒序前 20 条。
-    return all.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    const sorted = all.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    return opts?.activeOnly ? sorted.filter((m) => m.enabled && !m.archivedAt) : sorted
   },
   async saveMemory(m: Memory): Promise<void> {
     await db.memories.put({ ...m, ownerId: getCurrentOwner() })
