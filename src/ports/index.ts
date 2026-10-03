@@ -1,7 +1,7 @@
 // Port interfaces (PRD §7.3). PWA-agnostic; adapters implement these.
 // UI 层阶段：mock 适配器返回原型样例数据，真实采集/STT/LLM 后续接入。
 
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, FeedbackItem, GeoPoint, Memory, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatQuery, Conversation, Draft, Entry, EntryAi, FeedbackItem, GeoPoint, Memory, MemoryVerdict, Reminder, Settings, Tag } from '@/domain/types'
 import type { Account, AuthSession } from '@/domain/account'
 import type { Quota } from '@/domain/quota'
 import type { PlanTier } from '@/domain/plan'
@@ -164,6 +164,14 @@ export interface LlmPort {
     prior: string | null,
     chunk: { role: 'user' | 'assistant'; content: string; date?: string }[],
   ): Promise<string>
+  // P-C 记忆冲突裁决（2026-10-03，必需方法）：向量初筛命中相似记忆后，LLM 判新记忆
+  // 与 ≤3 条相似旧记忆的关系，输出四选一 MemoryVerdict。JSON 白名单解析；oldId 必须
+  // 来自 similar[].id（调用方后校验）。**仅相似命中时调用**（无命中直接 ADD，省一轮 LLM）。
+  // 抛错/JSON 坏 = 裁决失败，调用方兜底默认 ADD（宁可多存不丢信息）。
+  adjudicateMemory(
+    newMemory: string,
+    similar: { id: string; content: string }[],
+  ): Promise<MemoryVerdict>
   // Connectivity probe：tiniest chat ping（max_tokens:1）。设置页连通性测试用。
   // opts 传入时直接用表单值（url/model/key），不读 Dexie/secrets——测未保存的新配置；
   // 省略时回落 settings + secrets（测已落库配置）。key 为空串视为省略（回落已存 key）。

@@ -88,6 +88,8 @@ const llmProxy: LlmPort = {
     k === 'builtin' ? null : (openAiCompatLlm.embed?.(texts) ?? null)),
   summarizeConversation: (prior, chunk) => readKeySource().then((k) =>
     k === 'builtin' ? builtinLlm.summarizeConversation(prior, chunk) : openAiCompatLlm.summarizeConversation(prior, chunk)),
+  adjudicateMemory: (n, sim) => readKeySource().then((k) =>
+    k === 'builtin' ? builtinLlm.adjudicateMemory(n, sim) : openAiCompatLlm.adjudicateMemory(n, sim)),
   ping: (o) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.ping(o) : openAiCompatLlm.ping(o))),
 }
 

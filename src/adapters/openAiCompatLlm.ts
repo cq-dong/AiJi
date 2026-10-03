@@ -1340,6 +1340,10 @@ export const openAiCompatLlm: LlmPort = {
     if (typeof raw !== 'string') throw new Error('LLM 响应缺 content')
     return raw.trim()
   },
+  // P-C 契约桩（2026-10-03）：typecheck 过契约 commit，A 路替换真实实现。
+  async adjudicateMemory() {
+    throw new Error('P-C adjudicateMemory 未实现（契约桩）')
+  },
   async ping(opts?: { url?: string; model?: string; key?: string }): Promise<{ ok: boolean; latencyMs?: number; error?: string }> {
     const settings = await di.storage.getSettings()
     // opts：设置页连通性测试传表单未保存值（测新填配置）；省略时回落已落库 settings + secrets。

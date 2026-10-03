@@ -370,4 +370,19 @@ export interface Memory {
   enabled: boolean // 停用不删除（参与 prompt 与否的开关）
   createdAt: string // ISO
   updatedAt: string // ISO
+  // P-C 记忆生命周期（2026-10-03，可选非索引字段，db 不升版）：
+  // lastConfirmedAt 提取/裁决保留/手动恢复时刷新；缺省老数据按 createdAt 算。
+  // archivedAt 非空 = 过期自动归档（90 天未确认），区别于 enabled=false 手动停用；
+  // prompt 注入过滤 archivedAt，UI 归档组可恢复（恢复清此字段）。
+  lastConfirmedAt?: string // ISO
+  archivedAt?: string // ISO
 }
+
+// P-C：记忆冲突裁决结果（向量初筛命中后 LLM 四选一，spec §3）。
+// replace=同一事实的新值（旧行 enabled=false 留痕）；merge=互补合并（旧行 content=merged）；
+// skip=旧记忆已覆盖（只刷 lastConfirmedAt）；add=全新信息（新行落库）。
+export type MemoryVerdict =
+  | { action: 'add' }
+  | { action: 'replace'; oldId: string }
+  | { action: 'merge'; oldId: string; merged: string }
+  | { action: 'skip'; oldId?: string }
