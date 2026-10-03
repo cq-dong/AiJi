@@ -27,7 +27,9 @@ embed?(texts: string[]): Promise<number[][] | null>
 - BYOK（openAiCompatLlm）：POST `{baseUrl}/embeddings`，body `{model, input: texts}`。
   model 读 `settings.embeddingModel`（新可选字段，缺省 `'text-embedding-3-small'`；
   本期不做设置页 UI，字段为未来留口）。key/baseUrl 复用现有 BYOK 解析。
-- llmProxy（di.ts）透传可选方法：目标适配器无 embed → proxy 上也不出现该方法。
+- llmProxy（di.ts）：proxy 上 embed 恒定义，builtin 分支直接返 null、byok 分支
+  `openAiCompatLlm.embed?.() ?? null`——与「目标缺席则缺席」行为等价（调用方对
+  undefined 与 null 同一兜底），实现取恒定义更简（accept-pb MINOR#4 措辞同步）。
 
 ### 存储：Dexie v10 新表 `embeddings`
 
@@ -132,7 +134,16 @@ embed 缺席/抛错 → 与现行为逐字节一致（防回归断言）；惰�
 推进、prior 并入、注入 extraSystem 文本、清空对话重置两字段；db v10 迁移
 （v9 数据保留 + 新表可读写）。360 既有测试防回归。
 
-## 5. 非目标
+## 5. Follow-ups（accept-pb 验收记录，2026-10-03）
+
+- **每问全表扫描**（store.ts 语义臂段）：每问 listEmbeddings 全量 + ready 条目重算
+  buildEmbeddingText/textHash，主线程 O(n)/问。百级无感，千级可能帧抖——优化方向
+  textHash 落库或增量脏检查。（MINOR#2）
+- **孤儿向量不级联**：删条目后 embeddings 行残留（查询按 entryIds 过滤，无正确性问题，
+  仅空间累积）——删条目路径补 delete 或定期 GC。（MINOR#3）
+- 已修：model 戳同源化（MINOR#1）、queryVectorCache 键并入模型（另注缝）。
+
+## 6. 非目标
 
 - 不做服务端 embed 端点（部署受阻，builtin 用户本期无语义臂）。
 - 不做 embedding 设置页 UI（默认模型 + settings 字段留口）。
