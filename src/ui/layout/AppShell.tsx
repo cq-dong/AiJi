@@ -60,6 +60,13 @@ function PageTransition({ bottomPad }: { bottomPad: string }) {
   )
 }
 
+// 主路由内容底部净空：NavBottom(79) + FAB 悬浮区 + 余量。
+// m3 修复：FAB 默认悬浮于 bottom 93（= 79 导航 + 14 间距）、高 56 → 顶沿距 frame 底 149px。
+// 底部净空若只留导航高(79)，滚到底时末行 trailing 内容（设置「关于 AiJi」版本号等）
+// 恰好压在 FAB 下且无法再滚动露出（390×844 实测）。净空 = 149 + 12 余量 = 161，
+// 也覆盖 FAB 可拖拽的最低位（底沿贴导航 = 135）——一处改，全主路由滚到底都不被 FAB 遮。
+const MAIN_BOTTOM_CLEARANCE = 'calc(161px + var(--safe-bottom, 0px))'
+
 // 主 tab 层：状态栏 + 顶栏(搜索) + 内容 + 采集 FAB + 底部导航
 export function MainLayout() {
   return (
@@ -71,14 +78,14 @@ export function MainLayout() {
     >
       <Statusbar />
       <TopBar />
-      {/* D11: 内容区底部留 NavBottom(79) + safe-bottom 的空间，与 NavBottom 等高消除灰带。
+      {/* D11: 内容区底部留 NavBottom + FAB 净空 + safe-bottom 的空间（见 MAIN_BOTTOM_CLEARANCE）。
           --safe-bottom 由 MainActivity 注入，PWA fallback 0。
           overscroll-behavior: 拦 Android Chrome 原生下拉刷新/过度滚动辉光（home 自实现 PTR）。 */}
       <main
         className="aji-frame-main flex-1 overflow-y-auto overscroll-behavior-y-contain"
-        style={{ paddingBottom: 'calc(79px + var(--safe-bottom, 0px))' }}
+        style={{ paddingBottom: MAIN_BOTTOM_CLEARANCE }}
       >
-        <PageTransition bottomPad="calc(79px + var(--safe-bottom, 0px))" />
+        <PageTransition bottomPad={MAIN_BOTTOM_CLEARANCE} />
       </main>
       <Fab />
       <NavBottom />
