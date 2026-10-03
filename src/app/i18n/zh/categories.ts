@@ -2,10 +2,10 @@
 // 类别名/标签名是用户数据（Dexie 涌现）→ 不入字典，照常渲染。
 // 这里只放 UI chrome：视图切换、lens 标签、编辑 sheet、导出 sheet、空态、计数后缀、日期/模态兜底。
 export const categories = {
-  // 6 个 lens 标签（ViewSwitcher / CategoryDetail 分组 / FacetLens 共用）
+  // 5 个 lens 标签（ViewSwitcher / CategoryDetail 分组 / FacetLens 共用）
+  // 情绪不是导航轴（铁律 §1）——无 lens.mood；mood facet 文案在 detail 屏。
   'categories.lens.category': '类别',
   'categories.lens.time': '时间',
-  'categories.lens.mood': '心情',
   'categories.lens.project': '项目',
   'categories.lens.person': '人物',
   'categories.lens.place': '地点',

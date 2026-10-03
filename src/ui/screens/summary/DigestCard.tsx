@@ -65,7 +65,11 @@ export function DigestCard({
             </span>
           )}
         </div>
-        <span className="text-[12px] tabular-nums text-t3">{cardRange}</span>
+        {/* m1 修复：更早期间的 label 本身已是日期区间（「9/14–9/20」），右侧不再重复；
+            仅当 range 与 label 不同（本周/上周/今日等相对标签）时才显示。 */}
+        {cardRange !== cardLabel && (
+          <span className="text-[12px] tabular-nums text-t3">{cardRange}</span>
+        )}
       </div>
 
       {empty ? (

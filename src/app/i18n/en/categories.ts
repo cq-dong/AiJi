@@ -1,9 +1,9 @@
 // en 片段不带 as const（值类型放宽为 string），en/index.ts 的 Record<I18nKey, string> 强制 key 齐全。
 export const categories = {
-  // 6 lens labels (shared by ViewSwitcher / CategoryDetail groups / FacetLens)
+  // 5 lens labels (shared by ViewSwitcher / CategoryDetail groups / FacetLens)
+  // Mood is a facet, not a navigation axis (identity rule §1) — no lens.mood.
   'categories.lens.category': 'Category',
   'categories.lens.time': 'Time',
-  'categories.lens.mood': 'Mood',
   'categories.lens.project': 'Project',
   'categories.lens.person': 'People',
   'categories.lens.place': 'Place',

@@ -5,8 +5,8 @@ import { useT } from '@/app/i18n/useT'
 import { LENS_KEYS } from './helpers'
 import { EntryRow } from './EntryRow'
 
-// Which facet dimension to cluster by.
-export type FacetKind = 'mood' | 'project' | 'person' | 'place'
+// Which facet dimension to cluster by.（mood 不入：情绪是 facet 不是导航轴，铁律 §1。）
+export type FacetKind = 'project' | 'person' | 'place'
 
 interface FacetLensProps {
   kind: FacetKind
@@ -20,7 +20,6 @@ interface FacetLensProps {
 function facetValues(ai: EntryAi | undefined, kind: FacetKind): string[] {
   if (!ai) return []
   const f: Facets = ai.facets
-  if (kind === 'mood') return f.mood ? [f.mood] : []
   if (kind === 'project') return f.project ? [f.project] : []
   if (kind === 'place') return f.place ? [f.place] : []
   return f.person ?? []

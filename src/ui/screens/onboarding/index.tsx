@@ -23,6 +23,24 @@ const stepVariants = {
   exit: (dir: number) => ({ opacity: 0, x: dir * -48 }),
 }
 
+// m2 修复：欢迎副标语在 390px 视口末字（「理」）寡行。把破折号后的尾段包成
+// whitespace-nowrap，让换行发生在破折号处而非尾段内部。zh 用「——」、en 用「 — 」；
+// 分隔符不匹配时原样渲染（安全降级）。
+function WelcomeSub({ text }: { text: string }) {
+  for (const sep of ['——', ' — ']) {
+    const idx = text.indexOf(sep)
+    if (idx > 0) {
+      return (
+        <>
+          {text.slice(0, idx + sep.length)}
+          <span className="whitespace-nowrap">{text.slice(idx + sep.length)}</span>
+        </>
+      )
+    }
+  }
+  return <>{text}</>
+}
+
 export default function Onboarding() {
   const navigate = useNavigate()
   const t = useT()
@@ -158,7 +176,7 @@ export default function Onboarding() {
                   <h1 className="mt-5 text-[32px] font-bold text-ink">AiJi</h1>
                   <p className="mt-1.5 text-[15px] font-medium text-ink">{t('onboarding.tagline')}</p>
                   <p className="mx-auto mt-2 max-w-[280px] text-[12px] leading-relaxed text-t3">
-                    {t('onboarding.welcomeSub')}
+                    <WelcomeSub text={t('onboarding.welcomeSub')} />
                   </p>
                   <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
                     {MINI_FEATURES.map((f, i) => (

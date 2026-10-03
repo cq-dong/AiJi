@@ -126,7 +126,7 @@ export default function Categories() {
           {view === 'time' && (
             <TimeLens entries={entries} aiByEntry={aiByEntry} categories={categories} />
           )}
-          {(view === 'mood' || view === 'project' || view === 'person' || view === 'place') && (
+          {(view === 'project' || view === 'person' || view === 'place') && (
             <FacetLens
               kind={view}
               entries={entries}

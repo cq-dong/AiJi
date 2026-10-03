@@ -2,13 +2,14 @@ import type { EntryPart } from '@/domain/types'
 import { t } from '@/app/i18n'
 import type { I18nKey } from '@/app/i18n'
 
-// 6 lens 维度 → i18n key（ViewSwitcher / CategoryDetail 分组 / FacetLens 共用）。
-// 类别名/标签名是用户数据不入字典；这 6 个是固定 facet 维度枚举，入字典。
-export type LensKind = 'category' | 'time' | 'mood' | 'project' | 'person' | 'place'
+// 5 lens 维度 → i18n key（ViewSwitcher / CategoryDetail 分组 / FacetLens 共用）。
+// 类别名/标签名是用户数据不入字典；这 5 个是固定 facet 维度枚举，入字典。
+// 铁律 §1：情绪只是可选 facet，不是导航轴 —— mood 不入 LensKind（facet 数据本身
+// EntryAi.facets.mood 仍在 detail 屏合法使用）。
+export type LensKind = 'category' | 'time' | 'project' | 'person' | 'place'
 export const LENS_KEYS: Record<LensKind, I18nKey> = {
   category: 'categories.lens.category',
   time: 'categories.lens.time',
-  mood: 'categories.lens.mood',
   project: 'categories.lens.project',
   person: 'categories.lens.person',
   place: 'categories.lens.place',
