@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, Archive, Brain, CalendarRange, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Globe, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, RefreshCw, Share2, Sparkles, Timer, X } from 'lucide-react'
+import { AlertCircle, Archive, Brain, CalendarRange, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, FileUp, Film, Globe, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, RefreshCw, Share2, Sparkles, Timer, X } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { AnimatePresence } from 'framer-motion'
 import { Button, Spinner, Toast, cn, useBackDismiss } from '@/ui/components'
@@ -13,6 +13,7 @@ import { maybeStartSync, stopSync, syncNow } from '@/app/syncEngine'
 import { useSyncStore } from '@/app/syncStore'
 import { useAccountStore } from '@/app/accountStore'
 import { exportZip } from '@/adapters/zipExport'
+import { readBackup, restoreBackup, type ParsedBackup } from '@/adapters/zipImport'
 import { canShareFiles, saveBlob, type SaveResult } from '@/adapters/fileShare'
 import { importSampleData } from '@/adapters/dexieStorage'
 import { BUILTIN_VLM_URL, BUILTIN_VLM_MODEL, BUILTIN_STT_URL_STREAM, BUILTIN_STT_URL_WHISPER, BUILTIN_STT_MODEL_STREAM, BUILTIN_STT_MODEL_WHISPER } from '@/adapters/builtinDefaults'
@@ -20,6 +21,7 @@ import { Toggle } from './Toggle'
 import { AccountSection } from './AccountSection'
 import { SearchSheet } from './SearchSheet'
 import { MemorySheet } from './MemorySheet'
+import { DataOutSheet } from './DataOutSheet'
 import { RowDivider, RowIcon, SettingsGroup, SettingsRow } from './group'
 import type { UpdateInfo, DownloadProgress } from '@/ports'
 import type { EntryPart, Settings as SettingsType } from '@/domain/types'
@@ -318,7 +320,11 @@ function formatMB(bytes: number): string {
 }
 
 // D10: 导出 .zip 确认对话框。说明范围 + 文件名 + 媒体数 + 保存位置，确认后执行。
+// PRD trust pack t1：复用于「恢复备份」确认——可选 title/confirmLabel 覆盖导出文案，
+// 缺省保持导出语义，export 调用方零变化。
 function ExportConfirmSheet({
+  title,
+  confirmLabel,
   scopeLabel,
   filename,
   entryCount,
@@ -326,6 +332,8 @@ function ExportConfirmSheet({
   onClose,
   onConfirm,
 }: {
+  title?: string
+  confirmLabel?: string
   scopeLabel: string
   filename: string
   entryCount: number
@@ -346,7 +354,7 @@ function ExportConfirmSheet({
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 animate-fade-in" onClick={onClose}>
       <div className="w-full max-w-[420px] rounded-screen bg-page p-4 shadow-sheet animate-slide-up" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <p className="text-[17px] font-bold text-ink">{t('settings.exportConfirmTitle')}</p>
+          <p className="text-[17px] font-bold text-ink">{title ?? t('settings.exportConfirmTitle')}</p>
           <button type="button" onClick={onClose} aria-label={t('common.close')} className="flex size-11 items-center justify-center text-t3 transition duration-base ease-out cursor-pointer active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-pri/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card">
             <X size={18} strokeWidth={2} />
           </button>
@@ -385,7 +393,7 @@ function ExportConfirmSheet({
             className="h-[38px] flex-1 rounded-btn"
             onClick={onConfirm}
           >
-            {t('settings.confirmExport')}
+            {confirmLabel ?? t('settings.confirmExport')}
           </Button>
         </div>
       </div>
@@ -1250,6 +1258,45 @@ export default function Settings() {
   const [mdExporting, setMdExporting] = useState(false)
   const [mdToast, setMdToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
+  // PRD trust pack t1：恢复备份（zip 导入）+ 数据出门 sheet 状态。
+  // 两步 API：readBackup（选文件即解析计数）→ 确认 sheet → restoreBackup → rehydrate。
+  const [importingBackup, setImportingBackup] = useState(false)
+  const [backupConfirm, setBackupConfirm] = useState<{ parsed: ParsedBackup; filename: string } | null>(null)
+  const [dataOutOpen, setDataOutOpen] = useState(false)
+  const backupFileRef = useRef<HTMLInputElement>(null)
+
+  async function handleBackupPicked(ev: React.ChangeEvent<HTMLInputElement>) {
+    const file = ev.target.files?.[0]
+    // 重置 input 值：同一文件可再次触发 change。
+    ev.target.value = ''
+    if (!file) return
+    setImportingBackup(true)
+    try {
+      const parsed = await readBackup(file)
+      setBackupConfirm({ parsed, filename: file.name })
+    } catch {
+      setZipToast({ msg: t('settings.importBackupInvalid'), ok: false })
+    } finally {
+      setImportingBackup(false)
+    }
+  }
+
+  async function handleBackupRestore() {
+    const bc = backupConfirm
+    setBackupConfirm(null)
+    if (!bc) return
+    setImportingBackup(true)
+    try {
+      const r = await restoreBackup(bc.parsed)
+      await useUiStore.getState().rehydrate()
+      setZipToast({ msg: t('settings.importBackupDone', { count: r.entries, skipped: r.skipped }), ok: true })
+    } catch (e) {
+      setZipToast({ msg: t('settings.importBackupFailed', { error: e instanceof Error ? e.message : String(e) }), ok: false })
+    } finally {
+      setImportingBackup(false)
+    }
+  }
+
   function handleOpenZipConfirm() {
     const all = useUiStore.getState().entries
     setZipStats({ entryCount: all.length, mediaCount: all.reduce((sum, e) => sum + countMedia(e.parts), 0) })
@@ -1576,6 +1623,16 @@ export default function Settings() {
           onClick={handleOpenZipConfirm}
         />
         <RowDivider />
+        {/* PRD trust pack t1: 恢复备份——从导出 .zip 新增式还原（永不覆盖现有数据）。 */}
+        <SettingsRow
+          icon={<FileUp size={15} strokeWidth={2.2} />}
+          label={t('settings.importBackup')}
+          help={t('settings.importBackupHelp')}
+          value={importingBackup ? t('settings.importing') : undefined}
+          disabled={importingBackup}
+          onClick={() => backupFileRef.current?.click()}
+        />
+        <RowDivider />
         <SettingsRow
           icon={<Share2 size={15} strokeWidth={2.2} />}
           label={t('common.share')}
@@ -1592,7 +1649,26 @@ export default function Settings() {
           disabled={importing}
           onClick={() => void handleImportSample()}
         />
+        <RowDivider />
+        {/* PRD trust pack t1: 数据出门——按模型聚合的数据上送记录（隐私标识）。 */}
+        <SettingsRow
+          icon={<Eye size={15} strokeWidth={2.2} />}
+          label={t('settings.dataOut')}
+          help={t('settings.dataOutHelp')}
+          onClick={() => setDataOutOpen(true)}
+        />
       </SettingsGroup>
+
+      {/* 恢复备份的文件选择器（隐藏，由「恢复备份」行触发）。 */}
+      <input
+        ref={backupFileRef}
+        type="file"
+        accept=".zip,application/zip"
+        className="hidden"
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={(e) => void handleBackupPicked(e)}
+      />
 
       {/* 关于 */}
       <SettingsGroup label={t('settings.groupAbout')}>
@@ -1628,6 +1704,19 @@ export default function Settings() {
           onConfirm={() => void handleZipExport()}
         />
       )}
+      {backupConfirm && (
+        <ExportConfirmSheet
+          title={t('settings.importBackupTitle')}
+          confirmLabel={t('settings.importBackupConfirm')}
+          scopeLabel={t('settings.scopeAll')}
+          filename={backupConfirm.filename}
+          entryCount={backupConfirm.parsed.entryCount}
+          mediaCount={backupConfirm.parsed.mediaCount}
+          onClose={() => setBackupConfirm(null)}
+          onConfirm={() => void handleBackupRestore()}
+        />
+      )}
+      {dataOutOpen && <DataOutSheet onClose={() => setDataOutOpen(false)} />}
       <AnimatePresence>
         {zipToast && (
           <Toast

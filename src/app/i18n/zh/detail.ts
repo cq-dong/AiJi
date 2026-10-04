@@ -44,6 +44,9 @@ export const detail = {
   'detail.manualEdit': '手动编辑',
   'detail.aiPanelTitle': 'AI 处理',
   'detail.noAiResult': '暂无 AI 处理结果',
+  // 上送行（PRD trust pack t1 隐私标识）：仅渲染已记录事实 modelUsed，不推断。
+  'detail.uploadLine': '文本与转写已上送 {model}',
+  'detail.uploadMediaSuffix': '；语音/媒体按处理时的 STT/VLM 配置上送',
 
   // PartView：媒体不可用（样例）态 + aria
   'detail.aria.zoomImage': '缩放图片',

@@ -142,6 +142,22 @@ export const settings = {
   'settings.savedToDefault': '已保存到 文档/AiJi/',
   'settings.downloadedToDir': '已下载到浏览器下载目录',
   'settings.exported': '已导出',
+  // 恢复备份（PRD trust pack t1）：从导出 .zip 新增式还原，永不覆盖现有数据。
+  'settings.importBackup': '恢复备份',
+  'settings.importBackupHelp': '从导出的 .zip 备份还原条目，不覆盖现有数据',
+  'settings.importBackupTitle': '恢复备份',
+  'settings.importBackupConfirm': '确认恢复',
+  'settings.importBackupInvalid': '不是有效的 AiJi 备份或版本过旧',
+  'settings.importBackupDone': '已还原 {count} 条（跳过 {skipped} 条）',
+  'settings.importBackupFailed': '恢复失败：{error}',
+  // 数据出门（PRD trust pack t1 隐私标识）：按模型聚合的数据上送记录。
+  'settings.dataOut': '数据出门',
+  'settings.dataOutHelp': '查看哪些内容上送给了模型服务',
+  'settings.dataOutTitle': '数据出门',
+  'settings.dataOutDesc':
+    '以下内容会离开本机，上送给你配置的模型服务：分类与摘要的文本与转写、语音转写的音频、视觉理解的图片/视频帧、问 AI 的提问。',
+  'settings.dataOutEmpty': '尚无数据出门记录',
+  'settings.dataOutRowMeta': '{count} 条 · 最近 {time}',
 
   // 关于
   'settings.aboutTitle': '关于 AiJi',

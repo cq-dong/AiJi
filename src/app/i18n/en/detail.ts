@@ -42,6 +42,9 @@ export const detail = {
   'detail.manualEdit': 'Manual edit',
   'detail.aiPanelTitle': 'AI processing',
   'detail.noAiResult': 'No AI result yet',
+  // Upload line (PRD trust pack t1 privacy labeling): renders recorded fact modelUsed only.
+  'detail.uploadLine': 'Text & transcripts sent to {model}',
+  'detail.uploadMediaSuffix': '; media went to the STT/VLM provider configured at processing time',
 
   // PartView: media unavailable (sample) + aria
   'detail.aria.zoomImage': 'Zoom image',

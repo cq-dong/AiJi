@@ -611,6 +611,19 @@ function MoreSheet({
   )
 }
 
+// PRD trust pack t1（2026-10-05）：AI 上送行（隐私标识，PRD F5/§6 JTBD）。
+// 仅渲染已记录事实（modelUsed），不推断、不新增数据模型；含音视频 part 时追加 STT/VLM 后缀。
+// 命名导出供 settings/__tests__/detailUploadLine.test.tsx 两态渲染断言。
+export function AiUploadLine({ model, hasMedia }: { model: string; hasMedia: boolean }) {
+  const t = useT()
+  return (
+    <p className="-mt-1 px-1 text-[11px] leading-snug text-t3">
+      {t('detail.uploadLine', { model })}
+      {hasMedia ? t('detail.uploadMediaSuffix') : ''}
+    </p>
+  )
+}
+
 export default function Detail() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -804,6 +817,14 @@ export default function Detail() {
         onManualEdit={() => setEditingParts(true)}
         onDelete={() => setConfirmingDelete(true)}
       />
+
+      {/* PRD trust pack t1：上送行——告知本条目的文本/转写/媒体送给了哪个模型。 */}
+      {state === 'ready' && ai && (
+        <AiUploadLine
+          model={ai.modelUsed}
+          hasMedia={entry.parts.some((p) => p.type === 'audio' || p.type === 'video')}
+        />
+      )}
 
       {state === 'ready' && ai && (ai.category === 'errand' || !!ai.facets.event || !!ai.reminderSuggestion) && !ai.todoDismissed && entryReminders.length === 0 && (
         <ReminderCreator

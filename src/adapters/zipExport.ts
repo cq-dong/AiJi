@@ -246,16 +246,25 @@ export async function exportZip(): Promise<SaveResult> {
   // ai.json — full aiByEntry map
   files.push({ name: 'ai.json', data: enc.encode(JSON.stringify(aiByEntry, null, 2)) })
 
+  // v2（PRD trust pack t1）：机器可还原真源。markdown 是有损格式（音视频 part 只剩转写），
+  // entries.json 带原始 parts 结构/ref/location/status；categories/tags 让类别标签随备份走。
+  files.push({ name: 'entries.json', data: enc.encode(JSON.stringify(entries, null, 2)) })
+  files.push({ name: 'categories.json', data: enc.encode(JSON.stringify(categories, null, 2)) })
+  files.push({ name: 'tags.json', data: enc.encode(JSON.stringify(tags, null, 2)) })
+
   // manifest.json — recoverability metadata
   const manifest = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     entryCount: entries.length,
     schema: {
-      entries: 'Entry[] as markdown in entries/<id>.md',
+      entries: 'Entry[] as markdown in entries/<id>.md (human-readable, lossy)',
+      entriesJson: 'Raw Entry[] in entries.json (machine-restorable source of truth)',
+      categoriesJson: 'Category[] in categories.json',
+      tagsJson: 'Tag[] in tags.json',
       media: 'Binary media blobs in media/<ref>.<ext>',
       ai: 'EntryAi map (entryId -> EntryAi) in ai.json',
-      description: 'AiJi export — entries as markdown + media blobs + AI metadata + manifest for recoverability',
+      description: 'AiJi export — raw JSON + entries as markdown + media blobs + AI metadata + manifest for recoverability',
     },
   }
   files.push({ name: 'manifest.json', data: enc.encode(JSON.stringify(manifest, null, 2)) })

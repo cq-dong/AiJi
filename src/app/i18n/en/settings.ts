@@ -142,6 +142,22 @@ export const settings = {
   'settings.savedToDefault': 'Saved to Documents/AiJi/',
   'settings.downloadedToDir': 'Downloaded to browser downloads',
   'settings.exported': 'Exported',
+  // Restore backup (PRD trust pack t1): additive restore from an exported .zip; never overwrites.
+  'settings.importBackup': 'Restore backup',
+  'settings.importBackupHelp': 'Restore entries from an exported .zip; existing data is kept',
+  'settings.importBackupTitle': 'Restore backup',
+  'settings.importBackupConfirm': 'Confirm restore',
+  'settings.importBackupInvalid': 'Not a valid AiJi backup, or the backup is too old',
+  'settings.importBackupDone': 'Restored {count} entries ({skipped} skipped)',
+  'settings.importBackupFailed': 'Restore failed: {error}',
+  // Data out (PRD trust pack t1 privacy labeling): what was sent to model providers.
+  'settings.dataOut': 'Data out',
+  'settings.dataOutHelp': 'See what content was sent to model providers',
+  'settings.dataOutTitle': 'Data out',
+  'settings.dataOutDesc':
+    'The following leaves this device and goes to the model providers you configured: text & transcripts for classification and digests, audio for speech-to-text, image/video frames for visual understanding, and your questions in Ask AI.',
+  'settings.dataOutEmpty': 'No data has left this device yet',
+  'settings.dataOutRowMeta': '{count} items · last {time}',
 
   // 关于
   'settings.aboutTitle': 'About AiJi',
