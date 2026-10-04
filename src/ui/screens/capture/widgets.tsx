@@ -726,7 +726,7 @@ export function CameraView({
   onPart,
   onClose,
 }: {
-  onPart: (part: EntryPart, blob: Blob) => void
+  onPart: (part: EntryPart, blob: Blob, posterBlob?: Blob) => void
   onClose: () => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -817,7 +817,8 @@ export function CameraView({
           const r = await di.capture.stopVideo()
           setRecording(false)
           // D7: mark mediaType='video' so LLM prompt can chunk "以下视频内容：".
-          if (r) onPart({ type: 'video', ref: r.ref, durationSec: Math.max(1, Math.round(r.durationSec)), mime: r.mime, mediaType: 'video' }, r.blob)
+          // Q6 ②: poster 帧透传（落 OPFS 由 capture 屏 addMediaPart 负责）。
+          if (r) onPart({ type: 'video', ref: r.ref, durationSec: Math.max(1, Math.round(r.durationSec)), mime: r.mime, mediaType: 'video' }, r.blob, r.posterBlob)
           void di.capture.stopCamera()
           onClose()
         }

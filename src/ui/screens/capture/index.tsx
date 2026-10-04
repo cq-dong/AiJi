@@ -8,6 +8,7 @@ import { di } from '@/app/di'
 import { useT } from '@/app/i18n/useT'
 import { enrichLocation } from '@/adapters/geocoding'
 import type { EntryPart } from '@/domain/types'
+import { posterRefOf } from '@/domain/mediaRef'
 import {
   CameraView,
   CaptureHeader,
@@ -236,12 +237,18 @@ export default function Capture() {
 
   // Persist a media blob + add the part. Keeps a local object URL for live preview.
   // 书写面文本先并入（媒体追加在后 → 时间序正确）。
-  const addMediaPart = (part: EntryPart, blob: Blob) => {
+  const addMediaPart = (part: EntryPart, blob: Blob, posterBlob?: Blob) => {
     if (part.type !== 'video' && part.type !== 'audio') return
     commitTextDraft()
     const url = URL.createObjectURL(blob)
     setMediaUrls((m) => ({ ...m, [part.ref]: url }))
     void di.storage.saveMedia(part.ref, blob).catch((e) => console.error('[capture] saveMedia failed', e))
+    // Q6 ②：视频 poster 帧随主 blob 一并落 OPFS（键 posterRefOf(ref)）——列表 MediaThumb
+    // 直出 <img> 免滚动解码。镜像主 blob 的 fire-and-forget 风格；失败仅记日志，消费方回落
+    // <video #t=0.1>。durationSec>0 守卫：拍照 part（mediaType=image, durationSec=0）不存 poster。
+    if (posterBlob && part.type === 'video' && part.durationSec > 0) {
+      void di.storage.saveMedia(posterRefOf(part.ref), posterBlob).catch((e) => console.error('[capture] saveMedia poster failed', e))
+    }
     addPart(part)
   }
 
@@ -304,6 +311,7 @@ export default function Capture() {
       addMediaPart(
         { type: 'video', ref: r.ref, durationSec: r.kind === 'image' ? 0 : Math.max(1, Math.round(r.durationSec)), mime: r.mime, mediaType: r.kind === 'image' ? 'image' : 'video' },
         r.blob,
+        r.posterBlob,
       )
     } catch {
       showCaptureFailureToast()

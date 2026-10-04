@@ -57,6 +57,9 @@ interface UiState {
   // → setReminderFireHandler → showFiringReminder → FiringReminderPopup overlay。
   // 与 pendingReminder（保存后确认创建）区分；本字段是「已到点」强提示。
   firingReminder: { reminderId: string; entryId?: string; label: string; dueAt?: string } | null
+  // Q6 ③（2026-10-05）：OPFS 配额快照。refreshStorageQuota（app/storageQuota.ts）写入；
+  // null = 未刷新 / estimate 不可用 → home 不出配额横幅。hydrate 不调，由 home mount 触发。
+  storageQuota: { usage: number; quota: number } | null
   hydrate: () => Promise<void>
   // D9: 导入示例数据后重读 Dexie。重置 hydrated 跑 hydrate 全量载入（onboarding/settings 导入后调）。
   rehydrate: () => Promise<void>
@@ -501,6 +504,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   justSaved: false,
   pendingReminder: null,
   firingReminder: null,
+  storageQuota: null,
   conversation: null,
   chatList: [],
   chatLoading: 'idle',
