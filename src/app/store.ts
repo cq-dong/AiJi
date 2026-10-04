@@ -4,7 +4,7 @@ import { scopeRange } from '@/domain/dateRange'
 import { localRecall, dateKey, currentTimeLine, resolveActionCategory, toCite } from '@/ui/screens/chat/helpers'
 import { semanticArm, mergeCites, queryVectorCache, DEFAULT_EMBEDDING_MODEL } from '@/app/semanticRecall'
 import { topSimilarMemories, isStaleMemory, applyMemoryVerdict } from '@/app/memoryLifecycle'
-import { buildEmbeddingText, textHash, listEmbeddings, saveEmbedding } from '@/data/embeddings'
+import { buildEmbeddingText, textHash, listEmbeddings, saveEmbedding, deleteStaleEmbeddings } from '@/data/embeddings'
 import { getCurrentOwner } from '@/app/currentOwner'
 import { seedSettings } from '@/data/seed'
 import { enrichLocation, reverseGeocodeCity } from '@/adapters/geocoding'
@@ -273,6 +273,13 @@ function stripLeadingDatePrefix(text: string): string {
 // finalize/早退路径 guard 失败时仅在自己仍是最新 seq 才复位 idle（防永久卡 'answer' 软锁输入框）。
 let chatSendSeq = 0
 
+// W0（2026-10-04）：saveMemory 串行化队列。旧实现 candidates 取 T0 快照后经 embed/裁决两次
+// await 让出事件循环——两次并行 saveMemory（sendMessage 记忆提取 fire-and-forget 与
+// MemorySheet 手动添加可并行）各持 T0 快照裁决，merge/replace 后写覆盖先写，记忆静默丢失。
+// 模块级 promise 链：每次调用把整个函数体挂到链尾串行执行；链尾 catch 吞错（console.error）
+// 防一次失败毒化后续所有排队任务。
+let memoryQueue: Promise<unknown> = Promise.resolve()
+
 // M4：流式占位（streaming:true）是内存态语义——进程被杀后 Dexie 可能残留 streaming:true 的
 // 尸体会话（空气泡+打字光标+压住 LoadingBubble）。读出时一律抹 false：内存态不信持久层。
 function stripStreamingFlags(conv: Conversation): Conversation {
@@ -320,7 +327,14 @@ async function withSemanticArm(
     if (!qv) return cites
     // 只召回当前条目集内的向量（回收站/已删条目的残留向量自然出局）。
     const entryIds = new Set(entries.map((e) => e.id))
-    const rows = (await listEmbeddings()).filter((r) => entryIds.has(r.entryId))
+    const allRows = await listEmbeddings()
+    const rows = allRows.filter((r) => entryIds.has(r.entryId))
+    // W0 惰性 GC（2026-10-04）：embeddings 表无 delete 挂点，条目已删/已清的向量行永久残留
+    // ——召回过滤时顺带发现（allRows 比 rows 多即有残留），fire-and-forget 清掉。
+    // 不阻塞召回主路径；失败静默（console.warn），下轮召回再试。
+    if (allRows.length !== rows.length) {
+      void deleteStaleEmbeddings(entryIds).catch((e) => console.warn('[store] stale embedding GC failed', e))
+    }
     // 惰性回填：发现无向量/文本已变的 ready 条目 → 后台补嵌（每轮 ≤20），本轮不等。
     void backfillEmbeddings(rows, entries, aiByEntry, model)
     const sem = semanticArm(qv, rows)
@@ -1620,55 +1634,63 @@ export const useUiStore = create<UiState>((set, get) => ({
   // P-C 生命周期编排（2026-10-03 spec §2/§3）：embed 一次 batch 初筛（cosine≥0.85 top-3）→
   // adjudicateMemory 四选一 → applyMemoryVerdict 执行落库。降级矩阵（spec §5）：embed 缺席/
   // 抛错/返 null、无相似命中、裁决失败 → 全部走 ADD（与旧行为逐字节一致的新增路径）。
-  saveMemory: async (content) => {
-    const trimmed = content.trim()
-    if (!trimmed) return
-    const nowIso = new Date().toISOString()
-    // 初筛候选 = enabled && 未归档（spec §2「enabled 记忆原文」；归档行不再参与判重）。
-    const candidates = get().memories.filter((m) => m.enabled && !m.archivedAt)
-    let similar: { id: string; content: string }[] = []
-    const embed = di.llm.embed
-    if (embed && candidates.length > 0) {
-      try {
-        const vecs = await embed([trimmed, ...candidates.map((m) => m.content)])
-        if (vecs && vecs.length === candidates.length + 1 && vecs[0]) {
-          const hits = topSimilarMemories(
-            vecs[0],
-            candidates.map((m, i) => ({ id: m.id, content: m.content, vec: vecs[i + 1] ?? [] })),
-          )
-          similar = hits.map(({ id, content }) => ({ id, content }))
+  saveMemory: (content) => {
+    // 串行化（W0，见模块级 memoryQueue 注释）：整个函数体挂链尾执行。candidates 读取发生在
+    // 链上任务真正运行时（非调用时），两次并行调用不再各持 T0 快照互踩。
+    // 返回本次任务的 promise——调用方仍能 await/捕获本次错误（与串行 await 旧行为一致）；
+    // 队列本身走 catch 分支续链，一次失败不毒化后续排队任务。
+    const task = memoryQueue.then(async () => {
+      const trimmed = content.trim()
+      if (!trimmed) return
+      const nowIso = new Date().toISOString()
+      // 初筛候选 = enabled && 未归档（spec §2「enabled 记忆原文」；归档行不再参与判重）。
+      const candidates = get().memories.filter((m) => m.enabled && !m.archivedAt)
+      let similar: { id: string; content: string }[] = []
+      const embed = di.llm.embed
+      if (embed && candidates.length > 0) {
+        try {
+          const vecs = await embed([trimmed, ...candidates.map((m) => m.content)])
+          if (vecs && vecs.length === candidates.length + 1 && vecs[0]) {
+            const hits = topSimilarMemories(
+              vecs[0],
+              candidates.map((m, i) => ({ id: m.id, content: m.content, vec: vecs[i + 1] ?? [] })),
+            )
+            similar = hits.map(({ id, content }) => ({ id, content }))
+          }
+        } catch {
+          similar = [] // embed 抛错 → 降级 ADD（spec §5，静默）
         }
-      } catch {
-        similar = [] // embed 抛错 → 降级 ADD（spec §5，静默）
       }
-    }
-    let verdict: MemoryVerdict = { action: 'add' }
-    if (similar.length > 0) {
-      try {
-        verdict = await di.llm.adjudicateMemory(trimmed, similar)
-      } catch (e) {
-        // 裁决失败兜底（spec §3）：默认 ADD 宁可多存不丢信息。
-        console.warn('[store] adjudicateMemory failed, default ADD', e)
-        verdict = { action: 'add' }
+      let verdict: MemoryVerdict = { action: 'add' }
+      if (similar.length > 0) {
+        try {
+          verdict = await di.llm.adjudicateMemory(trimmed, similar)
+        } catch (e) {
+          // 裁决失败兜底（spec §3）：默认 ADD 宁可多存不丢信息。
+          console.warn('[store] adjudicateMemory failed, default ADD', e)
+          verdict = { action: 'add' }
+        }
       }
-    }
-    const upserts = applyMemoryVerdict({
-      memories: get().memories,
-      newContent: trimmed,
-      verdict,
-      similar,
-      nowIso,
-      newId: crypto.randomUUID(),
+      const upserts = applyMemoryVerdict({
+        memories: get().memories,
+        newContent: trimmed,
+        verdict,
+        similar,
+        nowIso,
+        newId: crypto.randomUUID(),
+      })
+      for (const row of upserts) await di.storage.saveMemory(row)
+      // 内存态合并：新行 prepend（新者在首），已有行原位替换。
+      set((s) => {
+        const byId = new Map(upserts.map((r) => [r.id, r]))
+        const fresh = upserts.filter((r) => !s.memories.some((m) => m.id === r.id))
+        return { memories: [...fresh, ...s.memories.map((m) => byId.get(m.id) ?? m)] }
+      })
+      // 归档扫描时机之一（spec §4）：saveMemory 成功后。await 保测试确定性；全表几十条开销可忽略。
+      await get().archiveStaleMemories()
     })
-    for (const row of upserts) await di.storage.saveMemory(row)
-    // 内存态合并：新行 prepend（新者在首），已有行原位替换。
-    set((s) => {
-      const byId = new Map(upserts.map((r) => [r.id, r]))
-      const fresh = upserts.filter((r) => !s.memories.some((m) => m.id === r.id))
-      return { memories: [...fresh, ...s.memories.map((m) => byId.get(m.id) ?? m)] }
-    })
-    // 归档扫描时机之一（spec §4）：saveMemory 成功后。await 保测试确定性；全表几十条开销可忽略。
-    await get().archiveStaleMemories()
+    memoryQueue = task.catch((e) => console.error('[store] saveMemory task failed', e))
+    return task
   },
   restoreMemory: async (id) => {
     const cur = get().memories.find((m) => m.id === id)

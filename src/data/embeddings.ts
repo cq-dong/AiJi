@@ -42,3 +42,15 @@ export function saveEmbedding(row: EntryEmbedding): Promise<void> {
 export function listEmbeddings(ownerId: string = getCurrentOwner()): Promise<EntryEmbedding[]> {
   return db.embeddings.where('ownerId').equals(ownerId).toArray()
 }
+
+// 惰性 GC（2026-10-04 W0）：本表无 delete 挂点——deleteEntry/trashEntry/hydrate purge 均不触
+// embeddings，向量行（~6KB/行）永久残留。调用方传入当前有效 entryId 集，不在集内的行
+// bulkDelete，返回删除数。只扫当前 owner 分区（listEmbeddings 语义），其他 owner 的行不受牵连。
+// 挂点：store.withSemanticArm 召回时顺带触发（fire-and-forget，不阻塞召回主路径）。
+export async function deleteStaleEmbeddings(validIds: Set<string>): Promise<number> {
+  const rows = await listEmbeddings()
+  const staleIds = rows.filter((r) => !validIds.has(r.entryId)).map((r) => r.entryId)
+  if (staleIds.length === 0) return 0
+  await db.embeddings.bulkDelete(staleIds)
+  return staleIds.length
+}
