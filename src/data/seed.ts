@@ -128,27 +128,6 @@ export const seedAggregates: Aggregate[] = [
   },
 ]
 
-export const seedSettings = {
-  llmProvider: 'DeepSeek · BYOK',
-  apiKeyRef: undefined,
-  llmUrl: 'https://api.deepseek.com/v1/chat/completions',
-  llmModel: 'deepseek-v4-flash',
-  sttProvider: 'Paraformer · BYOK',
-  sttModel: 'paraformer-realtime-v2',
-  sttKeyRef: undefined,
-  recordLocation: false,
-  dailyReminder: false,
-  theme: 'light' as const,
-  aggregateDetailLevel: 3 as const,
-  onboarded: false,
-  sttMode: 'stream' as const,
-  sttUrl: undefined,
-  videoVisionEnabled: true,
-  videoFrameIntervalSec: 10,
-  vlmProvider: 'VLM · BYOK',
-  vlmUrl: undefined,
-  vlmModel: undefined,
-  vlmKeyRef: undefined,
-  geocodingKeyRef: undefined,
-  keySource: 'byok' as const,
-}
+// d1-perf：seedSettings 独立成 @/data/defaultSettings（store.ts/devSeed.ts 静态
+// 导入只拉默认设置、不拖全部样例条目进主 chunk）；此处 re-export 保既有导入方零改动。
+export { seedSettings } from './defaultSettings'

@@ -1,6 +1,6 @@
 import type { Settings } from '@/domain/types'
 import { di } from './di'
-import { seedSettings } from '@/data/seed'
+import { seedSettings } from '@/data/defaultSettings'
 
 // DEV-only convenience: seed BYOK keys/URLs/models from .env.local into
 // SecretStore(localStorage 'llm:key'/'stt:key') + Settings(Dexie) on boot, so

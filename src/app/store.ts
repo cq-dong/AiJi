@@ -6,7 +6,7 @@ import { semanticArm, mergeCites, queryVectorCache, DEFAULT_EMBEDDING_MODEL } fr
 import { topSimilarMemories, isStaleMemory, applyMemoryVerdict } from '@/app/memoryLifecycle'
 import { buildEmbeddingText, textHash, listEmbeddings, saveEmbedding, deleteStaleEmbeddings } from '@/data/embeddings'
 import { getCurrentOwner } from '@/app/currentOwner'
-import { seedSettings } from '@/data/seed'
+import { seedSettings } from '@/data/defaultSettings'
 import { enrichLocation, reverseGeocodeCity } from '@/adapters/geocoding'
 import { getWeatherLive } from '@/adapters/weather'
 import { webSearch } from '@/adapters/webSearch'

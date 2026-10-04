@@ -46,6 +46,25 @@ export default defineConfig({
     // '@/' key (not bare '@') so scoped npm packages like @tanstack are untouched.
     alias: { '@/': `${path.resolve(process.cwd(), 'src')}/` },
   },
+  // d1-perf：vendor 分 chunk——react/motion/data 长期缓存，业务代码迭代不击穿 vendor 缓存。
+  // PWA workbox 默认 glob 已覆盖新 chunk，无需改 workbox 配置。
+  // 注：Vite 8 底层是 Rolldown，manualChunks 不支持 Rollup 对象字面量形式（仅函数形式且
+  // 已 deprecated）——原生等价物是 codeSplitting.groups（{ name, test }），语义相同：
+  // 三个命名 vendor chunk。test 含各包的独占传递依赖（scheduler/react-router/motion-dom/
+  // motion-utils/query-core），与 Rollup 对象形式自动拉依赖的行为对齐。
+  build: {
+    rollupOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/ },
+            { name: 'motion', test: /[\\/]node_modules[\\/](framer-motion|motion-dom|motion-utils)[\\/]/ },
+            { name: 'data', test: /[\\/]node_modules[\\/](dexie|zustand|@tanstack[\\/]react-query|@tanstack[\\/]query-core)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   // allowedHosts: 允许 cloudflared/ngrok 隧道随机子域（手机 HTTPS 真机测试用）。
   // true = 放行所有 Host 头（仅影响 vite dev/preview，不影响 build 产物）。
   server: { host: true, port: 5173, allowedHosts: true },

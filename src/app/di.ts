@@ -1,6 +1,5 @@
 import { dexieStorage } from '@/adapters/dexieStorage'
 import { webCapture } from '@/adapters/webCapture'
-import { openAiCompatLlm } from '@/adapters/openAiCompatLlm'
 import { paraformerStreamStt } from '@/adapters/paraformerStreamStt'
 import { whisperRestStt } from '@/adapters/whisperRestStt'
 import { localStorageSecrets } from '@/adapters/localStorageSecrets'
@@ -15,7 +14,6 @@ import { mockPlan } from '@/adapters/mockPlan'
 import { httpAuth } from '@/adapters/httpAuth'
 import { httpQuota } from '@/adapters/httpQuota'
 import { httpPlan } from '@/adapters/httpPlan'
-import { builtinLlm } from '@/adapters/builtinLlm'
 import { builtinStt } from '@/adapters/builtinStt'
 import { Capacitor } from '@capacitor/core'
 import type {
@@ -66,33 +64,35 @@ async function readKeySource(): Promise<'byok' | 'builtin'> {
 }
 
 // llmProxy：每次调用读 keySource，builtin → builtinLlm，否则 → openAiCompatLlm（与旧直连等价）。
+// d1-perf：两适配器均改动态导入——openAiCompatLlm 的全部 prompt 构建代码（含 builtinLlm
+// 静态复用其 prompt builder 的链路）移出主 chunk，首次 LLM 调用时才加载；只动态化一个无效
+// （builtinLlm 静态 import openAiCompatLlm 会把它重新拖回主 chunk），故必须两个都动态。
+async function pickLlm(): Promise<LlmPort> {
+  return (await readKeySource()) === 'builtin'
+    ? (await import('@/adapters/builtinLlm')).builtinLlm
+    : (await import('@/adapters/openAiCompatLlm')).openAiCompatLlm
+}
+
 const llmProxy: LlmPort = {
-  classify: (id) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.classify(id) : openAiCompatLlm.classify(id))),
-  aggregate: (ids, scope, range, d, id) => readKeySource().then((k) =>
-    k === 'builtin' ? builtinLlm.aggregate(ids, scope, range, d, id) : openAiCompatLlm.aggregate(ids, scope, range, d, id)),
+  classify: (id) => pickLlm().then((l) => l.classify(id)),
+  aggregate: (ids, scope, range, d, id) => pickLlm().then((l) => l.aggregate(ids, scope, range, d, id)),
   // parseChatIntent 三参透传（2026-09-29 能力大补）：categories 注入 intent prompt
   // 提高 action 分支 slug 命中率；与 answerChat onEvent 同理必须显式透传（旧只转两参会吞掉）。
-  parseChatIntent: (q, now, categories) => readKeySource().then((k) =>
-    k === 'builtin' ? builtinLlm.parseChatIntent(q, now, categories) : openAiCompatLlm.parseChatIntent(q, now, categories)),
+  parseChatIntent: (q, now, categories) => pickLlm().then((l) => l.parseChatIntent(q, now, categories)),
   // answerChat 必须双参透传（2026-09-28 流式修复 B1）：旧实现只转单参吞掉 onEvent，
   // 真链路（builtin/byok 经 DI）流式全灭——单测全 mock di.llm 漏检，diProxy.test 已补透传断言。
-  answerChat: (o, onEvent) => readKeySource().then((k) =>
-    k === 'builtin' ? builtinLlm.answerChat(o, onEvent) : openAiCompatLlm.answerChat(o, onEvent)),
+  answerChat: (o, onEvent) => pickLlm().then((l) => l.answerChat(o, onEvent)),
   // extractMemory 必须双参透传（2026-10-03 实锤 bug）：旧实现只转 text 吞掉 knownMemories，
   // 真实 DI 链路记忆判重全灭（单测 mock di.llm 漏检）——与 answerChat onEvent B1 同类。
-  extractMemory: (text, known) => readKeySource().then((k) =>
-    k === 'builtin' ? builtinLlm.extractMemory(text, known) : openAiCompatLlm.extractMemory(text, known)),
-  // embed（2026-10-03 P-B 语义召回）：builtin 老服务端无 embed 端点 → null（调用方降级
-  // 纯关键词召回）；byok 透传 openAiCompatLlm.embed（可选方法，缺席同样 → null）。
-  embed: (texts) => readKeySource().then((k) =>
-    k === 'builtin' ? null : (openAiCompatLlm.embed?.(texts) ?? null)),
-  summarizeConversation: (prior, chunk) => readKeySource().then((k) =>
-    k === 'builtin' ? builtinLlm.summarizeConversation(prior, chunk) : openAiCompatLlm.summarizeConversation(prior, chunk)),
-  adjudicateMemory: (n, sim) => readKeySource().then((k) =>
-    k === 'builtin' ? builtinLlm.adjudicateMemory(n, sim) : openAiCompatLlm.adjudicateMemory(n, sim)),
-  proactiveGreeting: (ctx) => readKeySource().then((k) =>
-    k === 'builtin' ? builtinLlm.proactiveGreeting(ctx) : openAiCompatLlm.proactiveGreeting(ctx)),
-  ping: (o) => readKeySource().then((k) => (k === 'builtin' ? builtinLlm.ping(o) : openAiCompatLlm.ping(o))),
+  extractMemory: (text, known) => pickLlm().then((l) => l.extractMemory(text, known)),
+  // embed（2026-10-03 P-B 语义召回）：builtin 老服务端无 embed 端点（builtinLlm 不实现
+  // embed）→ embed?.() 缺席为 undefined → null（调用方降级纯关键词召回）；byok 透传
+  // openAiCompatLlm.embed（可选方法，缺席同样 → null）。
+  embed: (texts) => pickLlm().then((l) => l.embed?.(texts) ?? null),
+  summarizeConversation: (prior, chunk) => pickLlm().then((l) => l.summarizeConversation(prior, chunk)),
+  adjudicateMemory: (n, sim) => pickLlm().then((l) => l.adjudicateMemory(n, sim)),
+  proactiveGreeting: (ctx) => pickLlm().then((l) => l.proactiveGreeting(ctx)),
+  ping: (o) => pickLlm().then((l) => l.ping(o)),
 }
 
 // sttProxy：二级。builtin → builtinStt；byok → 按 sttMode 选 whisperRestStt / paraformerStreamStt
