@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowUp, BellPlus, Check, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Sparkles, Square, SquarePen, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -551,16 +551,20 @@ function ActionConfirmBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean 
             </span>
           </p>
         )}
+        {/* P-F MINOR-1（2026-10-05 D1）：两 op done 卡改紧凑式（对齐 changeCategory：纯数据无整句）——
+            全句回执只由 store 追加的独立消息承载，卡片与之互补，屏上不再出现两遍同一句。 */}
         {action.status === 'done' && op === 'createReminder' && (
           <p className="flex items-center gap-1.5 text-t2">
             <Check size={14} strokeWidth={2.5} className="shrink-0 text-catProject" />
-            <span>{t('chat.action.reminder.done', { label: action.reminderLabel ?? action.entryHint, time: dueText })}</span>
+            <span>{action.reminderLabel ?? action.entryHint} · {dueText}</span>
           </p>
         )}
         {action.status === 'done' && op === 'deleteEntry' && (
           <p className="flex items-center gap-1.5 text-t2">
             <Check size={14} strokeWidth={2.5} className="shrink-0 text-catProject" />
-            <span>{t('chat.action.delete.done', { label: action.candidates[0]?.label ?? action.entryHint })}</span>
+            <span>
+              《{action.candidates[0]?.label ?? action.entryHint}》 → 「{t('chat.action.delete.bin')}」
+            </span>
           </p>
         )}
         {action.status === 'cancelled' && <p className="text-t3">{t('chat.action.cancelled')}</p>}
@@ -608,6 +612,10 @@ function EmptyTalk({ onSuggest }: { onSuggest: (text: string) => void }) {
   )
 }
 
+// D1（2026-10-05）chat 消息窗口化：只渲尾部 CHAT_WINDOW 条，顶部「加载更早」按钮扩窗
+// （对照 home P-A 的 PAGE=30；模块级 export 供测试）。长会话（数百条）DOM 不再爆炸。
+export const CHAT_WINDOW = 50
+
 export default function Chat() {
   const navigate = useNavigate()
   const t = useT()
@@ -632,6 +640,27 @@ export default function Chat() {
   }
 
   const messages = conversation?.messages ?? []
+  // 窗口化：visibleMessages = 尾部 limit 条；seenIds/streamLen/贴底滚动仍读全量 messages——
+  // 流式跟底不受窗口影响（流式消息必在全量尾部）。
+  const [limit, setLimit] = useState(CHAT_WINDOW)
+  const visibleMessages = messages.length > limit ? messages.slice(-limit) : messages
+  // 会话切换 → 窗口复位（新会话从尾部窗口重新开始）。
+  useEffect(() => setLimit(CHAT_WINDOW), [conversation?.id])
+  // 「加载更早」滚动锚定：点击瞬间记视口到内容底的高差，useLayoutEffect 在窗口扩张重渲后
+  // 恢复 scrollTop——视口内容不跳。jsdom 无真实 scrollHeight，逻辑天然 no-op 不炸。
+  const prevHeightRef = useRef<number | null>(null)
+  const loadEarlier = () => {
+    const el = scrollRef.current
+    if (el) prevHeightRef.current = el.scrollHeight - el.scrollTop
+    setLimit((l) => l + CHAT_WINDOW)
+  }
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (el && prevHeightRef.current !== null) {
+      el.scrollTop = el.scrollHeight - prevHeightRef.current
+      prevHeightRef.current = null
+    }
+  }, [limit])
   const hasMessages = messages.length > 0
   const loading = chatLoading !== 'idle'
   const recording = chatVoice.recording
@@ -711,13 +740,26 @@ export default function Chat() {
               }}
             />
           )}
+          {/* D1 窗口化：还有更早消息未渲 → 列表最上方「加载更早」chip（风格对齐 DateSeparator）。 */}
+          {messages.length > limit && (
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={loadEarlier}
+                className="rounded-chip bg-brd/50 px-3 py-1 text-[11px] leading-relaxed text-t3 transition duration-base ease-out hover:bg-brd/70 active:scale-[0.97]"
+              >
+                {t('chat.loadEarlier', { count: messages.length - limit })}
+              </button>
+            </div>
+          )}
           {(() => {
             // 跨天分隔条（2026-09-29）：消息日键与前条不同 → 先插 DateSeparator（首条也插）。
             // todayKey 用真实今日（非 home 的 entry 锚定变体）——对话是真实时间流。
+            // D1：输入为窗口后的 visibleMessages——窗口首条 prevDay=null 天然补分隔条。
             const todayKey = dateKey(new Date().toISOString())
             const nodes: React.ReactNode[] = []
             let prevDay: string | null = null
-            for (const m of messages) {
+            for (const m of visibleMessages) {
               // 流式消息（2026-09-28）：创建即记 seen——占位气泡不播入场动画（流式逐字本身就是
               // 入场感，叠加 fade/行级渐显会每帧重播）；finalize 原位替换同 id 也不重播。
               if (m.streaming) seenIds.current?.add(m.id)

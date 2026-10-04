@@ -317,10 +317,13 @@ describe('chat 屏能力大补 UI', () => {
     expect(container.textContent).toContain('时间未定')
   })
 
-  it('createReminder done：静态回执「已建提醒：label，time」，无按钮', async () => {
+  // D1（2026-10-05 P-F MINOR-1）：done 卡改紧凑式「label · time」——全句回执只由 store
+  // 独立消息承载（chat.action.reminder.done key 留给 store 用），卡片不再渲整句。
+  it('createReminder done：紧凑回执「label · time」，无按钮', async () => {
     render([actionMsg('m-act', { ...reminderAction, status: 'done' })])
     await mount()
-    expect(container.textContent).toContain('已建提醒：交稿，10/6 15:00')
+    expect(container.textContent).toContain('交稿 · 10/6 15:00')
+    expect(container.textContent).not.toContain('已建提醒')
     expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent?.trim() === '确认')).toBe(false)
   })
 
@@ -381,13 +384,17 @@ describe('chat 屏能力大补 UI', () => {
     expect(resolveMock).toHaveBeenCalledWith('m-act', { entryId: 'e2' })
   })
 
-  it('deleteEntry done：静态回执「已把《label》移到回收站」；notFound：delete 专属提示', async () => {
+  // D1（2026-10-05 P-F MINOR-1）：done 卡改紧凑式「《label》→「回收站」」（对齐 changeCategory
+  // done）——全句回执只由 store 独立消息承载，卡片不再渲整句。
+  it('deleteEntry done：紧凑回执「《label》→「回收站」」；notFound：delete 专属提示', async () => {
     render([
       actionMsg('m-done', { ...deleteAction, status: 'done' }),
       actionMsg('m-nf', { ...deleteAction, status: 'notFound', candidates: [] }),
     ])
     await mount()
-    expect(container.textContent).toContain('已把《桂花拿铁》移到回收站')
+    expect(container.textContent).toContain('《桂花拿铁》')
+    expect(container.textContent).toContain('→ 「回收站」')
+    expect(container.textContent).not.toContain('已把《桂花拿铁》移到回收站')
     expect(container.textContent).toContain('可能已经被删过了')
     expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent?.trim() === '确认')).toBe(false)
   })

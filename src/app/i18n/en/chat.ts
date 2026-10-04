@@ -69,6 +69,9 @@ export const chat = {
   'chat.action.delete.title': 'Delete entry',
   'chat.action.delete.warn': 'Moved to Trash, restorable within 30 days',
   'chat.action.delete.done': 'Moved "{label}" to Trash',
+  // D1 (2026-10-05): target name in the compact deleteEntry done card ("{label}" → "Trash"),
+  // parallel to changeCategory's category name.
+  'chat.action.delete.bin': 'Trash',
   'chat.action.delete.notFound': 'Couldn\'t find an entry matching "{hint}" — it may already be deleted; try rephrasing.',
   // Empty state (2026-09-10 companion): time-aware greeting + opener chips (tap to prefill input).
   'chat.greet.morning': 'Good morning',
@@ -84,6 +87,8 @@ export const chat = {
   'chat.historyEmpty': 'No conversations yet',
   'chat.deleteConfirm': 'Delete this conversation? This cannot be undone.',
   'chat.msgCount': '{count} messages',
+  // D1 (2026-10-05) chat windowing: top "load earlier" button; count = earlier messages not yet rendered.
+  'chat.loadEarlier': 'Load {count} earlier messages',
   'chat.untitled': 'New chat',
   'chat.ago.justNow': 'just now',
   'chat.ago.minutes': '{n} min ago',

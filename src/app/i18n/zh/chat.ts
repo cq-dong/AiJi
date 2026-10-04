@@ -70,6 +70,8 @@ export const chat = {
   'chat.action.delete.title': '删除条目',
   'chat.action.delete.warn': '移到回收站，30 天内可恢复',
   'chat.action.delete.done': '已把《{label}》移到回收站',
+  // D1（2026-10-05）：deleteEntry done 卡紧凑式「《label》→「回收站」」的目标名（平行 changeCategory 的「分类」）。
+  'chat.action.delete.bin': '回收站',
   'chat.action.delete.notFound': '没找到「{hint}」对应的条目，可能已经被删过了；换个说法试试？',
   // 空态（2026-09-10 陪伴化）：伙伴式问候（按时段）+ 开场建议 chips（点一下填入输入框）。
   'chat.greet.morning': '早安',
@@ -85,6 +87,8 @@ export const chat = {
   'chat.historyEmpty': '还没有历史对话',
   'chat.deleteConfirm': '删除这条对话？不可恢复。',
   'chat.msgCount': '{count} 条消息',
+  // D1（2026-10-05）chat 窗口化：顶部「加载更早」按钮，count=未渲染的更早消息数。
+  'chat.loadEarlier': '加载更早的 {count} 条消息',
   'chat.untitled': '新会话',
   'chat.ago.justNow': '刚刚',
   'chat.ago.minutes': '{n} 分钟前',
