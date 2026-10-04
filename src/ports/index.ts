@@ -86,16 +86,21 @@ export interface CapturePort {
   // The adapter owns the MediaStream; the screen passes a <video> for live preview.
   /** Open the camera. Attaches the live stream to `preview` (if given). Returns false if denied/unsupported. */
   startCamera(opts: { preview?: HTMLVideoElement; facingMode?: 'user' | 'environment'; withAudio?: boolean }): Promise<boolean>
-  /** Grab a single still frame from the active camera stream. Null if no active camera. */
+  /** Grab a single still frame from the active camera stream. Null if no active camera.
+   *  Q6：blob 已经过压缩归一化（长边 ≤1024 JPEG，比原帧小时才替换）——契约同 pickMedia 图片分支。 */
   capturePhoto(): Promise<{ ref: string; blob: Blob; mime: string } | null>
   /** Begin recording video (+audio) from the active camera stream. */
   startVideo(): Promise<void>
-  /** Stop recording; returns blob + ref + duration. Null if nothing was recording. */
-  stopVideo(): Promise<{ ref: string; blob: Blob; durationSec: number; mime: string } | null>
+  /** Stop recording; returns blob + ref + duration. Null if nothing was recording.
+   *  posterBlob（Q6）：0.1s 抽帧 JPEG，供列表缩略图免视频解码；抽帧失败缺省 → 消费方回落 #t=0.1。 */
+  stopVideo(): Promise<{ ref: string; blob: Blob; durationSec: number; mime: string; posterBlob?: Blob } | null>
   /** Stop the camera, release tracks, detach preview. Safe to call when not running. */
   stopCamera(): Promise<void>
-  /** Open the system file picker (image/video). Returns null when the user cancels. */
-  pickMedia(): Promise<{ ref: string; blob: Blob; kind: 'image' | 'video'; durationSec: number; mime: string } | null>
+  /** Open the system file picker (image/video). Returns null when the user cancels.
+   *  Q6 压缩归一化（图片分支）：blob 为压缩后 JPEG（长边 ≤1024，mime='image/jpeg'）当且仅当
+   *  压缩成功且体积更小；否则原始 file 直通（压缩永不丢媒体）。
+   *  posterBlob（视频分支）：0.1s 抽帧 JPEG；失败缺省。 */
+  pickMedia(): Promise<{ ref: string; blob: Blob; kind: 'image' | 'video'; durationSec: number; mime: string; posterBlob?: Blob } | null>
 }
 
 export interface SttPort {
