@@ -3,7 +3,7 @@
 // 职责：daypart 划分、context 拼装（不瞎编）、6h 频控、当日缓存（date+daypart）、当日 dismiss、
 // LLM 失败/无料 → 模板兜底。localStorage 承载非关键状态（spec §3：不进 Dexie）。
 
-import type { Conversation, Entry, Memory, Reminder } from '@/domain/types'
+import type { Conversation, Entry, EntryAi, Memory, Reminder } from '@/domain/types'
 import type { ProactiveGreetingContext } from '@/ports'
 
 export type Daypart = ProactiveGreetingContext['daypart']
@@ -50,10 +50,16 @@ const OPEN_LOOPS_MAX = 5
 
 export interface BuildContextInput {
   now: Date
-  entries: ReadonlyArray<Pick<Entry, 'createdAt'>>
+  // P-F ①（2026-10-05）：元素可选带 id/parts——onThisDay（往年今日）候选提取用。
+  // 纯可选：旧调用方只给 createdAt 仍合法，onThisDay 自动静默（无 id 查不了 aiById、
+  // 无 parts 取不了文本/transcript 首行）。
+  entries: ReadonlyArray<Pick<Entry, 'createdAt'> & Partial<Pick<Entry, 'id' | 'parts'>>>
   memories: ReadonlyArray<Pick<Memory, 'content' | 'enabled' | 'archivedAt'>>
   reminders: ReadonlyArray<Pick<Reminder, 'dueAt' | 'status'>>
   conversation?: Pick<Conversation, 'rollingSummary'> | undefined
+  // P-F ①：entryId → EntryAi 快照（供 titleSuggestion 进 onThisDay excerpt）。缺省时
+  // excerpt 跳过标题级，仍回退文本首行 / transcript 首行。
+  aiById?: ReadonlyMap<string, Pick<EntryAi, 'titleSuggestion'>>
 }
 
 // context 拼装（spec §1.1，按可得性、不瞎编）：
@@ -64,6 +70,11 @@ export interface BuildContextInput {
 // - dueReminderCount：「还没响过且到点」的待办条数——status pending/snoozed（fired/missed
 //   已了结不计；snoozed 的 dueAt 已被推迟，过了新到点同样算到期）且 dueAt ≤ 今天本地 23:59:59.999
 //   （今天到期 + 已逾期一并计入）。
+// - onThisDay（P-F ① 契约，pf-adapters 实现）：同月日（本地时区 getMonth/getDate）且
+//   年份 < now 年的候选按 createdAt 降序，取第一条 excerpt 非空者 → { yearsAgo, excerpt }。
+//   excerpt 三级回退：① aiById.get(id)?.titleSuggestion.trim() ② 首个 text part 的首个
+//   非空行 ③ 首个 audio/video part transcript 的首个非空行；统一截 60 字。三级皆空看下一
+//   候选；无候选 / 全部候选 excerpt 空 → undefined（不瞎编）。yearsAgo = now 年 − 候选年（≥1）。
 export function buildContext(input: BuildContextInput): ProactiveGreetingContext {
   const { now, entries, memories, reminders, conversation } = input
 
@@ -114,10 +125,14 @@ export interface GreetingResult {
 
 export interface ProactiveDeps {
   now: Date
-  listEntries: () => Promise<ReadonlyArray<Pick<Entry, 'createdAt'>>>
+  // P-F ①：返回元素带 id/parts 时 onThisDay 生效（di.storage.listEntries() 全量 Entry 天然满足）。
+  listEntries: () => Promise<ReadonlyArray<Pick<Entry, 'createdAt'> & Partial<Pick<Entry, 'id' | 'parts'>>>>
   listMemories: () => Promise<ReadonlyArray<Pick<Memory, 'content' | 'enabled' | 'archivedAt'>>>
   listReminders: () => Promise<ReadonlyArray<Pick<Reminder, 'dueAt' | 'status'>>>
   getConversation: () => Promise<Pick<Conversation, 'rollingSummary'> | undefined>
+  // P-F ①（可选）：entryId → EntryAi 快照，供 onThisDay excerpt 标题级；缺省 = 跳过标题级。
+  // 调用方须读 live store（useUiStore.getState()），别用 render 闭包旧值（hydrate 时序）。
+  getAiById?: () => ReadonlyMap<string, Pick<EntryAi, 'titleSuggestion'>> | undefined
   // di.llm.proactiveGreeting；桩抛错 = 走模板兜底（console.warn）。
   greet: (ctx: ProactiveGreetingContext) => Promise<string | null>
   // 模板句（i18n 由调用方给，本模块不碰 i18n）。

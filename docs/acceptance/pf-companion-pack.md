@@ -10,7 +10,7 @@
 往年今日的回忆织进既有主动问候，不加新卡片。
 
 - `ports/index.ts:112` `ProactiveGreetingContext` 加 `onThisDay?: { yearsAgo: number; excerpt: string }`
-- `src/app/proactive.ts` `buildContext`（:67）：遍历 input.entries 找**同月日、年份 < now 年**的条目；取年份最近的一条；`excerpt` = ai?.titleSuggestion || 文本首行，截 60 字。BuildContextInput 已收 entries（需同步带 aiByEntry 或 excerpt 在调用方拼好——实现时选更省的一种，保持纯函数可测）。顺带修 :63 过时注释「会话 '1'」（W0 已改最新会话）。
+- `src/app/proactive.ts` `buildContext`（:67）：遍历 input.entries 找**同月日（本地时区）、年份 < now 年**的条目；按 createdAt 降序取第一条 excerpt 非空者。`excerpt` 三级回退 = aiById titleSuggestion → 文本首行 → transcript 首行，截 60 字。**接口已钉死（lead 契约补丁）**：`BuildContextInput.entries` 元素 = `Pick<Entry,'createdAt'> & Partial<Pick<Entry,'id'|'parts'>>`（纯可选，旧测试不破），加 `aiById?: ReadonlyMap<string, Pick<EntryAi,'titleSuggestion'>>`；`ProactiveDeps.listEntries` 同步放宽 + 加可选 `getAiById`。选择/摘录规则 100% 在 buildContext 内（纯函数可测）；home 调用方（pf-store）只加 `getAiById: () => { const m = useUiStore.getState().aiByEntry; return new Map(Object.entries(m)) }`（读 live state，防 hydrate 时序闭包旧值）。顺带修 :63 过时注释「会话 '1'」（W0 已改最新会话）。
 - `openAiCompatLlm.ts` `buildProactiveGreetingPrompt`（:973）：user 块加一行（zh「{yearsAgo} 年前的今天 Ta 记了：{excerpt}」/ en 对称），system 规则 2 可承接线索清单加「往年今日的回忆」；无 onThisDay 不加行。
 - `builtinLlm.ts` greeting 路径同步透传（P-D A路 双适配器真实现于 74d8f2d，builtin 同样客户端拼 context——核对其实现后镜像改）。
 - 测试：buildContext onThisDay（跨年命中/同年排除/多年取最近/无匹配 undefined/无标题回退首行）；prompt 含/不含 onThisDay 行。
