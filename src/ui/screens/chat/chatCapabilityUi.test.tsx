@@ -8,6 +8,9 @@ import type { ChatMessage, Conversation } from '@/domain/types'
 // - 跨天分隔条：按消息本地日键派生，首条也插；label 今天/昨天/M月D日。
 // - ActionConfirmBubble：pending/ambiguous 交互 + done/cancelled/notFound 终态。
 // - LoadingBubble：weather/search 新相位文案。
+// P-F（2026-10-04）：ActionConfirmBubble 扩展三 op——changeCategory（缺省）/ createReminder /
+// deleteEntry；resolve 入口从 resolveCategoryAction 迁到 resolveChatAction（契约：
+// createReminder 确认传 'confirm'，其余传 {entryId}，取消一律 'cancel'）。
 
 // 最小 di mock（store import 需要；本测试不触发 LLM/存储调用）
 vi.mock('@/app/di', () => ({
@@ -149,7 +152,7 @@ describe('chat 屏能力大补 UI', () => {
   it('pending：渲染条目名 + 新分类 + 确认/取消按钮；确认回调 {entryId}', async () => {
     const resolveMock = vi.fn().mockResolvedValue(undefined)
     render([userMsg('u1', todayIso()), actionMsg('m-act', pendingAction)], {
-      resolveCategoryAction: resolveMock,
+      resolveChatAction: resolveMock,
     } as unknown as UiStatePatch)
     await mount()
 
@@ -164,7 +167,7 @@ describe('chat 屏能力大补 UI', () => {
   it('pending：取消回调 \'cancel\'', async () => {
     const resolveMock = vi.fn().mockResolvedValue(undefined)
     render([actionMsg('m-act', pendingAction)], {
-      resolveCategoryAction: resolveMock,
+      resolveChatAction: resolveMock,
     } as unknown as UiStatePatch)
     await mount()
 
@@ -187,7 +190,7 @@ describe('chat 屏能力大补 UI', () => {
           toCategoryLabel: '美食',
         }),
       ],
-      { resolveCategoryAction: resolveMock } as unknown as UiStatePatch,
+      { resolveChatAction: resolveMock } as unknown as UiStatePatch,
     )
     await mount()
 
@@ -211,10 +214,10 @@ describe('chat 屏能力大补 UI', () => {
   })
 
   // Finding 2（2026-09-29 rc9）：resolve 抛错时 busy 不得永真——catch 复位，按钮恢复可点，消息仍 pending。
-  it('reject：resolveCategoryAction 抛错 → 按钮恢复可用，消息仍 pending', async () => {
+  it('reject：resolveChatAction 抛错 → 按钮恢复可用，消息仍 pending', async () => {
     const resolveMock = vi.fn().mockRejectedValue(new Error('network down'))
     render([actionMsg('m-act', pendingAction)], {
-      resolveCategoryAction: resolveMock,
+      resolveChatAction: resolveMock,
     } as unknown as UiStatePatch)
     await mount()
 
@@ -256,6 +259,136 @@ describe('chat 屏能力大补 UI', () => {
     render([actionMsg('m-act', { ...pendingAction, status: 'notFound', candidates: [] })])
     await mount()
     expect(container.textContent).toContain('桂花拿铁那条')
+    expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent?.trim() === '确认')).toBe(false)
+  })
+
+  // ── P-F createReminder（2026-10-04）：无候选列表；确认传字面量 'confirm' ──
+
+  // 本地时间 ISO（无 Z 后缀 → 本地解析），格式化结果「M/D HH:MM」与时区无关、断言稳定。
+  const reminderAction: NonNullable<ChatMessage['action']> = {
+    op: 'createReminder',
+    entryHint: '交稿',
+    status: 'pending',
+    candidates: [],
+    toCategorySlug: '',
+    toCategoryLabel: '',
+    reminderLabel: '交稿',
+    reminderDueAt: '2026-10-06T15:00:00',
+  }
+
+  it('createReminder pending：渲染标题 + label + 本地化时间，无候选列表', async () => {
+    render([actionMsg('m-act', reminderAction)], {
+      resolveChatAction: vi.fn().mockResolvedValue(undefined),
+    } as unknown as UiStatePatch)
+    await mount()
+    expect(container.textContent).toContain('建提醒')
+    expect(container.textContent).toContain('交稿')
+    expect(container.textContent).toContain('10/6 15:00')
+    expect(container.textContent).not.toContain('你指的是哪一条？')
+  })
+
+  it('createReminder pending：确认传字面量 \'confirm\'', async () => {
+    const resolveMock = vi.fn().mockResolvedValue(undefined)
+    render([actionMsg('m-act', reminderAction)], {
+      resolveChatAction: resolveMock,
+    } as unknown as UiStatePatch)
+    await mount()
+
+    await click(buttonByText('确认'))
+    expect(resolveMock).toHaveBeenCalledWith('m-act', 'confirm')
+  })
+
+  it('createReminder pending：取消传 \'cancel\'', async () => {
+    const resolveMock = vi.fn().mockResolvedValue(undefined)
+    render([actionMsg('m-act', reminderAction)], {
+      resolveChatAction: resolveMock,
+    } as unknown as UiStatePatch)
+    await mount()
+
+    await click(buttonByText('取消'))
+    expect(resolveMock).toHaveBeenCalledWith('m-act', 'cancel')
+  })
+
+  it('createReminder pending：dueAt 缺失 → 防御渲染「时间未定」', async () => {
+    render([actionMsg('m-act', { ...reminderAction, reminderDueAt: undefined })], {
+      resolveChatAction: vi.fn().mockResolvedValue(undefined),
+    } as unknown as UiStatePatch)
+    await mount()
+    expect(container.textContent).toContain('时间未定')
+  })
+
+  it('createReminder done：静态回执「已建提醒：label，time」，无按钮', async () => {
+    render([actionMsg('m-act', { ...reminderAction, status: 'done' })])
+    await mount()
+    expect(container.textContent).toContain('已建提醒：交稿，10/6 15:00')
+    expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent?.trim() === '确认')).toBe(false)
+  })
+
+  // ── P-F deleteEntry（2026-10-04）：警示色 + 回收站副文案；确认传 {entryId} ──
+
+  const deleteAction: NonNullable<ChatMessage['action']> = {
+    op: 'deleteEntry',
+    entryHint: '桂花拿铁那条',
+    status: 'pending',
+    candidates: [{ entryId: 'e1', label: '桂花拿铁', fromCategory: '生活' }],
+    toCategorySlug: '',
+    toCategoryLabel: '',
+  }
+
+  it('deleteEntry pending：警示标题 + 条目名 + 回收站副文案；确认传 {entryId}', async () => {
+    const resolveMock = vi.fn().mockResolvedValue(undefined)
+    render([actionMsg('m-act', deleteAction)], {
+      resolveChatAction: resolveMock,
+    } as unknown as UiStatePatch)
+    await mount()
+
+    expect(container.textContent).toContain('删除条目')
+    expect(container.textContent).toContain('桂花拿铁')
+    expect(container.textContent).toContain('移到回收站，30 天内可恢复')
+    // 警示色：catFail 染在标题行
+    expect(container.querySelector('.text-catFail')).not.toBeNull()
+
+    await click(buttonByText('确认'))
+    expect(resolveMock).toHaveBeenCalledWith('m-act', { entryId: 'e1' })
+  })
+
+  it('deleteEntry ambiguous：候选列表 + 副文案；选中后确认传选中 {entryId}', async () => {
+    const resolveMock = vi.fn().mockResolvedValue(undefined)
+    render(
+      [
+        actionMsg('m-act', {
+          ...deleteAction,
+          status: 'ambiguous',
+          candidates: [
+            { entryId: 'e1', label: '桂花拿铁', fromCategory: '生活' },
+            { entryId: 'e2', label: '燕麦拿铁', fromCategory: '想法' },
+          ],
+        }),
+      ],
+      { resolveChatAction: resolveMock } as unknown as UiStatePatch,
+    )
+    await mount()
+
+    expect(container.textContent).toContain('你指的是哪一条？')
+    expect(container.textContent).toContain('移到回收站，30 天内可恢复')
+    expect(buttonByText('确认').disabled).toBe(true)
+
+    const candidateRow = Array.from(container.querySelectorAll('button')).find((x) =>
+      x.textContent?.includes('燕麦拿铁'),
+    )!
+    await click(candidateRow)
+    await click(buttonByText('确认'))
+    expect(resolveMock).toHaveBeenCalledWith('m-act', { entryId: 'e2' })
+  })
+
+  it('deleteEntry done：静态回执「已把《label》移到回收站」；notFound：delete 专属提示', async () => {
+    render([
+      actionMsg('m-done', { ...deleteAction, status: 'done' }),
+      actionMsg('m-nf', { ...deleteAction, status: 'notFound', candidates: [] }),
+    ])
+    await mount()
+    expect(container.textContent).toContain('已把《桂花拿铁》移到回收站')
+    expect(container.textContent).toContain('可能已经被删过了')
     expect(Array.from(container.querySelectorAll('button')).some((b) => b.textContent?.trim() === '确认')).toBe(false)
   })
 

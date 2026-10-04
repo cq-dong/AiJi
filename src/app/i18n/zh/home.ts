@@ -38,6 +38,11 @@ export const home = {
   'home.companion.close': '关闭问候',
   'home.companion.avatar': '记',
 
+  // P-F 周回顾（2026-10-04）：CompanionCard 周回顾变体——上周 aggregate 未读时替换问候内容，
+  // 点卡体跳 /summary 看完整回顾。
+  'home.weeklyReview.title': '上周回顾',
+  'home.weeklyReview.cta': '查看完整回顾',
+
   // 底部导航第 5 tab（common 未收 nav.reminders，补在此屏片段）
   'nav.reminders': '提醒',
 

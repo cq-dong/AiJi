@@ -58,6 +58,18 @@ export const chat = {
   'chat.action.whichOne': 'Which one did you mean?',
   'chat.action.doneReceipt': 'Changed "{label}" to category "{category}"',
   'chat.action.cancelled': 'Okay, nothing changed.',
+  // P-F (2026-10-04) chat action extensions: createReminder / deleteEntry ops
+  // (confirm/cancel reuse the generic keys above). createReminder has no entry resolution —
+  // the confirm card shows label + localized time; needTime is the store follow-up template
+  // (asked when the intent round could not parse a time; nothing is persisted).
+  'chat.action.reminder.title': 'New reminder',
+  'chat.action.reminder.done': 'Reminder set: {label}, {time}',
+  'chat.action.reminder.needTime': 'When should I remind you about "{label}"?',
+  'chat.action.reminder.unknownTime': 'Time TBD',
+  'chat.action.delete.title': 'Delete entry',
+  'chat.action.delete.warn': 'Moved to Trash, restorable within 30 days',
+  'chat.action.delete.done': 'Moved "{label}" to Trash',
+  'chat.action.delete.notFound': 'Couldn\'t find an entry matching "{hint}" — it may already be deleted; try rephrasing.',
   // Empty state (2026-09-10 companion): time-aware greeting + opener chips (tap to prefill input).
   'chat.greet.morning': 'Good morning',
   'chat.greet.afternoon': 'Good afternoon',

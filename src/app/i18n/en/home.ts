@@ -38,6 +38,11 @@ export const home = {
   'home.companion.close': 'Dismiss greeting',
   'home.companion.avatar': 'Ji',
 
+  // P-F weekly review (2026-10-04): CompanionCard weekly variant — replaces the greeting
+  // when last week's aggregate is unread; tapping the card opens /summary.
+  'home.weeklyReview.title': 'Weekly review',
+  'home.weeklyReview.cta': 'View full review',
+
   // 5th nav tab (common has no nav.reminders)
   'nav.reminders': 'Reminders',
 

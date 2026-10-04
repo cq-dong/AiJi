@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Sparkles, Square, SquarePen } from 'lucide-react'
+import { ArrowUp, BellPlus, Check, ChevronDown, ChevronLeft, ChevronRight, History, Mic, Sparkles, Square, SquarePen, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Button, Chip, Spinner, cn } from '@/ui/components'
 import { useUiStore } from '@/app/store'
@@ -375,32 +375,100 @@ function DateSeparator({ label }: { label: string }) {
   )
 }
 
-// 改分类确认卡（2026-09-29 能力大补）：kind='actionConfirm'。AI 提议、用户点确认才执行——
-// pending=单候选直接确认；ambiguous=多候选单选（未选不可确认）；done/cancelled/notFound=终态静态回执。
-// 条目名可点跳详情（同 cite chip 先例）。
+// P-F createReminder 卡：本地化到期时间「M/D HH:MM」（镜像 reminders 屏 formatDueAt，月/日不补零、时分补零）。
+// 缺失/非法 → null，调用方回落 unknownTime（store 已过滤无时间的情况，此处纯防御）。
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+function formatReminderDueAt(iso: string | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  return `${d.getMonth() + 1}/${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+// 条目操作确认卡（2026-09-29 能力大补；2026-10-04 P-F 扩展三 op）：kind='actionConfirm'。
+// AI 提议、用户点确认才执行——pending=单候选直接确认；ambiguous=多候选单选（未选不可确认）；
+// done/cancelled/notFound=终态静态回执。条目名可点跳详情（同 cite chip 先例）。
+// 三 op（msg.action.op ?? 'changeCategory'，旧消息零迁移兼容）：
+// - changeCategory：改分类（现状不变）；
+// - createReminder：建提醒（BellPlus 图标 + label + 本地化时间，无候选列表）；
+// - deleteEntry：删条目（catFail 警示色 + 「移到回收站，可恢复」副文案，候选列表复用）。
+// 分派契约（pf-store 实现于 store.ts 的 resolveChatAction）：
+// changeCategory 确认传 {entryId}；createReminder 无条目解析、确认传字面量 'confirm'；
+// deleteEntry 确认传 {entryId}，store 内 trashEntry 软删；取消一律 'cancel'。
 function ActionConfirmBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean }) {
   const t = useT()
   const navigate = useNavigate()
-  // 契约（Agent B 落地）：resolveCategoryAction(msgId, {entryId} | 'cancel')。
-  const resolve = useUiStore((s) => s.resolveCategoryAction)
+  const resolve = useUiStore((s) => s.resolveChatAction)
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
   const action = msg.action
   if (!action) return null
 
+  const op = action.op ?? 'changeCategory' // 旧消息无 op 字段 → changeCategory
   const interactive = (action.status === 'pending' || action.status === 'ambiguous') && !busy
-  const confirm = (entryId: string) => {
+  // Finding 2 修复：store 约定失败抛给调用方——catch 复位 busy（否则按钮永久禁用卡死至刷新）；
+  // 消息保持 pending 可重试，无需 toast。
+  const confirmWith = (choice: { entryId: string } | 'confirm') => {
     if (!interactive) return
     setBusy(true) // 防重复点击：store 落定后消息转终态，卡片自然失去按钮
-    // Finding 2 修复：store 约定失败抛给调用方——catch 复位 busy（否则按钮永久禁用卡死至刷新）；
-    // 消息保持 pending 可重试，无需 toast。
-    void resolve(msg.id, { entryId }).catch(() => setBusy(false))
+    void resolve(msg.id, choice).catch(() => setBusy(false))
   }
   const cancel = () => {
     if (!interactive) return
     setBusy(true)
     void resolve(msg.id, 'cancel').catch(() => setBusy(false))
   }
+  // 确认分派规则（契约）：createReminder 无条目 → 'confirm'；
+  // changeCategory/deleteEntry 单候选 → candidates[0] 的 {entryId}；ambiguous → 选中的 {entryId}。
+  const confirmPending = () => {
+    if (op === 'createReminder') confirmWith('confirm')
+    else if (action.candidates[0]) confirmWith({ entryId: action.candidates[0].entryId })
+  }
+  const dueText = formatReminderDueAt(action.reminderDueAt) ?? t('chat.action.reminder.unknownTime')
+
+  // 三 op 共用的确认/取消按钮行（confirmDisabled 叠加在 busy 上）。
+  const actionButtons = (confirmDisabled: boolean, onConfirm: () => void) => (
+    <div className="mt-2 flex gap-2">
+      <Button variant="secondary" size="sm" className="h-8 flex-1" disabled={busy} onClick={cancel}>
+        {t('chat.action.cancel')}
+      </Button>
+      <Button variant="primary" size="sm" className="h-8 flex-1" disabled={busy || confirmDisabled} onClick={onConfirm}>
+        {t('chat.action.confirm')}
+      </Button>
+    </div>
+  )
+
+  // ambiguous 候选单选列表（changeCategory/deleteEntry 复用；≤5 条）。
+  const candidateList = (
+    <ul className="mt-1.5 space-y-1">
+      {action.candidates.slice(0, 5).map((c) => (
+        <li key={c.entryId}>
+          <button
+            type="button"
+            onClick={() => setSelected(c.entryId)}
+            aria-pressed={selected === c.entryId}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-btn border px-2.5 py-1.5 text-left transition duration-base ease-out active:scale-[0.99]',
+              selected === c.entryId ? 'border-pri/60 bg-priS' : 'border-brd/80 bg-page',
+            )}
+          >
+            <span
+              className={cn(
+                'flex size-4 shrink-0 items-center justify-center rounded-full border',
+                selected === c.entryId ? 'border-pri bg-pri' : 'border-t3',
+              )}
+            >
+              {selected === c.entryId && <span className="size-1.5 rounded-full bg-white" />}
+            </span>
+            <span className="min-w-0 flex-1 truncate">{c.label}</span>
+            <span className="shrink-0 text-[11px] text-t3">{c.fromCategory}</span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
 
   return (
     <motion.div
@@ -410,7 +478,7 @@ function ActionConfirmBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean 
       transition={{ duration: 0.2, ease: 'easeOut' }}
     >
       <div className="w-full max-w-[85%] rounded-card border border-brd/80 bg-card px-3 py-2.5 text-[13px] leading-relaxed text-ink shadow-sm">
-        {action.status === 'pending' && action.candidates[0] && (
+        {action.status === 'pending' && op === 'changeCategory' && action.candidates[0] && (
           <div>
             <p>
               《
@@ -424,68 +492,58 @@ function ActionConfirmBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean 
               》 {t('chat.action.changeTo')} 「{action.toCategoryLabel}」
               {action.isNewCategory ? `（${t('chat.action.newCategory')}）` : ''}
             </p>
-            <div className="mt-2 flex gap-2">
-              <Button variant="secondary" size="sm" className="h-8 flex-1" disabled={busy} onClick={cancel}>
-                {t('chat.action.cancel')}
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                className="h-8 flex-1"
-                disabled={busy}
-                onClick={() => confirm(action.candidates[0]!.entryId)}
+            {actionButtons(false, confirmPending)}
+          </div>
+        )}
+        {action.status === 'pending' && op === 'createReminder' && (
+          <div>
+            <p className="flex items-center gap-1.5 font-medium">
+              <BellPlus size={14} strokeWidth={2.2} className="shrink-0 text-pri" />
+              {t('chat.action.reminder.title')}
+            </p>
+            <p className="mt-1">
+              {action.reminderLabel ?? action.entryHint}
+              <span className="text-t2"> · {dueText}</span>
+            </p>
+            {actionButtons(false, confirmPending)}
+          </div>
+        )}
+        {action.status === 'pending' && op === 'deleteEntry' && action.candidates[0] && (
+          <div>
+            <p className="flex items-center gap-1.5 font-medium text-catFail">
+              <Trash2 size={14} strokeWidth={2.2} className="shrink-0" />
+              {t('chat.action.delete.title')}
+            </p>
+            <p className="mt-1">
+              《
+              <button
+                type="button"
+                onClick={() => navigate(`/detail/${action.candidates[0]!.entryId}`)}
+                className="text-pri underline hover:text-pri/80 cursor-pointer"
               >
-                {t('chat.action.confirm')}
-              </Button>
-            </div>
+                {action.candidates[0].label}
+              </button>
+              》
+            </p>
+            <p className="mt-1 text-[12px] text-t3">{t('chat.action.delete.warn')}</p>
+            {actionButtons(false, confirmPending)}
           </div>
         )}
         {action.status === 'ambiguous' && (
           <div>
-            <p>{t('chat.action.whichOne')}</p>
-            <ul className="mt-1.5 space-y-1">
-              {action.candidates.slice(0, 5).map((c) => (
-                <li key={c.entryId}>
-                  <button
-                    type="button"
-                    onClick={() => setSelected(c.entryId)}
-                    aria-pressed={selected === c.entryId}
-                    className={cn(
-                      'flex w-full items-center gap-2 rounded-btn border px-2.5 py-1.5 text-left transition duration-base ease-out active:scale-[0.99]',
-                      selected === c.entryId ? 'border-pri/60 bg-priS' : 'border-brd/80 bg-page',
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'flex size-4 shrink-0 items-center justify-center rounded-full border',
-                        selected === c.entryId ? 'border-pri bg-pri' : 'border-t3',
-                      )}
-                    >
-                      {selected === c.entryId && <span className="size-1.5 rounded-full bg-white" />}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{c.label}</span>
-                    <span className="shrink-0 text-[11px] text-t3">{c.fromCategory}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-2 flex gap-2">
-              <Button variant="secondary" size="sm" className="h-8 flex-1" disabled={busy} onClick={cancel}>
-                {t('chat.action.cancel')}
-              </Button>
-              <Button
-                variant="primary"
-                size="sm"
-                className="h-8 flex-1"
-                disabled={busy || !selected}
-                onClick={() => selected && confirm(selected)}
-              >
-                {t('chat.action.confirm')}
-              </Button>
-            </div>
+            {op === 'deleteEntry' && (
+              <p className="flex items-center gap-1.5 font-medium text-catFail">
+                <Trash2 size={14} strokeWidth={2.2} className="shrink-0" />
+                {t('chat.action.delete.title')}
+              </p>
+            )}
+            <p className={op === 'deleteEntry' ? 'mt-1' : undefined}>{t('chat.action.whichOne')}</p>
+            {candidateList}
+            {op === 'deleteEntry' && <p className="mt-1.5 text-[12px] text-t3">{t('chat.action.delete.warn')}</p>}
+            {actionButtons(!selected, () => selected && confirmWith({ entryId: selected }))}
           </div>
         )}
-        {action.status === 'done' && (
+        {action.status === 'done' && op === 'changeCategory' && (
           <p className="flex items-center gap-1.5 text-t2">
             <Check size={14} strokeWidth={2.5} className="shrink-0 text-catProject" />
             <span>
@@ -493,8 +551,26 @@ function ActionConfirmBubble({ msg, fresh }: { msg: ChatMessage; fresh: boolean 
             </span>
           </p>
         )}
+        {action.status === 'done' && op === 'createReminder' && (
+          <p className="flex items-center gap-1.5 text-t2">
+            <Check size={14} strokeWidth={2.5} className="shrink-0 text-catProject" />
+            <span>{t('chat.action.reminder.done', { label: action.reminderLabel ?? action.entryHint, time: dueText })}</span>
+          </p>
+        )}
+        {action.status === 'done' && op === 'deleteEntry' && (
+          <p className="flex items-center gap-1.5 text-t2">
+            <Check size={14} strokeWidth={2.5} className="shrink-0 text-catProject" />
+            <span>{t('chat.action.delete.done', { label: action.candidates[0]?.label ?? action.entryHint })}</span>
+          </p>
+        )}
         {action.status === 'cancelled' && <p className="text-t3">{t('chat.action.cancelled')}</p>}
-        {action.status === 'notFound' && <p className="text-t3">{t('chat.action.notFound', { hint: action.entryHint })}</p>}
+        {action.status === 'notFound' && (
+          <p className="text-t3">
+            {op === 'deleteEntry'
+              ? t('chat.action.delete.notFound', { hint: action.entryHint })
+              : t('chat.action.notFound', { hint: action.entryHint })}
+          </p>
+        )}
       </div>
     </motion.div>
   )

@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertCircle, Archive, Brain, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Globe, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, RefreshCw, Share2, Sparkles, Timer, X } from 'lucide-react'
+import { AlertCircle, Archive, Brain, CalendarRange, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Globe, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, RefreshCw, Share2, Sparkles, Timer, X } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { AnimatePresence } from 'framer-motion'
 import { Button, Spinner, Toast, cn } from '@/ui/components'
@@ -1388,6 +1388,20 @@ export default function Settings() {
               : t('settings.memoryNotSet')
           }
           onClick={() => setEditingMemory(true)}
+        />
+        <RowDivider />
+        {/* P-F 周回顾（2026-10-04）：首页惰性汇总上周记录 + CompanionCard 变体提醒查看。
+            镜像 MemorySheet 的 autoMemory 行结构（label + hint + Toggle）；undefined 视同开。 */}
+        <SettingsRow
+          icon={<CalendarRange size={15} strokeWidth={2.2} />}
+          label={t('settings.weeklyReview.label')}
+          help={t('settings.weeklyReview.hint')}
+          right={
+            <Toggle
+              checked={settings.weeklyReviewEnabled !== false}
+              onChange={(v) => setSettings({ weeklyReviewEnabled: v })}
+            />
+          }
         />
         <RowDivider />
         {/* 网络搜索 Key（2026-09-29 能力大补）：Tavily BYOK，问 AI 搜索意图用。未配 → 搜索意图友好降级。 */}

@@ -60,6 +60,17 @@ export const chat = {
   'chat.action.whichOne': '你指的是哪一条？',
   'chat.action.doneReceipt': '已把《{label}》改成「{category}」分类',
   'chat.action.cancelled': '好，没有改动。',
+  // P-F（2026-10-04）chat action 扩展：建提醒 / 删条目两 op（confirm/cancel 复用上方通用键）。
+  // createReminder 无条目解析，确认卡直接展示 label + 本地化时间；needTime 是 store 追问模板
+  // （intent 轮没解析出时间时发问，不落库）。
+  'chat.action.reminder.title': '建提醒',
+  'chat.action.reminder.done': '已建提醒：{label}，{time}',
+  'chat.action.reminder.needTime': '想什么时候提醒你「{label}」？',
+  'chat.action.reminder.unknownTime': '时间未定',
+  'chat.action.delete.title': '删除条目',
+  'chat.action.delete.warn': '移到回收站，30 天内可恢复',
+  'chat.action.delete.done': '已把《{label}》移到回收站',
+  'chat.action.delete.notFound': '没找到「{hint}」对应的条目，可能已经被删过了；换个说法试试？',
   // 空态（2026-09-10 陪伴化）：伙伴式问候（按时段）+ 开场建议 chips（点一下填入输入框）。
   'chat.greet.morning': '早安',
   'chat.greet.afternoon': '下午好',

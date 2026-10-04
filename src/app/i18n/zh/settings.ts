@@ -105,6 +105,10 @@ export const settings = {
   'settings.memoryArchivedHint': '90 天未再确认的记忆会自动归档，不再注入 AI 对话；可随时恢复。',
   'settings.memoryRestore': '恢复',
 
+  // P-F 周回顾开关（2026-10-04）：首页惰性汇总上周记录，CompanionCard 变体提醒查看。
+  'settings.weeklyReview.label': '每周回顾',
+  'settings.weeklyReview.hint': '自动汇总上周记录，首页卡片提醒你查看',
+
   // 导出与分享
   'settings.exportShare': '导出与分享',
   'settings.noEntriesToExport': '暂无条目可导出',

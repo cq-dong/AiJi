@@ -104,6 +104,11 @@ export const settings = {
   'settings.memoryArchivedHint': 'Memories unconfirmed for 90 days are auto-archived and no longer injected into AI chats; restore anytime.',
   'settings.memoryRestore': 'Restore',
 
+  // P-F weekly review toggle (2026-10-04): lazily sums up last week on the home screen;
+  // the CompanionCard variant nudges you to view it.
+  'settings.weeklyReview.label': 'Weekly review',
+  'settings.weeklyReview.hint': 'Auto-summarize last week and nudge you on the home screen',
+
   // 导出与分享
   'settings.exportShare': 'Export & share',
   'settings.noEntriesToExport': 'No entries to export',

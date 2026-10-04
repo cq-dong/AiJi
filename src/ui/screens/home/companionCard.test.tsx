@@ -109,6 +109,69 @@ describe('CompanionCard', () => {
     expect(onDismiss).toHaveBeenCalledTimes(1)
     expect(onOpenChat).not.toHaveBeenCalled() // × 不跳 /chat（stopPropagation）
   })
+
+  it('weekly 缺席 → 问候路径不渲染周回顾标题（回归钉死）', async () => {
+    await renderCard('今天有什么想记的？')
+    expect(container.textContent).not.toContain('上周回顾')
+    expect(container.textContent).not.toContain('查看完整回顾')
+  })
+})
+
+// P-F 周回顾变体（2026-10-04）：weekly prop 在 → 整卡切「上周回顾」——
+// 标题 + 摘要（line-clamp-2）+ CTA；点卡体 onOpen，× onDismiss 且不冒泡到 onOpen。
+describe('CompanionCard 周回顾变体', () => {
+  function weeklyOf(over: Partial<{ range: string; summary: string; onOpen: ReturnType<typeof vi.fn>; onDismiss: ReturnType<typeof vi.fn> }> = {}) {
+    return {
+      range: '2026-W40',
+      summary: '上周你记了 5 条：方案讨论有了结论，周末去了植物园，还读完了半本书。',
+      onOpen: vi.fn(),
+      onDismiss: vi.fn(),
+      ...over,
+    }
+  }
+
+  async function renderWeekly(weekly = weeklyOf()) {
+    await act(async () => {
+      root.render(
+        <MemoryRouter>
+          <CompanionCard text="问候不应显示" onOpenChat={vi.fn()} onDismiss={vi.fn()} weekly={weekly} />
+        </MemoryRouter>,
+      )
+    })
+    return weekly
+  }
+
+  it('渲染周回顾标题 + 摘要 + CTA，不渲染问候文本/头像', async () => {
+    await renderWeekly()
+    expect(container.textContent).toContain('上周回顾')
+    expect(container.textContent).toContain('上周你记了 5 条')
+    expect(container.textContent).toContain('查看完整回顾')
+    expect(container.textContent).not.toContain('问候不应显示')
+    // aria 切到周回顾语义，不再是问候卡
+    expect(container.querySelector('[aria-label="上周回顾"]')).not.toBeNull()
+    expect(container.querySelector('[aria-label="伙伴问候，点按进入对话"]')).toBeNull()
+  })
+
+  it('点卡体 → weekly.onOpen；不触发 onDismiss', async () => {
+    const weekly = await renderWeekly()
+    const card = container.querySelector('[role="button"]')!
+    await act(async () => {
+      card.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(weekly.onOpen).toHaveBeenCalledTimes(1)
+    expect(weekly.onDismiss).not.toHaveBeenCalled()
+  })
+
+  it('点 × → weekly.onDismiss 且不冒泡触发 onOpen', async () => {
+    const weekly = await renderWeekly()
+    const closeBtn = container.querySelector('button[aria-label="关闭"]')!
+    expect(closeBtn).not.toBeNull()
+    await act(async () => {
+      closeBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(weekly.onDismiss).toHaveBeenCalledTimes(1)
+    expect(weekly.onOpen).not.toHaveBeenCalled() // stopPropagation
+  })
 })
 
 async function renderHome() {
@@ -210,11 +273,14 @@ describe('home 屏问候卡挂载', () => {
 // W0 修复（2026-10-04）：greeting context 的 rollingSummary 改取「updatedAt 最新会话」——
 // 旧实现读死会话 id='1'（单会话 MVP 残留），多会话（crypto.randomUUID id）下永远 miss，
 // rollingSummary 静默缺席。对齐 store.ts hydrate 的 chatList[0] 语义；无会话 → undefined。
+// P-F F2（2026-10-05）：空会话（messages.length===0）不进历史（同 store.ts refreshChatList），
+// 故 mock 会话须带 ≥1 条消息才会被 getConversation 选中。
+const MSG = [{ id: 'm1', role: 'user' as const, text: 'hi', createdAt: '2026-10-01T09:00:00.000Z' }]
 describe('home 问候 context · 最新会话 rollingSummary（W0）', () => {
   it('两个会话 → greeting ctx 带 updatedAt 最新者的 rollingSummary，不再读死会话 id=1', async () => {
     listConversationsFn.mockResolvedValue([
-      { id: 'c-new', messages: [], updatedAt: '2026-10-01T10:00:00.000Z', rollingSummary: '新摘要' },
-      { id: 'c-old', messages: [], updatedAt: '2026-09-01T10:00:00.000Z', rollingSummary: '旧摘要' },
+      { id: 'c-new', messages: MSG, updatedAt: '2026-10-01T10:00:00.000Z', rollingSummary: '新摘要' },
+      { id: 'c-old', messages: MSG, updatedAt: '2026-09-01T10:00:00.000Z', rollingSummary: '旧摘要' },
     ])
     greetFn.mockResolvedValue('早上好')
     await renderHome()
@@ -224,12 +290,22 @@ describe('home 问候 context · 最新会话 rollingSummary（W0）', () => {
 
   it('乱序返回也取 updatedAt 最大者（钉死「取最新」语义，不依赖存储排序）', async () => {
     listConversationsFn.mockResolvedValue([
-      { id: 'c-old', messages: [], updatedAt: '2026-09-01T10:00:00.000Z', rollingSummary: '旧摘要' },
-      { id: 'c-new', messages: [], updatedAt: '2026-10-01T10:00:00.000Z', rollingSummary: '新摘要' },
+      { id: 'c-old', messages: MSG, updatedAt: '2026-09-01T10:00:00.000Z', rollingSummary: '旧摘要' },
+      { id: 'c-new', messages: MSG, updatedAt: '2026-10-01T10:00:00.000Z', rollingSummary: '新摘要' },
     ])
     greetFn.mockResolvedValue('早上好')
     await renderHome()
     expect(greetFn).toHaveBeenCalledWith(expect.objectContaining({ rollingSummary: '新摘要' }))
+  })
+
+  it('F2：updatedAt 最新的是空会话 → 跳过，取次新的非空会话 rollingSummary', async () => {
+    listConversationsFn.mockResolvedValue([
+      { id: 'c-empty', messages: [], updatedAt: '2026-10-02T10:00:00.000Z', rollingSummary: '空会话摘要' },
+      { id: 'c-old', messages: MSG, updatedAt: '2026-10-01T10:00:00.000Z', rollingSummary: '旧摘要' },
+    ])
+    greetFn.mockResolvedValue('早上好')
+    await renderHome()
+    expect(greetFn).toHaveBeenCalledWith(expect.objectContaining({ rollingSummary: '旧摘要' }))
   })
 
   it('无会话 → rollingSummary 为 undefined，问候照常渲染不崩', async () => {
