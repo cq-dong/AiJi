@@ -78,3 +78,28 @@
    ④「把桂花拿铁那条删了」→ 删条目确认卡 → 回收站可见
    ⑤回归：「把 XX 改成美食分类」旧改分类卡不破
 3. 全绿 → lead commit（契约+三路，3-4 个语义 commit）→ 关单。
+
+---
+
+## 验收记录（2026-10-05，feat/companion-echo）
+
+**执行方式说明（诚实记录）**：验收 agent（accept-pf）派活后失联（>50min 无回报、无文档落盘、无 LLM 网络活动，SendMessage 不应，TaskStop 尸位）→ 按「lead 不亲验，除非必要」的**除非必要**条款收回 lead inline 执行。静态 review 独立性未受损——三路 diff 在集成阶段已逐行过（16 文件 +853/−112 + 6 新文件，零契约漂移），非子代理自报。
+
+**静态门**：`npx tsc -p tsconfig.app.json` 0 错；`npx vitest run` **624/624 绿**（含 lead 补的 F2 空会话过滤语义钉死用例；F2 过滤致 2 个 W0 mock 过期已由 lead 修 fixture 复原）。
+
+**浏览器联合测试**：prod build（`VITE_AIJI_BACKEND=mock`，BYOK 直连 DeepSeek 真 key，注入方式 = dist 临时文件 fetch，key 未进上下文）+ preview :4173 + Playwright MCP，视口 390×844，游客账号 + 12 条 seed。
+
+| 用例 | 结果 | 关键证据 |
+|---|---|---|
+| ① 往日回响 | ✅ | 注入去年今日条目（pf-otd-1）→ 清 `aiji.pd.*` → reload → greeting LLM 请求体含「**1 年前的今天 Ta 记了：去年今日标题PF01**」（excerpt 走 ① 级 titleSuggestion，yearsAgo=1 正确）；阴性对照（无候选时请求体无此行）来自同会话早前请求 #91；system 规则 2 含「往年今日的回忆」；LLM 返 NULL → 模板兜底卡正常渲染（NULL 解析路径） |
+| ② 周回顾 | ✅ | 注入上周条目（pf-wr-1）→ reload → rate key `aiji.wr.2026-W40` 写入（ISO 周键正确）；问候 6h 频控中 → 周回顾卡补位渲染（LLM 真摘要，非模板）；CTA → /summary ✓ + seen key `aiji.wr.seen.2026-W40` 写入；IDB aggregates 落 week/2026-W40 行 stale=false；二次进首页卡消失 ✓、rate key 在 → 不重算 |
+| ③ createReminder | ✅ | 「明天下午三点提醒我交稿」→ 卡「建提醒 · 交稿 · 10/6 15:00」（LLM 锚定当前时间解析正确）→ 确认 → IDB reminders 恰 1 条新提醒（label=交稿、dueAt=2026-10-06T15:00:00+08:00、status=pending、**entryId 缺省**符合契约）、无双写；回执「已建提醒：交稿，10/6 15:00」；/reminders 屏「交稿 10/6 15:00 · 待提醒」✓ |
+| ④ deleteEntry | ✅ | 注入唯一令牌条目（pf-del-1）→「把PF04删除验收那条删了」→ 卡「删除条目 · 《PF04删除验收条目》+ 移到回收站，30 天内可恢复」→ 确认 → 条目 deletedAt 盖章（软删非物理删）✓；首页不再出现 ✓；/trash 屏可见（含「30 天后自动清理 · 原 10-05」+ 恢复/删除按钮）✓ |
+| ⑤ 回归 changeCategory | ✅ | 「把桂花拿铁那条改成美食分类」→ 旧式卡「《桂花拿铁》改成「美食」（新类别）」→ 确认 → EntryAi(e5).category='美食' 持久化 ✓；done 卡紧凑式「《桂花拿铁》→「美食」」+ 回执句双形态互补（非重复） |
+
+**发现项**：
+- **MINOR-1（UI 重复文案）**：createReminder/deleteEntry 的 done 卡内嵌回执与 store 追加的独立回执消息渲染**同一句话**（chat.action.reminder.done / chat.action.delete.done 同 key 同源），屏上出现两遍；changeCategory 无此问题（紧凑式 + 句子互补）。仅观感，状态机正确。建议后续 wave 把新 op 的 done 卡改紧凑式对齐旧 op。
+- **OBS-1（环境，非产品缺陷）**：headless Chromium 下 `Notification.requestPermission()` promise 永不 resolve → createReminder 确认挂在权限 await。真实浏览器有原生授权弹窗不受影响；旧 reminders 屏「开启通知」同源行为。e2e 跑法已定：预先 `context.grantPermissions(['notifications'])`。顺带实证：挂起期间 reload → 半截卡按 pending 复原（杀进程恢复防御）+ 重试成功无双写。
+- **OBS-2（工具怪癖）**：playwright-mcp 网络日志未捕获周回顾 aggregate 那次 LLM POST（前后请求均在）；以持久化证据（aggregate 行 + rate key + 条目专属 LLM 文案）旁证调用发生。
+
+**结论：5/5 用例通过，0 BLOCKER / 0 MAJOR，1 MINOR + 2 观察项。P-F 验收 LGTM，进入 commit/push。**

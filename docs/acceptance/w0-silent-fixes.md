@@ -32,3 +32,4 @@
 - 构建对比：index 813.02→781.92kB（gzip 266.6→248.7，-17.9kB）；settings 227.51→74.22kB（gzip 60.2→14.8，-45.4kB）；拆出 ReleaseNotes(45.8 gzip, lazy)/seed(3.0 gzip)/chinese-s2t(11.6 gzip, lazy) 三 chunk。
 - **遗留（转后续 perf wave）**：seed chunk 仍 boot 加载——`store.ts:9` 与 `devSeed.ts:3` 静态 import `seedSettings`（fix-w0-perf 范围外）。完全 lazy 需把 settings 默认形状从 seed.ts 抽成独立小模块（~3kB gzip 收益，非紧急）。
 - 实测 chinese-s2t 字典 11.56kB gzip（审计估 ~6kB），已纯动态，录音启动才拉。
+- **交叉确认（2026-10-05）**：accept-w0 验收 agent 延迟回报，独立结论 LGTM——同 5 用例全 PASS、静态 review 逐文件 OK，与 lead inline 验收一致。2 条 MINOR：F1=seed chunk preload（即上条遗留，已转 perf wave）；F2=greeting getConversation 未滤空会话（home/index.tsx:70-77，与 store.ts:1598 refreshChatList 的 messages.length>0 语义微分歧，仅旧版残留空会话可达）——已路由 pf-store 随 P-F 顺带修。
