@@ -31,6 +31,8 @@ export function CaptureKeyframes() {
 }
 
 export function fmtDur(sec: number): string {
+  // D1 ①：Infinity/NaN 直出会渲成 "Infinity:NaN" / "NaN:NaN"——首行钳缺省。
+  if (!Number.isFinite(sec)) return '00:00'
   const m = Math.floor(sec / 60)
   const s = Math.max(0, Math.floor(sec) % 60)
   const mm = String(m).padStart(2, '0')

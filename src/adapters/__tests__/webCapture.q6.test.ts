@@ -140,6 +140,27 @@ describe('pickMedia 视频分支（poster 抽帧）', () => {
     expect(r?.blob).toBe(file)
     expect(r?.posterBlob).toBeUndefined()
   })
+
+  // D1 ①（2026-10-05）：流式封装容器 Chromium 报 duration=Infinity——`Infinity || 0`
+  // 得 Infinity（truthy），钳制失效。须落有限缺省 0（与 onerror 路径一致），否则
+  // 下游 Math.round(Infinity) 落库，chip 渲 "Infinity:NaN"。契约：docs/acceptance/d1-eng-debt.md §①。
+  it('duration=Infinity（流式容器）→ 钳为 0（有限缺省，不落 Infinity）', async () => {
+    const file = new File(['v'.repeat(100)], 'v.webm', { type: 'video/webm' })
+    extractFrameMock.mockResolvedValue(null)
+    videoDuration = Infinity
+    const r = await pickWithFile(file)
+    expect(r?.kind).toBe('video')
+    expect(r?.durationSec).toBe(0)
+    expect(Number.isFinite(r!.durationSec)).toBe(true)
+  })
+
+  it('duration=63.7（有限小数）→ 保 0.1 下限语义，直通 63.7 防回归', async () => {
+    const file = new File(['v'.repeat(100)], 'v.webm', { type: 'video/webm' })
+    extractFrameMock.mockResolvedValue(null)
+    videoDuration = 63.7
+    const r = await pickWithFile(file)
+    expect(r?.durationSec).toBe(63.7)
+  })
 })
 
 // 摄像头用例公共 setup：getUserMedia 假流 + canvas 2d/toBlob mock + live preview 假元素。

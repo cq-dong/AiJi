@@ -339,7 +339,9 @@ export const webCapture: CapturePort = {
       const v = document.createElement('video')
       v.preload = 'metadata'
       v.src = url
-      v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(Math.max(0.1, v.duration || 0)) }
+      // D1 ①：流式封装容器 Chromium 报 duration=Infinity——`Infinity || 0` 得 Infinity
+      // （truthy）钳制失效。须 Number.isFinite 判，Infinity/NaN → 0（与 onerror 缺省一致）。
+      v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(Number.isFinite(v.duration) ? Math.max(0.1, v.duration) : 0) }
       v.onerror = () => { URL.revokeObjectURL(url); resolve(0) }
     })
     // Q6 poster：0.1s 抽帧（对齐旧 #t=0.1 首帧观感）；失败缺省不抛，消费方回落 <video #t=0.1>。
