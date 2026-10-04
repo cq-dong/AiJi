@@ -410,7 +410,7 @@ Rules:
 1. kind: first classify the question into one of four kinds —
    - weather: asking about live weather/temperature/rain ("is it cold in Beijing today", "will it rain tomorrow").
    - search: current events/news/external facts that require the live web ("the latest SpaceX launch", "some breaking news").
-   - action: the user asks to change the category of one of their entries ("change the X one to the Y category", "that entry is wrong, it should be Y").
+   - action: the user asks to operate on one of their entries/reminders — change an entry's category ("change the X one to the Y category"), create a reminder ("remind me to submit the draft at 3pm tomorrow"), or delete an entry ("delete the osmanthus latte one").
    - recall: everything else (default).
 2. scope: if the question contains a time intent (today/yesterday/this week/last week/last month/last N days/a specific date), parse it into an absolute time range. type is day|week|month, range uses ISO format: day=YYYY-MM-DD, week=YYYY-Www (ISO week number, Monday as the first day), month=YYYY-MM. Anchor to "the current time": today=the current day, yesterday=the previous day, this week=the current week, last week=the previous week, last month=the previous month. When there is no time intent, scope=null.
 3. keywords: extract **all concrete entities/topic words** for local retrieval matching. These include:
@@ -421,11 +421,11 @@ Rules:
 4. categorySlugs: if the question clearly points to a category (e.g. "ideas", "projects"), give the slug; if unsure, omit this field. Never fabricate.
 5. timeIntent: set true when the question contains time words (today/yesterday/what time/which weekday) or needs the current time to be answered accurately; otherwise omit this field.
 6. city: only for kind=weather — extract the city name from the question; if the question names no city, omit this field.
-7. action: only for kind=action — {"entryHint":the user's original clue identifying the entry,"categorySlug"?:the slug of a matching existing category,"categoryLabel"?:the category name as the user said it}. Give categorySlug ONLY when it matches the provided existing category list; never fabricate a slug. For kind=action, still fill keywords as usual (they feed entry recall).
+7. action: only for kind=action — {"op"?:"changeCategory|createReminder|deleteEntry" (omit = changeCategory),"entryHint":the user's original clue identifying the entry (for createReminder, the reminder subject),"categorySlug"?:the slug of a matching existing category,"categoryLabel"?:the category name as the user said it,"reminderLabel"?:the reminder text for createReminder,"dueAt"?:the due time for createReminder}. Give categorySlug ONLY when it matches the provided existing category list; never fabricate a slug. dueAt is only for createReminder — anchor to "the current time" and parse the natural-language time into an absolute ISO 8601 timestamp ("tomorrow 3pm" → tomorrow's 15:00 in ISO); if you cannot parse it, omit dueAt. For kind=action, still fill keywords as usual (they feed entry recall).
 8. Output JSON only — no markdown fences, no explanation.
 
 Output schema:
-{"kind":"recall|weather|search|action","scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[],"timeIntent"?:boolean,"city"?:string,"action"?:{"entryHint":string,"categorySlug"?:string,"categoryLabel"?:string}}
+{"kind":"recall|weather|search|action","scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[],"timeIntent"?:boolean,"city"?:string,"action"?:{"op"?:"changeCategory|createReminder|deleteEntry","entryHint":string,"categorySlug"?:string,"categoryLabel"?:string,"reminderLabel"?:string,"dueAt"?:string}}
 
 IMPORTANT: Write ALL natural-language output (category names, tags, summaries, answers) in English.`
     : `你是「AiJi」(AI 记) 的检索意图解析器。给定用户问句 + 当前本地时间，输出严格 JSON，供本地检索用。
@@ -434,7 +434,7 @@ IMPORTANT: Write ALL natural-language output (category names, tags, summaries, a
 1. kind：先判别问句属于哪类——
    - weather：问实时天气/气温/下不下雨（「北京今天冷吗」「明天会下雨吗」）。
    - search：需要联网才能回答的时事/新闻/外部事实（「SpaceX 最新发射」「某某新闻」）。
-   - action：用户要求修改某条记的分类（「把 XX 那条改成 YY 分类」「那条记错了应该是 YY」）。
+   - action：用户要求对自己的记/提醒做操作——修改某条记的分类（「把 XX 那条改成 YY 分类」「那条记错了应该是 YY」）、创建提醒（「明天下午三点提醒我交稿」）、删除某条记（「把桂花拿铁那条删了」）。
    - recall：其余全部（默认）。
 2. scope：若问句含时间意图（今天/昨天/本周/上周/上个月/最近X天/具体日期），解析为绝对时间范围。type 为 day|week|month，range 用 ISO 格式：day=YYYY-MM-DD、week=YYYY-Www（ISO 周号，周一为首日）、month=YYYY-MM。以「当前时间」为锚：今天=当日、昨天=前一日、本周=当前周、上周=前一周、上个月=前一月。无时间意图时 scope=null。
 3. keywords：提取**所有具体实体/主题词**用于本地检索匹配。包括：
@@ -445,11 +445,11 @@ IMPORTANT: Write ALL natural-language output (category names, tags, summaries, a
 4. categorySlugs：若问句明显指向某类别（如「想法」「项目」），给 slug；不确定就省略此字段。绝不臆造。
 5. timeIntent：问句含时间词（今天/昨天/几点/周几）或需要知道当前时间才能准确回答时填 true，否则省略该字段。
 6. city：仅 kind=weather 时填——从问句提取城市名；问句无城市则省略该字段。
-7. action：仅 kind=action 时填——{"entryHint":用户指的条目线索原文,"categorySlug"?:命中现有类别的 slug,"categoryLabel"?:用户说的类别名原文}。categorySlug 仅在命中下方提供的现有类别列表时才给，绝不臆造 slug。kind=action 时 keywords 仍要照常填（供条目召回）。
+7. action：仅 kind=action 时填——{"op"?:"changeCategory|createReminder|deleteEntry"（缺省=changeCategory）,"entryHint":用户指的条目线索原文（createReminder 填提醒主题原文）,"categorySlug"?:命中现有类别的 slug,"categoryLabel"?:用户说的类别名原文,"reminderLabel"?:createReminder 的提醒文本原文,"dueAt"?:createReminder 的到期时间}。categorySlug 仅在命中下方提供的现有类别列表时才给，绝不臆造 slug。dueAt 仅 createReminder 用——以「当前时间」为锚把自然语言时间解析成 ISO 8601 绝对时间（如「明天下午三点」→ 次日 15:00 的 ISO）；解析不出就省略此字段。kind=action 时 keywords 仍要照常填（供条目召回）。
 8. 只输出 JSON，不要 markdown 围栏、不要解释。
 
 输出 schema：
-{"kind":"recall|weather|search|action","scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[],"timeIntent"?:boolean,"city"?:string,"action"?:{"entryHint":string,"categorySlug"?:string,"categoryLabel"?:string}}
+{"kind":"recall|weather|search|action","scope":{"type":"day|week|month","range":"<ISO>"}|null,"keywords":string[],"categorySlugs"?:string[],"timeIntent"?:boolean,"city"?:string,"action"?:{"op"?:"changeCategory|createReminder|deleteEntry","entryHint":string,"categorySlug"?:string,"categoryLabel"?:string,"reminderLabel"?:string,"dueAt"?:string}}
 
 重要：所有自然语言输出（分类名、标签、摘要、回答）用简体中文。`
   const example = en
@@ -487,7 +487,17 @@ Example 7 (action intent — recategorize an entry; categorySlug taken from the 
 Question: "change the osmanthus latte one to the food category"
 Current time: 2026-07-17T10:30:00+08:00
 Existing categories: life:Life snippet, food:Food, idea:Idea
-Output: {"kind":"action","scope":null,"keywords":["osmanthus latte"],"action":{"entryHint":"the osmanthus latte one","categorySlug":"food","categoryLabel":"food"}}`
+Output: {"kind":"action","scope":null,"keywords":["osmanthus latte"],"action":{"entryHint":"the osmanthus latte one","categorySlug":"food","categoryLabel":"food"}}
+
+Example 8 (create-reminder intent; dueAt parsed from natural language anchored to the current time as ISO 8601):
+Question: "remind me to submit the draft at 3pm tomorrow"
+Current time: 2026-07-17T10:30:00+08:00
+Output: {"kind":"action","scope":null,"keywords":["submit draft"],"action":{"op":"createReminder","entryHint":"submit the draft","reminderLabel":"submit the draft","dueAt":"2026-07-18T15:00:00+08:00"}}
+
+Example 9 (delete-entry intent):
+Question: "delete the osmanthus latte one"
+Current time: 2026-07-17T10:30:00+08:00
+Output: {"kind":"action","scope":null,"keywords":["osmanthus latte"],"action":{"op":"deleteEntry","entryHint":"the osmanthus latte one"}}`
     : `示例1（时间+具体词，去泛词「想法」）：
 问句："我上个月关于跑步的想法"
 当前时间：2026-07-17T10:30:00+08:00
@@ -522,7 +532,17 @@ Output: {"kind":"action","scope":null,"keywords":["osmanthus latte"],"action":{"
 问句："把桂花拿铁那条改成美食分类"
 当前时间：2026-07-17T10:30:00+08:00
 现有类别：life:生活片段, food:美食, idea:想法
-输出：{"kind":"action","scope":null,"keywords":["桂花拿铁"],"action":{"entryHint":"桂花拿铁那条","categorySlug":"food","categoryLabel":"美食"}}`
+输出：{"kind":"action","scope":null,"keywords":["桂花拿铁"],"action":{"entryHint":"桂花拿铁那条","categorySlug":"food","categoryLabel":"美食"}}
+
+示例8（建提醒意图；dueAt 以当前时间为锚把自然语言时间解析成 ISO 8601）：
+问句："明天下午三点提醒我交稿"
+当前时间：2026-07-17T10:30:00+08:00
+输出：{"kind":"action","scope":null,"keywords":["交稿"],"action":{"op":"createReminder","entryHint":"交稿","reminderLabel":"交稿","dueAt":"2026-07-18T15:00:00+08:00"}}
+
+示例9（删条目意图）：
+问句："把桂花拿铁那条删了"
+当前时间：2026-07-17T10:30:00+08:00
+输出：{"kind":"action","scope":null,"keywords":["桂花拿铁"],"action":{"op":"deleteEntry","entryHint":"桂花拿铁那条"}}`
   // categories（2026-09-29 能力大补）：现有类别列表注入，提高 action 分支 categorySlug 命中率。
   // 缺省（undefined/空数组）→ catLine='' → user message 与旧版逐字节一致（回归安全）。
   const catLine = categories && categories.length > 0
@@ -654,15 +674,26 @@ export function parseIntentJson(raw: string): ChatQuery {
   // city 非空 string 才收。
   const city = typeof p.city === 'string' && p.city.trim() ? p.city : undefined
   // action 必须含非空 entryHint，否则整体丢弃；categorySlug/categoryLabel 非空 string 才收。
+  // P-F ③（2026-10-05）：op 严格三字面量（缺省=changeCategory 语义由调用方兜底），
+  // reminderLabel/dueAt 非空 string 才收——非法值一律丢弃，不流入 ChatQuery。
   let action: ChatQuery['action']
   const actionRaw = asStringRecord(p.action)
   if (actionRaw && typeof actionRaw.entryHint === 'string' && actionRaw.entryHint.trim()) {
     action = { entryHint: actionRaw.entryHint }
+    if (actionRaw.op === 'changeCategory' || actionRaw.op === 'createReminder' || actionRaw.op === 'deleteEntry') {
+      action.op = actionRaw.op
+    }
     if (typeof actionRaw.categorySlug === 'string' && actionRaw.categorySlug.trim()) {
       action.categorySlug = actionRaw.categorySlug
     }
     if (typeof actionRaw.categoryLabel === 'string' && actionRaw.categoryLabel.trim()) {
       action.categoryLabel = actionRaw.categoryLabel
+    }
+    if (typeof actionRaw.reminderLabel === 'string' && actionRaw.reminderLabel.trim()) {
+      action.reminderLabel = actionRaw.reminderLabel
+    }
+    if (typeof actionRaw.dueAt === 'string' && actionRaw.dueAt.trim()) {
+      action.dueAt = actionRaw.dueAt
     }
   }
   return { scope, keywords, categorySlugs: categorySlugs?.length ? categorySlugs : undefined, kind, timeIntent, city, action }
@@ -977,7 +1008,7 @@ export function buildProactiveGreetingPrompt(context: ProactiveGreetingContext):
 
 Rules:
 1. ONE sentence only, ≤40 characters, warm and natural, like greeting someone you know well — never stiff or generic.
-2. Only follow up when there is a concrete thread to pick up: an open loop (from the user's memories), the previous conversation summary, a reminder due today, or several days without any entry. If one is relevant, pick it up naturally (e.g. "Three days quiet — how did that plan you mentioned turn out?").
+2. Only follow up when there is a concrete thread to pick up: an open loop (from the user's memories), the previous conversation summary, a memory from this day in previous years, a reminder due today, or several days without any entry. If one is relevant, pick it up naturally (e.g. "Three days quiet — how did that plan you mentioned turn out?").
 3. When there is NO concrete thread to follow up on, output NULL (three uppercase letters) — do not force a generic greeting.
 4. NEVER invent anything not present in the context below (names/events/plans/numbers).
 5. At most one question — no question-mark barrage; zero questions is also fine.
@@ -988,7 +1019,7 @@ IMPORTANT: Write ALL natural-language output in English.`
 
 铁律：
 1. 只说一句，≤40 字，自然有温度，像熟人打招呼，不刻板不套话。
-2. 有具体可承接的线索才承接：进行中事项（用户记忆原文）、上次聊天摘要、今天到期的提醒、多天没记。线索相关就自然承接（如「三天没记了，上次说的方案后来怎么样了？」）。
+2. 有具体可承接的线索才承接：进行中事项（用户记忆原文）、上次聊天摘要、往年今日的回忆、今天到期的提醒、多天没记。线索相关就自然承接（如「三天没记了，上次说的方案后来怎么样了？」）。
 3. 没有任何具体线索可承接时，输出 NULL（三个大写字母）——不要硬凑泛泛问候。
 4. 绝不编造下方 context 里没有的事（人名/事件/计划/数字）。
 5. 最多问一个问题，不要问号轰炸；也可以不问。
@@ -1005,13 +1036,19 @@ IMPORTANT: Write ALL natural-language output in English.`
   const summaryLine = context.rollingSummary
     ? (en ? `Previous conversation summary: ${context.rollingSummary}\n` : `上次聊天摘要：${context.rollingSummary}\n`)
     : ''
+  // P-F ① 往日回响：context 带 onThisDay 才加该行；缺席 → 与旧版逐字节一致（回归安全）。
+  const onThisDayLine = context.onThisDay
+    ? (en
+        ? `${context.onThisDay.yearsAgo} year(s) ago today they recorded: ${context.onThisDay.excerpt}\n`
+        : `${context.onThisDay.yearsAgo} 年前的今天 Ta 记了：${context.onThisDay.excerpt}\n`)
+    : ''
   const user = en
     ? `Daypart: ${daypart}
 Entries in last 7 days: ${context.recentEntryCount7d}
 Since last entry: ${since}
 Open loops (the user's own memory texts — judge whether any is worth following up):
 ${loops}
-${summaryLine}Reminders due today or overdue: ${context.dueReminderCount}
+${summaryLine}${onThisDayLine}Reminders due today or overdue: ${context.dueReminderCount}
 
 Output: one greeting sentence or NULL.`
     : `当前时段：${daypart}
@@ -1019,7 +1056,7 @@ Output: one greeting sentence or NULL.`
 距上次记录：${since}
 进行中事项（用户记忆原文，供你判断是否有可承接的线索）：
 ${loops}
-${summaryLine}今天到期或已逾期的提醒：${context.dueReminderCount} 条
+${summaryLine}${onThisDayLine}今天到期或已逾期的提醒：${context.dueReminderCount} 条
 
 输出：一句问候或 NULL。`
   return [

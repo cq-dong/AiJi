@@ -105,6 +105,27 @@ export function buildContext(input: BuildContextInput): ProactiveGreetingContext
 
   const rollingSummary = conversation?.rollingSummary?.trim() ? conversation.rollingSummary : undefined
 
+  // P-F ① 往日回响：同月日（本地）且年份 < now 年的候选按 createdAt 降序，
+  // 取第一条 excerpt 非空者；无候选 / 全部 excerpt 空 → undefined（不瞎编）。
+  let onThisDay: ProactiveGreetingContext['onThisDay']
+  const nowMonth = now.getMonth()
+  const nowDate = now.getDate()
+  const nowYear = now.getFullYear()
+  const candidates = entries
+    .filter((e) => {
+      const d = new Date(e.createdAt)
+      if (Number.isNaN(d.getTime())) return false
+      return d.getMonth() === nowMonth && d.getDate() === nowDate && d.getFullYear() < nowYear
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  for (const c of candidates) {
+    const excerpt = onThisDayExcerpt(c, input.aiById)
+    if (excerpt) {
+      onThisDay = { yearsAgo: nowYear - new Date(c.createdAt).getFullYear(), excerpt }
+      break
+    }
+  }
+
   return {
     daypart: daypartOf(now),
     recentEntryCount7d,
@@ -112,7 +133,47 @@ export function buildContext(input: BuildContextInput): ProactiveGreetingContext
     openLoops,
     rollingSummary,
     dueReminderCount,
+    onThisDay,
   }
+}
+
+// trim + 截 60 字（excerpt 三级统一规则）。
+function clip60(s: string): string {
+  return s.trim().slice(0, 60)
+}
+
+// 首个非空行（去首尾空白后非空）；全文空白 → undefined。
+function firstNonEmptyLine(s: string): string | undefined {
+  for (const line of s.split('\n')) {
+    if (line.trim()) return line
+  }
+  return undefined
+}
+
+// onThisDay excerpt 三级回退：① aiById.get(id)?.titleSuggestion ② 首个 text part 首个
+// 非空行 ③ 首个 audio/video part transcript 首个非空行；各级 trim + 截 60 字。
+// 条目缺 id 跳过①、缺 parts 跳过②③；三级皆空 → undefined（看下一候选，不瞎编）。
+function onThisDayExcerpt(
+  e: Pick<Entry, 'createdAt'> & Partial<Pick<Entry, 'id' | 'parts'>>,
+  aiById?: ReadonlyMap<string, Pick<EntryAi, 'titleSuggestion'>>,
+): string | undefined {
+  if (e.id && aiById) {
+    const title = aiById.get(e.id)?.titleSuggestion
+    if (title && clip60(title)) return clip60(title)
+  }
+  const parts = e.parts
+  if (!parts) return undefined
+  const textPart = parts.find((p) => p.type === 'text')
+  if (textPart) {
+    const line = firstNonEmptyLine(textPart.content)
+    if (line) return clip60(line)
+  }
+  const mediaPart = parts.find((p) => p.type === 'audio' || p.type === 'video')
+  if (mediaPart?.transcript) {
+    const line = firstNonEmptyLine(mediaPart.transcript)
+    if (line) return clip60(line)
+  }
+  return undefined
 }
 
 // ── 编排 ───────────────────────────────────────────────────────────
@@ -207,7 +268,9 @@ export async function maybeGreeting(deps: ProactiveDeps): Promise<GreetingResult
       deps.listReminders(),
       deps.getConversation(),
     ])
-    const ctx = buildContext({ now, entries, memories, reminders, conversation })
+    // P-F ①：可选 dep，读 live store（调用方责任）；缺省 = onThisDay 跳过标题级。
+    const aiById = deps.getAiById?.()
+    const ctx = buildContext({ now, entries, memories, reminders, conversation, aiById })
     text = await deps.greet(ctx)
     if (text && !text.trim()) text = null
   } catch (err) {
