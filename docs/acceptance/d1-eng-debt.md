@@ -210,4 +210,117 @@ d1-sheets 不碰 i18n（弹层无新文案）；d1-perf 的 store.ts 只许改 i
 
 ## 验收记录
 
-（验收后由验收 agent 回填本节）
+> 验收 agent：accept-d1（独立复核，不信 lead 结论）。工作树 = 未 commit 全部改动
+> （20 M + 9 新文件/目录）。验收方未 commit/push、未改实现代码。
+
+### 执行方式
+
+- 静态门禁（独立复跑）：`npx tsc -p tsconfig.app.json` → exit 0（0 错）；
+  `npx vitest run` → **85 文件 725/725 全绿**（Duration 10.85s）；
+  `npm run build` → 绿（✓ built in 903ms，PWA 53 entries precache）。
+- 浏览器联合测试：vite dev server（**5175**，5173 被他 agent 占用）+ Playwright MCP，
+  视口 390×844；每用例前清 SW + localStorage + IndexedDB，`aiji:onboarded=1` + 游客
+  「开始记」进首页。native 桥接沿用 A1 先例：`import('/src/app/backButton.ts')` 同实例
+  模块图（经 `curl /src/app/backButton.ts` 取 vite 重写后的精确 deps URL
+  `/node_modules/.vite/deps/@capacitor_core.js?v=<hash>`——`/@id/@capacitor/core`
+  是另一实例，首试踩坑后改正道）；`Capacitor.isNativePlatform=()=>true` 直改；
+  `WebPlugin.prototype.addListener` 捕获 backButton cb 存 `window.__fireBack`；
+  真调 `initBackButton()` 注册。
+- prod 冒烟：`npm run preview -- --port 4173`（4173 被占自动落 **4174**，bundle hash
+  `index-uSkq4ruA.js` 与本次 build 一致，确属本波产物）。
+
+### 静态复核（逐项，全部合规）
+
+1. **webCapture.ts:344 钳制** — `resolve(Number.isFinite(v.duration) ? Math.max(0.1, v.duration) : 0)`，
+   与契约逐字一致；0.1 下限语义保留，Infinity/NaN → 0（与 onerror 缺省一致）。
+   widgets.tsx:821 `Math.max(1, Math.round(...))` 未动 ✓（契约非目标）。
+2. **fmtDur 首行守卫** — widgets.tsx:35 `if (!Number.isFinite(sec)) return '00:00'` 函数体
+   首行；后续 mm/ss 逻辑原样。✓
+3. **chat done 卡紧凑** — chat/index.tsx:556-561 createReminder done 渲
+   `{reminderLabel ?? entryHint} · {dueText}`（Check 图标保留，无 `chat.action.reminder.done`
+   全句）；:562-569 deleteEntry done 渲 `《label》 → 「{t('chat.action.delete.bin')}」`
+   （无 `chat.action.delete.done` 全句）；changeCategory done（:546-553）原样；
+   cancelled/notFound/pending/ambiguous 各态零改动。✓
+4. **chat 窗口化** — `export const CHAT_WINDOW = 50`（:617 模块级 export ✓）；
+   `useState(CHAT_WINDOW)`（:645）；`visibleMessages = messages.length > limit ?
+   messages.slice(-limit) : messages`（:646）；分隔条派生 IIFE 输入 = visibleMessages
+   （:762）；seenIds（:639）/streamLen（:670）/hasStreamingMsg（:668）/贴底 effect
+   （:682-685 deps=[messages.length, chatLoading, streamLen]）均读**全量** messages ✓；
+   顶部按钮 `messages.length > limit` 时渲染、文案 `t('chat.loadEarlier', { count })`
+   （:744-753）；prevHeightRef + useLayoutEffect deps=[limit]（:651-663）；
+   会话切换 `useEffect(() => setLimit(CHAT_WINDOW), [conversation?.id])`（:648）。✓
+5. **i18n 四 key** — zh `chat.action.delete.bin`「回收站」+ `chat.loadEarlier`
+   「加载更早的 {count} 条消息」（zh/chat.ts:74,91）；en「Trash」+
+   「Load {count} earlier messages」（en/chat.ts:74,91）。✓
+6. **useBackDismiss 契约逐字** — useBackDismiss.ts:7-9 `const ref = useRef(onClose);
+   ref.current = onClose; useEffect(() => pushBackHandler(() => ref.current()), [])`，
+   与契约逐字一致；index.ts:19  barrel export。✓
+7. **Sheet.tsx 重构** — imports 仅剩 ReactNode(type)/framer-motion/X/useT/useBackDismiss，
+   **无残留** useEffect/useRef/pushBackHandler；:40 `useBackDismiss(dismiss)` 单点替换，
+   dismiss 逻辑（spring 甩出 + reduce 直调）原样。✓
+8. **12(+1) 处 overlay 接线逐点 grep 核实** — settings/index.tsx **7 处**
+   （ExportConfirmSheet:338 / ByokSheet:443 / SttSheet:596 / GeocodingSheet:702 /
+   VlmSheet:761 / AboutSheet:919 / LanguageSheet:1153，超出契约 :344/:482/:598 三处的
+   最低要求）+ MemorySheet:26 + SearchSheet:19 + CategoryDetail ExportConfirmSheet:86 +
+   CategoryEditSheet 主层:65 + 嵌套 ZipConfirmBackDismiss:53（渲染 null 的专用注册器，
+   :246 `{zipConfirm && <ZipConfirmBackDismiss/>}` 挂在主层**之后** → 栈顶，LIFO 正确）+
+   trash ConfirmHardDeleteDialog:38。每处组件均为**条件渲染挂载**（settings 1613-1622
+   `{editing && …}` / CategoryDetail `{zipConfirm && …}` / trash `{confirmId && …}`），
+   不可见时栈内无 handler 的硬约束满足。六文件 `fixed inset-0` 计数与 useBackDismiss
+   计数 1:1（7+1+1+2+1+1=13）。✓
+9. **di.ts** — :3/:18 静态导入已删（现存 imports 无 openAiCompatLlm/builtinLlm）；
+   pickLlm（:70-74）与契约逐字一致；llmProxy 10 个方法（classify/aggregate/
+   parseChatIntent/answerChat/extractMemory/embed/summarizeConversation/
+   adjudicateMemory/proactiveGreeting/ping，= LlmPort 全量，任务书「11 方法」为约数）
+   透传参数个数与签名逐字保持；embed 保 `l.embed?.(texts) ?? null` 语义（:91）；
+   sttProxy 未动 ✓。diProxy.test 既有断言（byok/builtin 路由、onEvent/categories 透传）
+   全保留且全绿。✓
+10. **defaultSettings.ts 逐字一致** — git diff seed.ts 被删对象字面量与
+    defaultSettings.ts 内容逐字段比对一致（含 `as const` 位置）；seed.ts 改
+    `export { seedSettings } from './defaultSettings'` re-export；store.ts:9 /
+    devSeed.ts:3 diff **仅 import 行**（git diff 逐行核）。✓
+11. **vite.config codeSplitting** — build.rollupOptions.output.codeSplitting.groups 三组
+    test 正则：react（react/react-dom/react-router/react-router-dom/scheduler）、
+    motion（framer-motion/motion-dom/motion-utils）、data（dexie/zustand/@tanstack
+    react-query/query-core）——覆盖契约三 vendor 及其独占传递依赖。见 OBS-1。✓
+12. **越界检查** — 20 M 全在契约任务拆分表内或紧邻申报项（components/index.ts barrel
+    1 行 = OBS-2；chatCapabilityUi.test.tsx 两用例同步改 = OBS-3）；9 新文件/目录全为
+    四路测试与实现（`src/data/__tests__/dbv9.test.ts` 为 8/8 遗留未跟踪，非本波，
+    同 A1 OBS-3）。无表外实现文件。✓
+
+### 门禁复跑输出（尾行）
+
+- `npx tsc -p tsconfig.app.json` →（无输出）exit 0
+- `npx vitest run` → `Test Files  85 passed (85)` / `Tests  725 passed (725)`
+- `npm run build` → `✓ built in 903ms` + `PWA v1.3.0 precache 53 entries (1330.74 KiB)`
+
+### 用例证据表
+
+| # | 用例 | 结果 | 关键证据 |
+|---|---|---|---|
+| ① | fmtDur 守卫 + duration 钳制（单测层） | PASS | webCapture.q6.test.ts 新增两用例（Infinity→0 有限缺省、63.7→63.7 直通防回归）；widgets.test.ts 四用例（Infinity/NaN→'00:00'、-5→'-1:00' 钉现状、65→'01:05'）；vitest 725/725 绿 |
+| ② | done 卡紧凑 | PASS | dev 5175 /chat，store.setState 造 actionConfirm(deleteEntry, done, 桂花拿铁) + store 回执消息：屏上「已把《桂花拿铁》移到回收站」全句**恰好 1 次**（仅 store 消息），卡为紧凑式《桂花拿铁》→「回收站」（hasCompactBin/hasCompactLabel=true） |
+| ③ | 窗口化 smoke | PASS | store.setState 灌 60 条：只渲 **50** 条（msg1/msg10 精确正则缺席、msg11/msg60 在）、顶部「加载更早的 10 条消息」、窗口首条上有 DateSeparator「10月1日 周四」；点击 → 60 全渲 + 按钮消失；切会话 id（c-win→c-win-2）→ limit 复位 50（msg10 又缺席、按钮复现）。chatWindow.test 六用例全绿（含流式不截断） |
+| ④ | 弹层返回键 | PASS | MemorySheet：开 → __fireBack → overlay 消失 + URL 仍 /settings；CategoryEditSheet 嵌套：开 zip 确认层（2 overlay）→ fireBack → 确认层收主层在（1 overlay、URL /categories）→ 再 fireBack → 主层收（0 overlay、类别列表复现）；trash 硬删 dialog：开 → fireBack → dialog 关 + URL 仍 /trash + 列表在。路由全程不变 |
+| ⑤ | perf 产物 + prod 冒烟 | PASS | dist/assets：react-B0eOG8yE.js(232K)/motion-C56_i4f7.js(134K)/data-rLRLb9VS.js(120K) 三 vendor + openAiCompatLlm-DFhxvGUX.js(63K)/builtinLlm-Bt97yg5Y.js/seed-CWK_keEg.js 独立 chunk 全在；主 chunk index-uSkq4ruA.js grep「桂花拿铁」=0、「笔记分类助手」=0、intent schema 特征串=0（桂花拿铁只在 seed chunk + openAiCompatLlm chunk 的 prompt 示例原文，符合预期）；preview 4174 prod 包：首页/chat/capture 三屏渲染正常，动态导入链路真实走通，prod 会话 **0 console error**（唯一 error 来自 dev 会话验收方自探 Capacitor Proxy 的 String() 转换，非 app 代码） |
+
+### findings
+
+- **OBS-1**（无缺陷，申报偏差）：契约 §⑤c 写的 `manualChunks` 对象字面量在 Vite 8
+  （Rolldown）下不支持，实现用原生等价物 `codeSplitting.groups`（{name,test} 三组，
+  含独占传递依赖）——语义相同、产物证据满足（三 vendor chunk 存在），vite.config.ts
+  :51-54 注释已说明缘由。契约文本与实现的偏差在此申报，不改。
+- **OBS-2**（表外 1 行）：components/index.ts barrel 增 `export { useBackDismiss }`——
+  新 hook 的自然出口，d1-sheets 紧邻改动，无风险。
+- **OBS-3**（表外测试维护）：chatCapabilityUi.test.tsx（screens/chat/ 根、非 __tests__/）
+  两 done 用例同步改断言（toContain 紧凑串 + not.toContain 旧全句）——done 卡紧凑化的
+  必要防回归维护，断言方向与契约一致（全句不出现）。
+- **OBS-4**（合同外加固）：widgets.test.ts 比契约三用例多一条 `fmtDur(-5)→'-1:00'`
+  钉死负数现状语义（分不钳、秒钳），防未来误改。
+- 无 BLOCKER / MAJOR / MINOR。
+
+### 结论
+
+**LGTM**。四路不变量逐项合规、门禁三绿独立复跑、五用例全 PASS（含 native 桥
+真 fireBack 的嵌套 LIFO 与 prod 包三屏冒烟）。建议 lead 按契约 commit（契约+四路+
+本验收记录，~6 个语义 commit）后关单。
