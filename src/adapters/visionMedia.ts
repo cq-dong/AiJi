@@ -5,9 +5,11 @@
 const MAX_LONG_EDGE = 1024
 const JPEG_QUALITY = 0.8
 
-// photo blob (or extracted frame blob) → JPEG base64 data URL, long edge ≤1024.
-// null on any failure (caller skips that image).
-export async function compressImage(blob: Blob): Promise<string | null> {
+// 模块内共享核（不导出）：blob → createImageBitmap → 等比缩放长边 ≤1024（小图不放大）
+// → canvas 2d → 先白底填充再 drawImage → 返回画好的 canvas。null on any failure。
+// 白底填充：alpha PNG → JPEG 时透明区默认变黑，先铺白底保持观感（Q6 修——VLM
+// compressImage 路径与采集 compressImageBlob 路径同修）。调用方负责 toDataURL/toBlob。
+async function drawCompressed(blob: Blob): Promise<HTMLCanvasElement | null> {
   const bmp = await createImageBitmap(blob).catch(() => null)
   if (!bmp) return null
   try {
@@ -19,11 +21,29 @@ export async function compressImage(blob: Blob): Promise<string | null> {
     canvas.height = h
     const ctx = canvas.getContext('2d')
     if (!ctx) return null
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, w, h)
     ctx.drawImage(bmp, 0, 0, w, h)
-    return canvas.toDataURL('image/jpeg', JPEG_QUALITY)
+    return canvas
   } finally {
     bmp.close()
   }
+}
+
+// photo blob (or extracted frame blob) → JPEG base64 data URL, long edge ≤1024.
+// null on any failure (caller skips that image).
+export async function compressImage(blob: Blob): Promise<string | null> {
+  const canvas = await drawCompressed(blob)
+  if (!canvas) return null
+  return canvas.toDataURL('image/jpeg', JPEG_QUALITY)
+}
+
+// Q6 采集压缩包：同参数压缩但出口为 Blob（采集落 OPFS 用——AI 看到的与库存的一致）。
+// null on any failure（调用方直通原 blob——压缩永不丢媒体）。
+export async function compressImageBlob(blob: Blob): Promise<Blob | null> {
+  const canvas = await drawCompressed(blob)
+  if (!canvas) return null
+  return await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', JPEG_QUALITY))
 }
 
 // pick seek times for a video: first + last + every intervalSec, capped via

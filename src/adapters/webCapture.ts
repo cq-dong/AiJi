@@ -1,5 +1,6 @@
 import type { CapturePort } from '@/ports'
 import type { GeoPoint } from '@/domain/types'
+import { compressImageBlob, extractFrame } from '@/adapters/visionMedia'
 
 // PWA capture adapter (PRD §7.3 "WebSpeech+getUserMedia"): mic via getUserMedia,
 // live STT preview via WebSpeech, recording via MediaRecorder. Whisper final-quality
@@ -62,6 +63,16 @@ function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
 // UI 层判空降级（null → CSS 假条波形），port 契约保持干净。
 export function getMicAnalyser(): AnalyserNode | null {
   return micAnalyser
+}
+
+// Q6 采集压缩包可测 seam：图片 blob 出口归一化（长边 ≤1024 JPEG，与 VLM classify 同
+// 参数——AI 看到的与库存的一致）。决策表（钉死）：
+//   压缩成功且 compressed.size < raw.size → { blob: compressed, mime: 'image/jpeg' }
+//   压缩成功但不更小 / 压缩失败（null）  → 原始直通。**压缩永不丢媒体。**
+export async function normalizeImageBlob(raw: Blob, mime: string): Promise<{ blob: Blob; mime: string }> {
+  const compressed = await compressImageBlob(raw)
+  if (compressed && compressed.size < raw.size) return { blob: compressed, mime: 'image/jpeg' }
+  return { blob: raw, mime }
 }
 
 export const webCapture: CapturePort = {
@@ -236,7 +247,9 @@ export const webCapture: CapturePort = {
       canvas.toBlob((b) => resolve(b), 'image/jpeg', 0.9),
     )
     if (!blob) return null
-    return { ref: `photo-${crypto.randomUUID()}`, blob, mime: blob.type }
+    // Q6：同 pickMedia 图片分支的归一化 seam（部分设备 4K 流原帧可达数 MB）。
+    const { blob: outBlob, mime } = await normalizeImageBlob(blob, blob.type)
+    return { ref: `photo-${crypto.randomUUID()}`, blob: outBlob, mime }
   },
 
   async startVideo() {
@@ -269,7 +282,9 @@ export const webCapture: CapturePort = {
     camRecorder = null
     camChunks = []
     if (!blob) return null
-    return { ref: `video-${crypto.randomUUID()}`, blob, durationSec, mime }
+    // Q6 poster：0.1s 抽帧（对齐旧 #t=0.1 首帧观感）；失败缺省不抛，消费方回落 <video #t=0.1>。
+    const posterBlob = (await extractFrame(blob, 0.1)) ?? undefined
+    return { ref: `video-${crypto.randomUUID()}`, blob, durationSec, mime, posterBlob }
   },
 
   async stopCamera() {
@@ -313,18 +328,22 @@ export const webCapture: CapturePort = {
     if (input.parentNode) document.body.removeChild(input)
     if (!file) return null
     const kind: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image'
-    let durationSec = 0
-    if (kind === 'video') {
-      // Probe duration via a detached video element loaded from the blob.
-      durationSec = await new Promise<number>((resolve) => {
-        const url = URL.createObjectURL(file)
-        const v = document.createElement('video')
-        v.preload = 'metadata'
-        v.src = url
-        v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(Math.max(0.1, v.duration || 0)) }
-        v.onerror = () => { URL.revokeObjectURL(url); resolve(0) }
-      })
+    if (kind === 'image') {
+      // Q6 图片归一化：长边 ≤1024 JPEG，仅当压缩成功且更小时替换；否则原图直通。
+      const { blob, mime } = await normalizeImageBlob(file, file.type)
+      return { ref: `photo-${crypto.randomUUID()}`, blob, kind, durationSec: 0, mime }
     }
-    return { ref: `${kind === 'image' ? 'photo' : 'video'}-${crypto.randomUUID()}`, blob: file, kind, durationSec, mime: file.type }
+    // Probe duration via a detached video element loaded from the blob.
+    const durationSec = await new Promise<number>((resolve) => {
+      const url = URL.createObjectURL(file)
+      const v = document.createElement('video')
+      v.preload = 'metadata'
+      v.src = url
+      v.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(Math.max(0.1, v.duration || 0)) }
+      v.onerror = () => { URL.revokeObjectURL(url); resolve(0) }
+    })
+    // Q6 poster：0.1s 抽帧（对齐旧 #t=0.1 首帧观感）；失败缺省不抛，消费方回落 <video #t=0.1>。
+    const posterBlob = (await extractFrame(file, 0.1)) ?? undefined
+    return { ref: `video-${crypto.randomUUID()}`, blob: file, kind, durationSec, mime: file.type, posterBlob }
   },
 }

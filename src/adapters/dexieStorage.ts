@@ -1,6 +1,7 @@
 import { db } from '@/data/db'
 import { getCurrentOwner } from '@/app/currentOwner'
 import { enqueue } from '@/app/syncOutbox'
+import { posterRefOf } from '@/domain/mediaRef'
 import type { StoragePort } from '@/ports'
 import type { Aggregate, AggregateScopeType, Conversation, Draft, Entry, Memory, Reminder } from '@/domain/types'
 
@@ -77,7 +78,12 @@ async function removeMediaForEntry(e: Entry): Promise<void> {
     if (p.type !== 'audio' && p.type !== 'video') continue
     try {
       const root = await navigator.storage?.getDirectory?.()
-      if (root) await root.removeEntry(p.ref).catch(() => {})
+      if (root) {
+        await root.removeEntry(p.ref).catch(() => {})
+        // Q6：poster 帧（`${ref}.poster`）同步删——防硬删后 poster 孤儿泄漏配额。
+        // 无 poster 的老条目 removeEntry 拒绝，同 best-effort 吞掉。
+        await root.removeEntry(posterRefOf(p.ref)).catch(() => {})
+      }
     } catch {
       // OPFS unsupported — best-effort
     }
