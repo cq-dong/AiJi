@@ -17,6 +17,8 @@ export const common = {
   'common.zhOnly': '仅中文',
   'common.exitConfirm': 'Press back again to exit',
   'chat.memoryConfirm': 'Got it, saved: {content} (manage in Settings → AI Memory)',
+  'shareTarget.empty': 'Nothing to jot down was shared',
+  'shareTarget.backHome': 'Back to home',
   'nav.home': 'Timeline',
   'nav.categories': 'Categories',
   'nav.summary': 'Summary',

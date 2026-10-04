@@ -18,6 +18,8 @@ export const common = {
   'common.zhOnly': '仅中文',
   'common.exitConfirm': '再按一次退出',
   'chat.memoryConfirm': '已记住：{content}（可在 设置→AI 记忆 管理）',
+  'shareTarget.empty': '没有收到可记入的内容',
+  'shareTarget.backHome': '回首页',
   'nav.home': '时间线',
   'nav.categories': '类别',
   'nav.summary': '摘要',

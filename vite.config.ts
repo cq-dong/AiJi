@@ -36,6 +36,13 @@ export default defineConfig({
           { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
+        // PRD trust pack t2：PWA Share Target（仅 GET text/title/url——POST+files 需
+        // injectManifest 手术，本波非目标）。接收页 src/ui/screens/shareTarget。
+        share_target: {
+          action: '/share-target',
+          method: 'GET',
+          params: { title: 'title', text: 'text', url: 'url' },
+        },
       },
       workbox: {
         navigateFallback: 'index.html',
