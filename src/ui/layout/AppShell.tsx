@@ -1,8 +1,9 @@
 import { useLocation, useNavigate, useOutlet } from 'react-router-dom'
 import { Search, Sparkles } from 'lucide-react'
-import { motion, useReducedMotion } from 'framer-motion'
-import { Fab, FiringReminderPopup, NavBottom, ReminderPopup, Statusbar } from '@/ui/components'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
+import { Fab, FiringReminderPopup, NavBottom, ReminderPopup, Statusbar, Toast } from '@/ui/components'
 import { useT } from '@/app/i18n/useT'
+import { useUiStore } from '@/app/store'
 
 // Wave 3: 顶栏搜索入口（搜索从底栏移出，放大镜置顶，点击进 /search）。
 // AI Chat（纯读检索）：问 AI 入口置顶，点击进 /chat。
@@ -67,6 +68,26 @@ function PageTransition({ bottomPad }: { bottomPad: string }) {
 // 也覆盖 FAB 可拖拽的最低位（底沿贴导航 = 135）——一处改，全主路由滚到底都不被 FAB 遮。
 const MAIN_BOTTOM_CLEARANCE = 'calc(161px + var(--safe-bottom, 0px))'
 
+// A1 ②（2026-10-05）：硬件返回键「再按一次退出」Toast——仿 FiringReminderPopup 模式，
+// MainLayout + BareLayout 共享此私有组件（不导出）。exitArmed 由 a1-app 加进 UiState；
+// backButton.ts 首页首按 armed=true（2s 窗）→ 本 Toast 可见。Toast 3.5s 自消 vs 2s 武装窗
+// 的 1.5s 视觉尾巴无害（窗外再按只重置武装不退出），契约 §范围② 记录在案不另做。
+function ExitToast() {
+  const t = useT()
+  const exitArmed = useUiStore((s) => s.exitArmed)
+  return (
+    <AnimatePresence>
+      {exitArmed && (
+        <Toast
+          message={t('common.exitConfirm')}
+          ok
+          onDismiss={() => useUiStore.setState({ exitArmed: false })}
+        />
+      )}
+    </AnimatePresence>
+  )
+}
+
 // 主 tab 层：状态栏 + 顶栏(搜索) + 内容 + 采集 FAB + 底部导航
 export function MainLayout() {
   return (
@@ -92,6 +113,8 @@ export function MainLayout() {
       <ReminderPopup />
       {/* D20: 到点触发的前台弹窗（全生命周期，主路由+裸路由都挂） */}
       <FiringReminderPopup />
+      {/* A1 ②: 首页双击退出 Toast（主路由） */}
+      <ExitToast />
     </div>
   )
 }
@@ -104,15 +127,21 @@ export function BareLayout() {
       style={{ paddingTop: 'var(--safe-top, 0px)' }}
     >
       <Statusbar />
-      {/* D1: 裸层内容区底部留安全区空间，避免采集页底部操作 / 详情页底部按钮被系统导航栏遮挡。 */}
+      {/* D1: 裸层内容区底部留安全区空间，避免采集页底部操作 / 详情页底部按钮被系统导航栏遮挡。
+          A1 ①：paddingBottom 升级为 max(--safe-bottom, --safe-ime)——软键盘顶起时 in-flow
+          底部输入面（chat composer / capture 文本区+浮动操作条 / detail 底部按钮）随 main
+          内缩顶起不被遮。--safe-ime 由 MainActivity 注入（键盘收起报 0 天然回落），
+          web 端缺省 0 → 零行为变化。 */}
       <main
         className="flex-1 overflow-y-auto overscroll-behavior-y-contain"
-        style={{ paddingBottom: 'var(--safe-bottom, 0px)' }}
+        style={{ paddingBottom: 'max(var(--safe-bottom, 0px), var(--safe-ime, 0px))' }}
       >
-        <PageTransition bottomPad="var(--safe-bottom, 0px)" />
+        <PageTransition bottomPad="max(var(--safe-bottom, 0px), var(--safe-ime, 0px))" />
       </main>
       {/* D20: 到点弹窗在裸路由也生效（用户可能在采集/详情页时提醒到点） */}
       <FiringReminderPopup />
+      {/* A1 ②: 首页双击退出 Toast（裸路由——采集/详情/chat 页 exitArmed 同样可见） */}
+      <ExitToast />
     </div>
   )
 }

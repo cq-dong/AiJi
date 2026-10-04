@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { motion, useMotionValue, animate, useReducedMotion, type PanInfo } from 'framer-motion'
 import { X } from 'lucide-react'
 import { useT } from '@/app/i18n/useT'
+import { pushBackHandler } from '@/app/backButton'
 
 // 底部 sheet：编辑 AI 面板 / 手动编辑 parts 共用。fixed 覆盖整视口（含 statusbar，
 // iOS sheet 惯例），backdrop 点击 = 关闭 + 毛玻璃虚化背景。内容超高可滚。
@@ -33,6 +34,14 @@ export function Sheet({
     animate(y, window.innerHeight, { type: 'spring', stiffness: 420, damping: 40 }).then(onClose)
   }
 
+  // A1 ②：硬件返回键 = 收起 sheet（沿既有 dismiss 路径：下拉动画 + onClose 回调）。
+  // 每个 Sheet 实例各注册一份——多开时栈顶=最后挂载的，天然 LIFO 序。
+  // dismiss 每渲染是新引用 → useRef 持最新版避免闭包旧引用；effect 依赖空数组，
+  // pushBackHandler 返回的 unregister 在 unmount 自动调用。
+  const dismissRef = useRef(dismiss)
+  dismissRef.current = dismiss
+  useEffect(() => pushBackHandler(() => dismissRef.current()), [])
+
   const handleDragEnd = (_: unknown, info: PanInfo) => {
     if (info.offset.y > DISMISS_Y || info.velocity.y > DISMISS_VELOCITY) dismiss()
     else animate(y, 0, reduce ? { duration: 0 } : { type: 'spring', stiffness: 520, damping: 42 })
@@ -59,8 +68,12 @@ export function Sheet({
         transition={{ duration: reduce ? 0 : 0.18 }}
       />
       <motion.div
-        className="relative flex max-h-[88vh] flex-col rounded-t-[32px] border-t border-white/10 bg-card pb-4 pt-2 shadow-sheet"
-        style={{ y }}
+        // A1 ①：面板底部 padding 从 pb-4 硬编码改为 max(16px, --safe-bottom, --safe-ime)——
+        // 软键盘顶起时面板底部输入面（ReminderCreator / CategoryEditSheet / feedback 等含
+        // 输入的 sheet）不被遮。--safe-ime 由 MainActivity 注入（键盘收起时报 0 天然回落），
+        // web 端缺省 0 → 零行为变化。
+        className="relative flex max-h-[88vh] flex-col rounded-t-[32px] border-t border-white/10 bg-card pt-2 shadow-sheet"
+        style={{ y, paddingBottom: 'max(16px, var(--safe-bottom, 0px), var(--safe-ime, 0px))' }}
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
         exit={{ y: '100%', transition: reduce ? { duration: 0 } : { type: 'tween', duration: 0.24, ease: [0.32, 0.72, 0, 1] } }}
