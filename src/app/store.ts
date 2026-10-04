@@ -163,6 +163,12 @@ interface UiState {
   // 时机：hydrate 完成后一次 + saveMemory 成功后（spec §4）。nowIso 可注入（测试边界）。
   // 返回本次归档条数。
   archiveStaleMemories: (nowIso?: string) => Promise<number>
+  // t3（2026-10-05 prd-trust-pack §④）：boot 清扫 processing 尸体 → failed + processError 落库。
+  // 杀进程在 STT/classify 中段 → 条目永挂 processing；hydrate 尾部统一转 failed（UI 可重试）。
+  sweepProcessingCorpses: () => Promise<void>
+  // t3：online 时 failed 条目逐个串行 processEntry(id, false)（D11 禁并发；isFresh=false 不弹
+  // 提醒确认风暴）。会话级 autoRetried 每条目至多一次；retrying 防并发重入；offline no-op。
+  retryFailedEntries: () => Promise<void>
 }
 
 const emptyDraft: CaptureDraft = { parts: [], recording: false, saving: false, micDenied: false, finalized: '', interim: '', location: undefined, title: undefined }
@@ -302,6 +308,20 @@ let chatSendSeq = 0
 // 模块级 promise 链：每次调用把整个函数体挂到链尾串行执行；链尾 catch 吞错（console.error）
 // 防一次失败毒化后续所有排队任务。
 let memoryQueue: Promise<unknown> = Promise.resolve()
+
+// t3（2026-10-05 prd-trust-pack §④）：AI 失败队列自动补跑 + processing 尸体清扫的模块级状态。
+// autoRetried 会话级去重：每条目每会话至多自动补跑一次（BYOK 配额纪律，重试一次失败即停，
+// 不做永久失败判别/退避——契约非目标）；手动 detail 重试走 processEntry 直调，不受此限。
+// retrying 防并发重入：hydrate 尾 boot 链与 window online 事件可能并发触发 retryFailedEntries。
+const autoRetried = new Set<string>()
+let retrying = false
+
+// 仅供测试（__tests__/aiQueueRetry.test.ts）：重置模块级补跑状态。zustand store 单例跨用例
+// 残留 autoRetried/retrying 会污染后续断言，生产代码勿调。
+export function __resetAiQueueRetryForTests(): void {
+  autoRetried.clear()
+  retrying = false
+}
 
 // M4：流式占位（streaming:true）是内存态语义——进程被杀后 Dexie 可能残留 streaming:true 的
 // 尸体会话（空气泡+打字光标+压住 LoadingBubble）。读出时一律抹 false：内存态不信持久层。
@@ -559,6 +579,13 @@ export const useUiStore = create<UiState>((set, get) => ({
       // P-C 记忆生命周期（spec §4 时机）：hydrate 完成后扫一次 90 天过期归档（fire-and-forget，
       // 失败不阻断 UI；saveMemory 成功后另有一次）。
       void get().archiveStaleMemories().catch((e) => console.error('[store] archiveStaleMemories failed', e))
+      // t3（prd-trust-pack §④）：boot 链——先清扫 processing 尸体（转 failed 落库）再自动补跑
+      // failed 队列（sweep 内 await 落库完成才进 retry，尸体本轮即被补跑一次）。
+      // archiveStaleMemories 同款 fire-and-forget 模式：失败不阻断 UI；offline 时 retry 内部 no-op。
+      void (async () => {
+        await get().sweepProcessingCorpses()
+        await get().retryFailedEntries()
+      })().catch((e) => console.error('[store] ai queue boot pass failed', e))
     } catch (e) {
       // D9: 载入失败保持空状态（不再 seed 兜底），标记已尝试避免反复重试（存储失败不阻断 UI）
       console.error('[store] hydrate failed', e)
@@ -1925,6 +1952,39 @@ export const useUiStore = create<UiState>((set, get) => ({
     const byId = new Map(rows.map((r) => [r.id, r]))
     set((s) => ({ memories: s.memories.map((m) => byId.get(m.id) ?? m) }))
     return rows.length
+  },
+  sweepProcessingCorpses: async () => {
+    // t3：杀进程残留 processing 尸体统一转 failed（processError 中文用户可读，先例
+    // 「登录已过期，请重新登录」），逐条 await saveEntry 落库后一次 set。无尸体零写零 set。
+    const corpses = get().entries.filter((e) => e.status === 'processing')
+    if (corpses.length === 0) return
+    const now = new Date().toISOString()
+    const byId = new Map<string, Entry>()
+    for (const e of corpses) {
+      const fixed: Entry = { ...e, status: 'failed', processError: '应用中断，处理未完成，可重试', updatedAt: now }
+      await di.storage.saveEntry(fixed)
+      byId.set(e.id, fixed)
+    }
+    set((s) => ({ entries: s.entries.map((e) => byId.get(e.id) ?? e) }))
+  },
+  retryFailedEntries: async () => {
+    // t3：offline 直接 no-op；retrying 防并发重入（hydrate boot 链 × online 事件）。
+    if (!get().online) return
+    if (retrying) return
+    retrying = true
+    try {
+      const targets = get().entries.filter((e) => e.status === 'failed' && !autoRetried.has(e.id))
+      for (const e of targets) {
+        // 配额纪律：进 set 再调 processEntry——重试一次失败即停，会话内不再自动试第二次。
+        autoRetried.add(e.id)
+        // D11 串行铁律：逐个 await（BYOK 付费调用，禁 Promise.all）。
+        // isFresh=false：不弹 reminderSuggestion 确认（防 boot/online 弹窗风暴）。
+        // processEntry 内部全 catch（失败 → 条目回 failed），不会 reject 中断队列。
+        await get().processEntry(e.id, false)
+      }
+    } finally {
+      retrying = false
+    }
   },
   deleteMemory: async (id) => {
     await di.storage.deleteMemory(id)

@@ -60,7 +60,12 @@ initBackButton()
 // online 接 navigator.onLine + 事件。store.online 之前恒 true（setOnline 零调用），
 // chat 离线禁用 + reminders 离线·待补跑都依赖它。此处正本清源，全模块受益。
 useUiStore.getState().setOnline(navigator.onLine)
-window.addEventListener('online', () => useUiStore.getState().setOnline(true))
+window.addEventListener('online', () => {
+  useUiStore.getState().setOnline(true)
+  // t3（prd-trust-pack §④）：回网即自动补跑 AI 失败队列（会话级 autoRetried 每条目至多一次，
+  // 串行 + retrying 防重入，反复断网不会爆配额）。
+  void useUiStore.getState().retryFailedEntries()
+})
 window.addEventListener('offline', () => useUiStore.getState().setOnline(false))
 
 createRoot(document.getElementById('root')!).render(
