@@ -64,7 +64,8 @@ export default function Reminders() {
   // 已错过：missed，按到期时间降序。
   const missed = reminders.filter((r) => r.status === 'missed').sort(byDueDesc)
 
-  const open = (entryId: string) => navigate(`/detail/${entryId}`)
+  // P-F：entryId 可选（chat 建的提醒无源头条目）——无 entryId 点击不跳详情（无详情可跳）。
+  const open = (entryId?: string) => { if (entryId) navigate(`/detail/${entryId}`) }
 
   return (
     <div className="px-4 pt-4 pb-6">

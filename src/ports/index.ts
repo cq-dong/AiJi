@@ -116,6 +116,9 @@ export interface ProactiveGreetingContext {
   openLoops: string[]
   rollingSummary?: string
   dueReminderCount: number
+  // P-F ① 往日回响（2026-10-04）：历年同月日的最近一条回忆（无则 undefined，不瞎编）。
+  // yearsAgo=距今年数（≥1）；excerpt=标题或文本首行截 60 字，问候可作承接线索。
+  onThisDay?: { yearsAgo: number; excerpt: string }
 }
 
 export interface LlmPort {

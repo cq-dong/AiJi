@@ -60,7 +60,7 @@ export interface BuildContextInput {
 // - recentEntryCount7d：createdAt 落在 [now-7d, now] 的条目数。
 // - daysSinceLastEntry：最近一条距今天数（本地日期整天差）；无条目 → null（从未记过）。
 // - openLoops：enabled && 未归档（!archivedAt）记忆原文，≤5 截断，LLM 自判相关性。
-// - rollingSummary：会话 '1' 有摘要则带（承接上次聊天）。
+// - rollingSummary：updatedAt 最新会话有摘要则带（承接上次聊天；W0 修复，原死读会话 '1'）。
 // - dueReminderCount：「还没响过且到点」的待办条数——status pending/snoozed（fired/missed
 //   已了结不计；snoozed 的 dueAt 已被推迟，过了新到点同样算到期）且 dueAt ≤ 今天本地 23:59:59.999
 //   （今天到期 + 已逾期一并计入）。

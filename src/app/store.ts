@@ -215,7 +215,8 @@ function scheduleReminders(): void {
   for (const r of reminders) {
     if (r.status !== 'pending' && r.status !== 'snoozed') continue
     if (scheduledTimeouts.has(r.id)) continue
-    if (trashedIds.has(r.entryId)) continue // Wave 4: 条目在回收站 → 不调度其提醒（recover 后 scheduleReminders 重 arm）
+    // P-F：entryId 可选（chat 建的提醒无源头条目）——无 entryId 不可能在回收站，正常调度。
+    if (r.entryId && trashedIds.has(r.entryId)) continue // Wave 4: 条目在回收站 → 不调度其提醒（recover 后 scheduleReminders 重 arm）
     const due = new Date(r.dueAt).getTime()
     const diff = due - now
     if (diff <= 0) {

@@ -120,7 +120,9 @@ export interface Reminder {
   id: string
   // 账号分区键（同 Entry）。saveReminder 强制盖章 getCurrentOwner()。
   ownerId?: string
-  entryId: string // links back to the Entry that gave rise to this reminder
+  // P-F（2026-10-04）：entryId 改可选——chat 里用「提醒我……」建的提醒无源头条目。
+  // 消费点须 null-guard（提醒屏跳详情/调度过滤，见 docs/acceptance/pf-companion-pack.md §③）。
+  entryId?: string // links back to the Entry that gave rise to this reminder
   dueAt: string // ISO 8601 absolute timestamp (LLM-parsed, Q2)
   label: string // short description shown in notification + settings sheet
   status: ReminderStatus
@@ -197,6 +199,9 @@ export interface Settings {
   // Wave 3: aggregate digest verbosity (1-5, default 3). Stored on Aggregate so
   // changing this marks existing digests stale → recompute at new verbosity.
   aggregateDetailLevel: 1 | 2 | 3 | 4 | 5
+  // P-F ②（2026-10-04）：周回顾总开关。缺省 true；false → 首页 mount 不再惰性触发
+  // 上周 aggregate 重算（省 BYOK quota）。BYOK 未配置时调用自然失败静默，与开关无关。
+  weeklyReviewEnabled?: boolean
   // Multimodal + universal BYOK (2026-07-17). STT dual-mode: 'stream'=DashScope
   // WS paraformer (works on public DashScope where REST is CORS/404-dead);
   // 'whisper'=OpenAI-compatible REST /audio/transcriptions (PI / OpenAI / Groq).
@@ -253,9 +258,19 @@ export interface ChatQuery {
   // 与 kind 正交：recall 问题也可能需要时间。严格 ===true 才生效。
   timeIntent?: boolean
   city?: string // weather：intent 轮从问句提取的城市名（无则调用方回落设备定位）
-  // action：改条目分类意图。entryHint=用户指的条目线索原文（「桂花拿铁那条」）；
+  // action：条目操作意图。entryHint=用户指的条目线索原文（「桂花拿铁那条」）；
   // categorySlug=命中现有类别的 slug；categoryLabel=用户说的类别名（slug 未命中时名称匹配/新类别）。
-  action?: { entryHint: string; categorySlug?: string; categoryLabel?: string }
+  // P-F（2026-10-04）：op 区分操作类型——changeCategory（缺省，旧兼容）/ createReminder / deleteEntry。
+  // createReminder：reminderLabel=提醒文本原文；dueAt=intent 轮 LLM 直接解析自然语言时间为 ISO 8601
+  // （prompt 给了 nowIso，「明天下午三点」→ 绝对时间戳；解析不出 → 缺省走模板追问，不落库）。
+  action?: {
+    op?: 'changeCategory' | 'createReminder' | 'deleteEntry'
+    entryHint: string
+    categorySlug?: string
+    categoryLabel?: string
+    reminderLabel?: string
+    dueAt?: string
+  }
 }
 
 // 压缩传给 answer LLM 的召回条目（token 预算：top-8 × ≤120 字 excerpt ≈ 3-4K input）。
@@ -305,13 +320,19 @@ export interface ChatMessage {
   // actionConfirm 消息负载（2026-09-29）：条目/类别解析结果 + 状态机。
   // pending=单一候选待确认；ambiguous=多候选待选；done/cancelled=终态（静态回执）；
   // notFound=没匹配到条目（或确认时条目已删）。内存+落库双写，杀进程恢复后卡仍可操作。
+  // P-F（2026-10-04）：op 区分操作（缺省=changeCategory，旧消息零迁移兼容）。
+  // createReminder：无条目解析，candidates 空、reminderLabel/reminderDueAt 填好即 pending 卡。
+  // deleteEntry：复用 changeCategory 的条目解析（entryHint→候选），确认后 trashEntry 软删。
   action?: {
+    op?: 'changeCategory' | 'createReminder' | 'deleteEntry'
     entryHint: string
     status: 'pending' | 'ambiguous' | 'done' | 'cancelled' | 'notFound'
     candidates: { entryId: string; label: string; fromCategory: string }[]
     toCategorySlug: string
     toCategoryLabel: string
     isNewCategory?: boolean
+    reminderLabel?: string // createReminder：提醒文本
+    reminderDueAt?: string // createReminder：ISO 8601（intent 轮已解析为绝对时间）
   }
   // 流式渲染中（2026-09-28 流式输出）：true = 该 assistant 消息正逐帧更新，UI 跳过入场
   // 动画并隐藏 LoadingBubble；结束置 false。内存态语义，Dexie 无需升版（messages 内嵌非索引）。
