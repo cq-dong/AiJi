@@ -6,6 +6,7 @@ import android.webkit.WebSettings;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
 
@@ -32,6 +33,12 @@ public class MainActivity extends BridgeActivity {
         // 必须在原生层把 systemBars insets 转成 CSS 变量 --safe-top / --safe-bottom 注入 documentElement，
         // 前端用 var(--safe-*) 替代 env()。
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        // A1 ③: 浅色状态栏 + 导航栏图标 —— edge-to-edge 后内容延伸到系统栏后面，
+        // app 仅浅色主题（无 dark mode），浅色背景（#f7f7fa）衬白色系统图标会隐形，
+        // 必须设 appearanceLight* 让系统画深色图标。常量 true 即可。
+        WindowInsetsControllerCompat ic = WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        ic.setAppearanceLightStatusBars(true);
+        ic.setAppearanceLightNavigationBars(true);
         // D26: WindowInsetsCompat 返回的是设备像素（device px），而 CSS `px` 是密度无关像素
         // （1 CSS px = density 个 device px）。直接把 device px 当 CSS px 注入会让高密度屏
         // （density=3）的 100dp 状态栏变成 100 CSS px = 300 device px 的留白，上下各被撑出
@@ -41,10 +48,17 @@ public class MainActivity extends BridgeActivity {
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
             int top = insets.getInsets(WindowInsetsCompat.Type.systemBars()).top;
             int bottom = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+            // A1 ①: decorFits=false 下 WebView 不随软键盘 resize，键盘会遮住底部输入面。
+            // 须手动取 IME inset 注入第三个 CSS 变量 --safe-ime，前端用
+            // max(var(--safe-bottom), var(--safe-ime)) 把输入面顶起。
+            // 键盘收起时系统报 0，变量天然回落 0px，无需额外监听。
+            int ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
             int topCss = Math.round(top / density);
             int bottomCss = Math.round(bottom / density);
+            int imeCss = Math.round(ime / density);
             String js = "document.documentElement.style.setProperty('--safe-top','" + topCss + "px');"
-                      + "document.documentElement.style.setProperty('--safe-bottom','" + bottomCss + "px');";
+                      + "document.documentElement.style.setProperty('--safe-bottom','" + bottomCss + "px');"
+                      + "document.documentElement.style.setProperty('--safe-ime','" + imeCss + "px');";
             if (this.bridge != null && this.bridge.getWebView() != null) {
                 this.bridge.getWebView().evaluateJavascript(js, null);
             }
