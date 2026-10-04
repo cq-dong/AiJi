@@ -103,10 +103,15 @@ export function firstText(parts: EntryPart[]): string {
   return ''
 }
 
-// 首个可作为缩略图的媒体 part（图片或视频首帧）。无则 undefined。
-export function firstThumbRef(parts: EntryPart[]): string | undefined {
+// 首个可作为缩略图的媒体 part 的 ref + 是否真视频。无则 undefined。
+// isVideo 判定链（Q6 钉死顺序）：mediaType==='video' → true；mime video/* → true；
+// durationSec>0 → true；否则 false。照片 = type:'video' + durationSec:0
+//（mediaType='image' / mime image/*）→ false；seed 老数据无 mime/mediaType → 靠 durationSec。
+export function firstThumb(parts: EntryPart[]): { ref: string; isVideo: boolean } | undefined {
   for (const p of parts) {
-    if (p.type === 'video') return p.ref
+    if (p.type !== 'video') continue
+    const isVideo = p.mediaType === 'video' || (p.mime?.startsWith('video/') ?? false) || p.durationSec > 0
+    return { ref: p.ref, isVideo }
   }
   return undefined
 }

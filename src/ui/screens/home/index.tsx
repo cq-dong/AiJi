@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion, useTransform } from 'framer-motion'
-import { Mic, Trash2 } from 'lucide-react'
+import { Mic, Trash2, X } from 'lucide-react'
 import { Button, EmptyState, SwipeableCard } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
@@ -11,6 +11,7 @@ import { HomeHeader } from './HomeHeader'
 import { CompanionCard } from './CompanionCard'
 import { dismissGreeting, maybeGreeting } from '@/app/proactive'
 import { lastWeekRange, maybeRunWeeklyReview, WR_SEEN_PREFIX } from '@/app/weeklyReview'
+import { refreshStorageQuota } from '@/app/storageQuota'
 import { di } from '@/app/di'
 import { JustSavedToast, OfflineBanner, PullIndicator } from './Banners'
 import { TimelineCard } from './TimelineCard'
@@ -18,6 +19,9 @@ import { usePullToRefresh } from './usePullToRefresh'
 
 // 增量渲染页大小：首屏 30 条足够填满视口数倍，之后每次滚动到底再 +30。
 const PAGE = 30
+
+// Q6 ③ 配额横幅 dismiss 的 localStorage 键：值 = 本地 YYYY-MM-DD（当日不再出，次日重出）。
+const QUOTA_DISMISS_KEY = 'aiji.quota.dismissed'
 
 export default function Home() {
   const navigate = useNavigate()
@@ -109,6 +113,37 @@ export default function Home() {
     void maybeRunWeeklyReview().catch(() => {}) // 内部已 console.warn 兜底，这里只防意外 rejection
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 mount 触发一次（spec §② 唯一触发点）
   }, [])
+
+  // Q6 ③ OPFS 配额监控（2026-10-05）：home mount 刷新 storageQuota（与 weekly 同
+  // fire-and-forget 模式 + ref 守卫挡 StrictMode 双跑）。estimate 不可用时模块内写 null，
+  // 横幅自动缺席。
+  const quotaRanRef = useRef(false)
+  useEffect(() => {
+    if (quotaRanRef.current) return
+    quotaRanRef.current = true
+    void refreshStorageQuota().catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 mount 触发一次
+  }, [])
+
+  // Q6 ③ 配额横幅：usage/quota ≥ 80% 且当日未 dismiss → 警示卡（CompanionCard 下、
+  // 时间线上）。dismissed 镜像 weeklySeen 模式：初值同步读 localStorage，× 写今日本地
+  // 日期键（当日不再出；日期比较天然支持次日重出）。
+  const storageQuota = useUiStore((s) => s.storageQuota)
+  const [quotaDismissed, setQuotaDismissed] = useState(() => {
+    try {
+      return window.localStorage.getItem(QUOTA_DISMISS_KEY) === dateKey(new Date().toISOString())
+    } catch {
+      return false
+    }
+  })
+  const dismissQuota = useCallback(() => {
+    try {
+      window.localStorage.setItem(QUOTA_DISMISS_KEY, dateKey(new Date().toISOString()))
+    } catch {} // 写失败只失去记忆，不阻塞交互
+    setQuotaDismissed(true)
+  }, [])
+  const quotaRatio = storageQuota && storageQuota.quota > 0 ? storageQuota.usage / storageQuota.quota : 0
+  const showQuota = storageQuota !== null && quotaRatio >= 0.8 && !quotaDismissed
 
   // P-F ② 周回顾卡：问候缺席（频控中/已 dismiss/LLM 无料）时补位「上周回顾」。
   // range 挂 useState 初值——mount 时定死，跨零点长挂不漂；seen 初值同步读 localStorage
@@ -233,6 +268,24 @@ export default function Home() {
       {hasTop && (
         <div className="mt-3 flex flex-col gap-3">
           {banner}
+        </div>
+      )}
+
+      {/* Q6 ③ 配额警示卡：CompanionCard 之下、时间线之上。≥80% 当日可 dismiss，次日重出。 */}
+      {showQuota && storageQuota && (
+        <div
+          role="alert"
+          className="mt-3 flex items-start gap-2 rounded-card border border-catPending/30 bg-catPending/10 px-4 py-3 text-[12px] leading-snug text-t2"
+        >
+          <span className="flex-1">{t('home.quota.body', { pct: Math.round(quotaRatio * 100) })}</span>
+          <button
+            type="button"
+            aria-label={t('home.quota.dismiss')}
+            onClick={dismissQuota}
+            className="shrink-0 text-t3 transition-colors duration-base hover:text-t2"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
 

@@ -7,17 +7,20 @@ import { MediaThumb } from '@/ui/screens/home/TimelineCard'
 // 塞进 <img>（img 无法解码视频）。注释原本就写着「视频取首帧（#t=0.1）」但实现漏了。
 // 修复：blob.type 判别——video/* → <video preload="metadata" src="…#t=0.1"> 首帧；
 // image/*（含 durationSec=0 的 photo part，MIME 仍 image/*）→ <img> 直出；无 blob → 灰块占位。
+// Q6（2026-10-05）：props 改 { thumb: { ref, isVideo } }；isVideo 先取 `${ref}.poster`
+// 抽帧（本文件 mock 里 poster 一律 miss → 回落旧路径，回归语义不变）。poster 命中的
+// 新路径见 mediaThumbPoster.test.tsx（mock @/app/mediaCache 断言 acquire 序列）。
 
 const { getMediaFn } = vi.hoisted(() => ({ getMediaFn: vi.fn() }))
 vi.mock('@/app/di', () => ({ di: { storage: { getMedia: getMediaFn } } }))
 ;(globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
-async function renderThumb(mediaRef: string): Promise<{ container: HTMLDivElement; root: Root }> {
+async function renderThumb(thumb: { ref: string; isVideo: boolean }): Promise<{ container: HTMLDivElement; root: Root }> {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
   await act(async () => {
-    root.render(<MediaThumb mediaRef={mediaRef} />)
+    root.render(<MediaThumb thumb={thumb} />)
   })
   return { container, root }
 }
@@ -34,9 +37,14 @@ beforeEach(() => {
 })
 
 describe('home MediaThumb（视频缩略图修复）', () => {
-  it('视频 blob（video/*）→ 渲染 <video> 首帧（src 带 #t=0.1、muted、playsInline），不渲染 <img>', async () => {
-    getMediaFn.mockResolvedValue(new Blob(['fake-video'], { type: 'video/mp4' }))
-    const { container } = await renderThumb('ref-v1')
+  it('视频 blob → poster miss 回落渲染 <video> 首帧（src 带 #t=0.1、muted、playsInline），不渲染 <img>', async () => {
+    // poster ref 无 blob（老条目未存抽帧）→ 回落主 ref 的 <video> 路径。
+    // Blob 不带 type——模拟 Chromium OPFS getFile() 不持久化 MIME 的实态（MAJOR-1）：
+    // 渲染判定由 isVideo prop 驱动（part 元数据链），不依赖 blob.type。
+    getMediaFn.mockImplementation(async (ref: string) =>
+      ref.endsWith('.poster') ? undefined : new Blob(['fake-video']),
+    )
+    const { container } = await renderThumb({ ref: 'ref-v1', isVideo: true })
     const video = container.querySelector('video')
     expect(video).not.toBeNull()
     expect(video!.getAttribute('src')).toBe('blob:mock-url-1#t=0.1')
@@ -44,20 +52,24 @@ describe('home MediaThumb（视频缩略图修复）', () => {
     expect((video as HTMLVideoElement).muted).toBe(true) // React 以 property 方式设 muted（非 attribute）
     expect(video!.hasAttribute('playsinline')).toBe(true)
     expect(container.querySelector('img')).toBeNull()
+    expect(getMediaFn).toHaveBeenCalledWith('ref-v1.poster') // 先取 poster
+    expect(getMediaFn).toHaveBeenCalledWith('ref-v1') // miss 后回落主 ref
   })
 
   it('图片 blob（image/*）→ 渲染 <img> 直出（回归：图片路径不变）', async () => {
     getMediaFn.mockResolvedValue(new Blob(['fake-img'], { type: 'image/jpeg' }))
-    const { container } = await renderThumb('ref-i1')
+    const { container } = await renderThumb({ ref: 'ref-i1', isVideo: false })
     const img = container.querySelector('img')
     expect(img).not.toBeNull()
     expect(img!.getAttribute('src')).toBe('blob:mock-url-1')
     expect(container.querySelector('video')).toBeNull()
+    expect(getMediaFn).toHaveBeenCalledTimes(1) // 照片不触碰 poster
+    expect(getMediaFn).toHaveBeenCalledWith('ref-i1')
   })
 
   it('无 blob（seed/未落库）→ 灰块占位，不渲染 img/video', async () => {
     getMediaFn.mockResolvedValue(undefined)
-    const { container } = await renderThumb('ref-none')
+    const { container } = await renderThumb({ ref: 'ref-none', isVideo: false })
     expect(container.querySelector('img')).toBeNull()
     expect(container.querySelector('video')).toBeNull()
     expect(container.querySelector('div[aria-hidden="true"]')).not.toBeNull()
@@ -80,7 +92,7 @@ describe('home MediaThumb（视频缩略图修复）', () => {
     await act(async () => {
       root.render(
         <StrictMode>
-          <MediaThumb mediaRef="ref-sm" />
+          <MediaThumb thumb={{ ref: 'ref-sm', isVideo: false }} />
         </StrictMode>,
       )
     })

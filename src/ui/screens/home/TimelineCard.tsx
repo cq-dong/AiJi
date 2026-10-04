@@ -2,11 +2,12 @@ import { memo, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import type { Entry, EntryAi } from '@/domain/types'
+import { posterRefOf } from '@/domain/mediaRef'
 import { Chip, cn } from '@/ui/components'
 import { acquireMediaUrl, releaseMediaUrl } from '@/app/mediaCache'
 import { useT } from '@/app/i18n/useT'
 import type { I18nKey } from '@/app/i18n'
-import { firstText, firstThumbRef, modalityLabel, timeLabel } from './helpers'
+import { firstText, firstThumb, modalityLabel, timeLabel } from './helpers'
 
 type TFn = (key: I18nKey, params?: Record<string, string | number>) => string
 
@@ -54,36 +55,63 @@ export const TimelineCard = memo(function TimelineCard({ entry, ai, catLabel, ca
 })
 TimelineCard.displayName = 'TimelineCard'
 
-// 右侧 48×48 媒体缩略图：图片 <img> 直出；视频用 <video preload="metadata"> 取首帧
-// （#t=0.1 媒体片段逼出 0.1s 解码帧）。rc10 实锤：此前视频 blob 也塞 <img>——img 无法
-// 解码视频 → 主页显示裂图。判别用 blob.type：photo 虽是 video part（durationSec=0）
-// 但 MIME 仍是 image/*，天然走对分支。seed 无 blob → 占位灰块。
-export function MediaThumb({ mediaRef }: { mediaRef: string }) {
+// 右侧 48×48 媒体缩略图。Q6（2026-10-05）poster 优先：真视频（thumb.isVideo）先取
+// 采集时抽帧存的 `${ref}.poster`（JPEG）直出 <img>——列表滚动零视频解码；poster miss
+//（老条目无抽帧）回落主 ref 的 <video preload="metadata" #t=0.1> 首帧。照片（isVideo
+// false）直接 acquire 主 ref 渲 <img>。渲染判定用 part 元数据链来的 isVideo prop
+//（firstThumb：mediaType→mime→durationSec，IDB 持久可靠）——它是 ground truth；
+// OPFS blob type 不可靠（Chromium getFile() 不持久化 MIME，type:"" → 按 MIME 判会把
+// 视频误判成 <img> 裂图，MAJOR-1 实锤）。seed 无 blob → 占位灰块。
+export interface ThumbRef {
+  ref: string
+  isVideo: boolean
+}
+
+export function MediaThumb({ thumb }: { thumb: ThumbRef }) {
   const [media, setMedia] = useState<{ url: string; isVideo: boolean } | null>(null)
+  const { ref, isVideo } = thumb
   useEffect(() => {
-    // settled 协议（accept-pa F1，2026-10-03）：cleanup 仅在 acquire settle 后 release——
-    // 缓存命中时 refs++ 与 cleanup 可在 continuation 前交错（dev StrictMode 双效应），
-    // 无 settled 守卫会单次 acquire 双 release，refs 欠计。
+    // settled/cancelled 协议的双 acquire 扩展（accept-pa F1，2026-10-03；Q6 重构）：
+    // cleanup 只 release「已交接给它的」held 列表；cleanup 之后才 resolve 的 acquire
+    // 由 continuation 自查 cancelled 立即 release——两侧配对，每 ref 恰好 release 一次。
+    //（F1 原案：缓存命中时 refs++ 与 cleanup 可在 continuation 前交错，单侧守卫会
+    // 双 release 或漏 release。）
     let cancelled = false
-    let settled = false
+    const held: string[] = []
+    const acquire = async (key: string): Promise<{ r: { url: string; mime: string } | null; aborted: boolean }> => {
+      const r = await acquireMediaUrl(key)
+      if (cancelled) {
+        releaseMediaUrl(key) // cleanup 已跑且看不到本 key → 自己配对
+        return { r, aborted: true }
+      }
+      held.push(key) // 交接给 cleanup
+      return { r, aborted: false }
+    }
     void (async () => {
       try {
-        const r = await acquireMediaUrl(mediaRef)
-        settled = true
-        if (cancelled) {
-          releaseMediaUrl(mediaRef)
-          return
+        if (isVideo) {
+          const { r: poster, aborted } = await acquire(posterRefOf(ref))
+          if (aborted) return
+          if (poster) {
+            setMedia({ url: poster.url, isVideo: false }) // poster 恒为 JPEG → <img>
+            return
+          }
         }
-        if (r) setMedia({ url: r.url, isVideo: r.mime.startsWith('video/') })
+        const { r, aborted } = await acquire(ref)
+        if (aborted || !r) return
+        // 渲染判定用 isVideo prop（part 元数据，IDB 持久）——OPFS blob type 不持久化，
+        // 不可作依据（MAJOR-1）。
+        setMedia({ url: r.url, isVideo })
       } catch {
         // getMedia 失败（IDB 异常）：保持灰块占位，不冒 unhandled rejection。
       }
     })()
     return () => {
       cancelled = true
-      if (settled) releaseMediaUrl(mediaRef)
+      for (const key of held) releaseMediaUrl(key)
+      held.length = 0
     }
-  }, [mediaRef])
+  }, [ref, isVideo])
   if (!media) {
     return <div className="size-12 shrink-0 rounded-[10px] bg-page ring-1 ring-brd/60" aria-hidden="true" />
   }
@@ -110,7 +138,7 @@ function ReadyCard({ entry, ai, catLabel, catAccent, index = 99 }: CardProps) {
   const preview = firstText(entry.parts)
   const bar = catAccent ? BAR[catAccent] : 'from-t3/50 to-t3/20'
   const tone = catAccent ? CHIP_TONE[catAccent] : 'default'
-  const thumbRef = firstThumbRef(entry.parts)
+  const thumb = firstThumb(entry.parts)
   const hasPreview = preview && preview !== title
   return (
     <article
@@ -146,7 +174,7 @@ function ReadyCard({ entry, ai, catLabel, catAccent, index = 99 }: CardProps) {
             </span>
           </div>
         </div>
-        {thumbRef && <MediaThumb mediaRef={thumbRef} />}
+        {thumb && <MediaThumb thumb={thumb} />}
       </div>
     </article>
   )
@@ -158,7 +186,7 @@ function ProcessingCard({ entry, catAccent, index = 99 }: CardProps) {
   const title = firstText(entry.parts) || t('home.card.untitled')
   const bar = catAccent ? BAR[catAccent] : 'from-catPending to-catPending/40'
   const { leftText, rightLabel, rightClass } = statusMeta(entry.status, t)
-  const thumbRef = firstThumbRef(entry.parts)
+  const thumb = firstThumb(entry.parts)
   return (
     <article
       role="button"
@@ -186,7 +214,7 @@ function ProcessingCard({ entry, catAccent, index = 99 }: CardProps) {
             <span className={cn('tabular-nums', rightClass)}>{rightLabel}</span>
           </div>
         </div>
-        {thumbRef && <MediaThumb mediaRef={thumbRef} />}
+        {thumb && <MediaThumb thumb={thumb} />}
       </div>
     </article>
   )

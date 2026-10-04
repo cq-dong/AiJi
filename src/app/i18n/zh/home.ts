@@ -43,6 +43,11 @@ export const home = {
   'home.weeklyReview.title': '上周回顾',
   'home.weeklyReview.cta': '查看完整回顾',
 
+  // Q6 ③ OPFS 配额横幅（2026-10-05）：usage/quota ≥80% 时 CompanionCard 下出警示卡，
+  // × 当日 dismiss（次日重出）。{pct} 由调用处 Math.round(ratio*100) 传入。
+  'home.quota.body': '本地存储已用 {pct}%，照片视频可能存不下新内容，建议清理回收站释放空间',
+  'home.quota.dismiss': '知道了',
+
   // 底部导航第 5 tab（common 未收 nav.reminders，补在此屏片段）
   'nav.reminders': '提醒',
 

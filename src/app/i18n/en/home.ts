@@ -43,6 +43,12 @@ export const home = {
   'home.weeklyReview.title': 'Weekly review',
   'home.weeklyReview.cta': 'View full review',
 
+  // Q6 ③ OPFS quota banner (2026-10-05): warning card under CompanionCard when
+  // usage/quota ≥80%; × dismisses for the day (reappears next day).
+  // {pct} is passed by the caller as Math.round(ratio*100).
+  'home.quota.body': 'Local storage is {pct}% full — new photos and videos may not fit. Empty the trash to free up space',
+  'home.quota.dismiss': 'Got it',
+
   // 5th nav tab (common has no nav.reminders)
   'nav.reminders': 'Reminders',
 
