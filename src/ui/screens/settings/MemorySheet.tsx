@@ -4,7 +4,7 @@
 // lastConfirmedAt，恢复即回到 enabled），不再显示停用/启用开关。
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react'
-import { Button, cn } from '@/ui/components'
+import { Button, cn, useBackDismiss } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import { Toggle } from './Toggle'
@@ -22,6 +22,8 @@ export function MemorySheet({ onClose }: { onClose: () => void }) {
   const toggleMemory = useUiStore((s) => s.toggleMemory)
   const restoreMemory = useUiStore((s) => s.restoreMemory)
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 open 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const [draft, setDraft] = useState('')
   const [adding, setAdding] = useState(false)
   const [showArchived, setShowArchived] = useState(false)

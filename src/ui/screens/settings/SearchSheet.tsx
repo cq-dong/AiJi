@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { Button } from '@/ui/components'
+import { Button, useBackDismiss } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 
@@ -15,6 +15,8 @@ export function SearchSheet({ onClose }: { onClose: () => void }) {
   // 契约（Agent B 落地）：setSearchConfig(key)——空串清除 searchKeyRef。
   const setSearchConfig = useUiStore((s) => s.setSearchConfig)
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 open 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const [key, setKey] = useState('')
   const hasKey = settings.searchKeyRef === 'search:key'
 

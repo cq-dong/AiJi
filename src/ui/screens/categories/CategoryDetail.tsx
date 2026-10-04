@@ -3,7 +3,7 @@ import { ChevronLeft, Download, X } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { AnimatePresence } from 'framer-motion'
 import type { Category, Entry, EntryAi, Facets, Tag } from '@/domain/types'
-import { Button, Card, EmptyState, Toast, cn } from '@/ui/components'
+import { Button, Card, EmptyState, Toast, cn, useBackDismiss } from '@/ui/components'
 import { useT } from '@/app/i18n/useT'
 import { t, type I18nKey } from '@/app/i18n'
 import { exportCategoryZip } from '@/adapters/zipExport'
@@ -82,6 +82,8 @@ function ExportConfirmSheet({
   onConfirm: () => void
 }) {
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 zipConfirm 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const isNative = Capacitor.isNativePlatform()
   const locationHint = canShareFiles()
     ? t('categories.export.sheet.location.share')

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Download, X } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import type { Category } from '@/domain/types'
-import { Button, cn } from '@/ui/components'
+import { Button, cn, useBackDismiss } from '@/ui/components'
 import { useT } from '@/app/i18n/useT'
 import { t } from '@/app/i18n'
 import { exportCategoryZip } from '@/adapters/zipExport'
@@ -47,6 +47,13 @@ function formatSaveFeedback(result: SaveResult): string {
   return t('categories.export.done')
 }
 
+// D1 收尾波：嵌套导出确认层的返回键注册器。仅 zipConfirm 期间挂载（条件渲染保证），
+// 后于主层挂载居栈顶 → 硬件返回 LIFO 先收确认层，再按才收主层。渲染 null，视觉零变化。
+function ZipConfirmBackDismiss({ onClose }: { onClose: () => void }) {
+  useBackDismiss(onClose)
+  return null
+}
+
 export function CategoryEditSheet({
   category,
   liveCount,
@@ -54,6 +61,8 @@ export function CategoryEditSheet({
   onSave,
   onDelete,
 }: CategoryEditSheetProps) {
+  // D1 收尾波：硬件返回 = 收起主层（组件随 open 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const [label, setLabel] = useState(category.label)
   const [accent, setAccent] = useState<Accent>(category.accent ?? 'catIdea')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -234,6 +243,7 @@ export function CategoryEditSheet({
       </div>
 
       {/* D10: 导出确认 sheet——z-[110] 盖在编辑 sheet（z-[100]）之上。 */}
+      {zipConfirm && <ZipConfirmBackDismiss onClose={() => setZipConfirm(false)} />}
       {zipConfirm && (
         <div
           className="fixed inset-0 z-[110] flex items-end justify-center bg-black/45 backdrop-blur-[2px] animate-fade-in"

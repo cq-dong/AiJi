@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { AlertCircle, Archive, Brain, CalendarRange, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Globe, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, RefreshCw, Share2, Sparkles, Timer, X } from 'lucide-react'
 import { Capacitor } from '@capacitor/core'
 import { AnimatePresence } from 'framer-motion'
-import { Button, Spinner, Toast, cn } from '@/ui/components'
+import { Button, Spinner, Toast, cn, useBackDismiss } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import { t } from '@/app/i18n'
@@ -334,6 +334,8 @@ function ExportConfirmSheet({
   onConfirm: () => void
 }) {
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 zipConfirm 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const isNative = Capacitor.isNativePlatform()
   const locationHint = canShareFiles()
     ? t('settings.locShareSheet')
@@ -437,6 +439,8 @@ function ByokSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
   const setLlmConfig = useUiStore((s) => s.setLlmConfig)
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 open 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const [url, setUrl] = useState(settings.llmUrl ?? '')
   const initialModel = settings.llmModel ?? ''
   const initialSelect = LLM_MODEL_PRESETS.some((p) => p === initialModel)
@@ -588,6 +592,8 @@ function SttSheet({ onClose }: { onClose: () => void }) {
   const setSettings = useUiStore((s) => s.setSettings)
   const setSttConfig = useUiStore((s) => s.setSttConfig)
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 open 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const mode = settings.sttMode
   const [url, setUrl] = useState(settings.sttUrl ?? STT_URL_DEFAULTS[mode] ?? '')
   const [model, setModel] = useState(settings.sttModel ?? '')
@@ -692,6 +698,8 @@ function GeocodingSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
   const setGeocodingConfig = useUiStore((s) => s.setGeocodingConfig)
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 open 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const [key, setKey] = useState('')
   const hasKey = settings.geocodingKeyRef === 'geocoding:key'
 
@@ -749,6 +757,8 @@ function VlmSheet({ onClose }: { onClose: () => void }) {
   const settings = useUiStore((s) => s.settings)
   const setVlmConfig = useUiStore((s) => s.setVlmConfig)
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 open 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const [url, setUrl] = useState(settings.vlmUrl ?? BUILTIN_VLM_URL ?? '')
   const initialModel = settings.vlmModel ?? BUILTIN_VLM_MODEL ?? ''
   const initialSelect = VLM_MODEL_PRESETS.some((p) => p === initialModel)
@@ -905,6 +915,8 @@ type CheckState =
 function AboutSheet({ onClose }: { onClose: () => void }) {
   const isNative = Capacitor.isNativePlatform()
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 open 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const [state, setState] = useState<CheckState>({ status: 'idle' })
   const [installing, setInstalling] = useState(false)
   const [installErr, setInstallErr] = useState<string | null>(null)
@@ -1137,6 +1149,8 @@ function LanguageSheet({ onClose }: { onClose: () => void }) {
   const setSettings = useUiStore((s) => s.setSettings)
   const lang = useUiStore((s) => s.settings.language) ?? 'zh'
   const t = useT()
+  // D1 收尾波：硬件返回 = 收起本 sheet（组件随 open 挂载/卸载，栈内无残留 handler）。
+  useBackDismiss(onClose)
   const options: { value: 'zh' | 'en'; label: string }[] = [
     { value: 'zh', label: t('settings.language.zh') },
     { value: 'en', label: t('settings.language.en') },

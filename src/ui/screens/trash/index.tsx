@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft, RotateCcw, Trash2 } from 'lucide-react'
-import { Button, EmptyState, SwipeableCard, cn } from '@/ui/components'
+import { Button, EmptyState, SwipeableCard, cn, useBackDismiss } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import type { Entry, EntryAi } from '@/domain/types'
@@ -34,6 +34,8 @@ function ConfirmHardDeleteDialog({
   onClose: () => void
 }) {
   const t = useT()
+  // D1 收尾波：硬件返回 = 取消（onClose）。组件随 confirmId 挂载/卸载，栈内无残留 handler。
+  useBackDismiss(onClose)
   const [deleting, setDeleting] = useState(false)
   const handleDelete = async () => {
     setDeleting(true)
