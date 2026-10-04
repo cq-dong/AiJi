@@ -1,4 +1,3 @@
-import Chinese from 'chinese-s2t'
 import type { CapturePort } from '@/ports'
 import type { GeoPoint } from '@/domain/types'
 
@@ -7,6 +6,21 @@ import type { GeoPoint } from '@/domain/types'
 // STT is SttPort (deferred — cloud/BYOK). stopAudio returns the recorded blob; the
 // store persists it via StoragePort.saveMedia (OPFS, PRD §7.2). Seed audio parts have
 // no blob → detail player shows static/disabled.
+
+// chinese-s2t 简繁映射字典（gzip ~6kB）改动态导入：仅录音用到，不进主包。
+// startAudio 启动路径预加载并缓存模块级引用——WebSpeech onresult 是同步回调（不可 await），
+// 回调里直接读 chineseMod；极端情况未加载完成（import 失败）→ 退回原文不转，行为同原静态导入。
+let chineseMod: (typeof import('chinese-s2t'))['default'] | null = null
+let chinesePromise: Promise<void> | null = null
+function ensureChinese(): Promise<void> {
+  if (chineseMod) return Promise.resolve()
+  if (!chinesePromise) {
+    chinesePromise = import('chinese-s2t')
+      .then((m) => { chineseMod = m.default })
+      .catch(() => { chinesePromise = null }) // 失败不留毒：下次 startAudio 重试；本次 onresult 退回原文
+  }
+  return chinesePromise
+}
 
 let stream: MediaStream | null = null
 let recorder: MediaRecorder | null = null
@@ -84,6 +98,8 @@ export const webCapture: CapturePort = {
 
   async startAudio({ onInterim, onFinal }) {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('mic-unavailable')
+    // t2s 字典预加载与 getUserMedia 并行——权限弹窗期间加载，不增启动延迟。
+    const chineseReady = ensureChinese()
     // getUserMedia throws NotAllowedError (denied) / NotFoundError (no mic) / SecurityError (insecure context).
     stream = await navigator.mediaDevices.getUserMedia({ audio: true })
 
@@ -129,19 +145,23 @@ export const webCapture: CapturePort = {
 
     const Ctor = getSpeechRecognitionCtor()
     if (Ctor) {
+      // 挂 onresult 前确保 t2s 字典就绪（onresult 是同步回调，不可在其内 await）。
+      await chineseReady
       recognition = new Ctor()
       recognition.lang = 'zh-CN'
       recognition.continuous = true
       recognition.interimResults = true
       // WebSpeech 在部分系统上忽略 lang='zh-CN' 仍输出繁体（引擎回退系统语种），统一 t2s 转简体。
       recognition.onresult = (ev) => {
+        // 字典未加载完成（import 失败极端路径）→ 退回原文不转。
+        const t2s: (str: string) => string = chineseMod ? chineseMod.t2s : (str) => str
         let interim = ''
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
           const r = ev.results[i]
-          if (r.isFinal) onFinal?.(Chinese.t2s(r[0].transcript))
+          if (r.isFinal) onFinal?.(t2s(r[0].transcript))
           else interim += r[0].transcript
         }
-        if (interim) onInterim?.(Chinese.t2s(interim))
+        if (interim) onInterim?.(t2s(interim))
       }
       recognition.onerror = () => { /* swallow; recording continues without live preview */ }
       try { recognition.start() } catch { /* already running or unsupported */ }

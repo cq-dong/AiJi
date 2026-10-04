@@ -3,20 +3,15 @@ import { getCurrentOwner } from '@/app/currentOwner'
 import { enqueue } from '@/app/syncOutbox'
 import type { StoragePort } from '@/ports'
 import type { Aggregate, AggregateScopeType, Conversation, Draft, Entry, Memory, Reminder } from '@/domain/types'
-import {
-  seedAggregates,
-  seedCategories,
-  seedEntries,
-  seedEntryAi,
-  seedReminders,
-  seedSettings,
-  seedTags,
-} from '@/data/seed'
 
 // D9: 生产环境不再自动灌 seed 数据——首装看到 12 条测试记录像数据泄露。
 // DEV 环境保留自动 seed 方便开发（import.meta.env.DEV 在 prod build 为 false，整块被
 // tree-shake）；生产环境空库，用户可在 onboarding/settings 主动调 importSampleData() 导入。
 // seedSettings 仍作 getSettings 默认形状兜底（默认配置，非样例数据）。
+//
+// seed 数据（~12KB 样例）全部改动态导入：仅 DEV 灌库 / importSampleData / getSettings 兜底
+// 三处用到，不让样例数据静态进本模块依赖图。DEV 分支的 import 放在分支内部——
+// prod build 下 `if (false)` 死码消除连同动态 import 一起移除。
 //
 // 账号分区：seed 行的 ownerId 在 seed.ts 里默认 'local'，但落库时一律改盖 getCurrentOwner()——
 // 这样 DEV 首启或 onboarding 导入示例数据时，数据归属当前使用者（local 或已登录网络账号），
@@ -32,6 +27,7 @@ async function ensureSeeded(): Promise<void> {
   if (seeded) return
   if (import.meta.env.DEV) {
     // DEV only：空库时灌完整原型数据集，方便开发调试（生产 build 此块被 tree-shake 掉）。
+    const { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedReminders, seedTags } = await import('@/data/seed')
     const entriesEmpty = (await db.entries.count()) === 0
     if (entriesEmpty) {
       await db.entries.bulkPut(seedEntries.map(stampOwner))
@@ -64,6 +60,7 @@ async function ensureSeeded(): Promise<void> {
 // 落库时 ownerId 改盖为当前 owner——导入即归属当前使用者。
 // 调用后需 rehydrate store 才能刷新 UI（store.rehydrate 重读 Dexie）。
 export async function importSampleData(): Promise<void> {
+  const { seedAggregates, seedCategories, seedEntries, seedEntryAi, seedReminders, seedTags } = await import('@/data/seed')
   await db.entries.bulkPut(seedEntries.map(stampOwner))
   await db.categories.bulkPut(seedCategories.map(stampOwner))
   await db.tags.bulkPut(seedTags.map(stampOwner))
@@ -168,6 +165,8 @@ export const dexieStorage: StoragePort = {
     // D2: 合并 seedSettings defaults——旧用户行缺 Wave 3 加的 aggregateDetailLevel 等字段时，
     // seed 兜底（不返 undefined 谎称类型）。row 不存在时 {...seed, ...{}} = seed。
     // settings 不分区（设备级全局），固定 key=1。
+    // seedSettings 动态导入（模块系统缓存，仅首次调用触发拉取），与样例数据同 chunk 按需加载。
+    const { seedSettings } = await import('@/data/seed')
     const row = await db.settings.get(1)
     return { ...seedSettings, ...row }
   },

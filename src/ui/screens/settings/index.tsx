@@ -1,8 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertCircle, Archive, Brain, Check, ChevronDown, ChevronRight, Cloud, Download, Eye, FileDown, FileInput, Film, Globe, Info, KeyRound, Languages, MapPin, MessageSquare, Mic, Palette, RefreshCw, Share2, Sparkles, Timer, X } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { Capacitor } from '@capacitor/core'
 import { AnimatePresence } from 'framer-motion'
 import { Button, Spinner, Toast, cn } from '@/ui/components'
@@ -27,6 +25,10 @@ import type { UpdateInfo, DownloadProgress } from '@/ports'
 import type { EntryPart, Settings as SettingsType } from '@/domain/types'
 
 type Theme = 'light' | 'dark' | 'system'
+
+// releaseNotes Markdown 渲染按需加载（react-markdown+remark-gfm ~30kB gzip 不进本 chunk）：
+// 仅 AboutSheet 检查更新返回 releaseNotes 时拉取；加载中退回纯文本 pre，数值/内容不变。
+const ReleaseNotes = lazy(() => import('./ReleaseNotes'))
 
 const inputCls =
   'w-full rounded-btn border border-brd bg-card px-3 py-2 text-[13px] text-ink outline-none focus:border-pri'
@@ -999,9 +1001,15 @@ function AboutSheet({ onClose }: { onClose: () => void }) {
           <div className="mt-3 max-h-[160px] overflow-y-auto rounded-card border border-brd bg-card p-3">
             <p className="mb-1 text-[11px] text-t3">{t('settings.releaseNotes')}</p>
             <div className="prose prose-sm max-w-none text-[12px] leading-relaxed text-t2">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {info.releaseNotes}
-              </ReactMarkdown>
+              <Suspense
+                fallback={
+                  <pre className="m-0 whitespace-pre-wrap font-sans text-[12px] leading-relaxed text-t2">
+                    {info.releaseNotes}
+                  </pre>
+                }
+              >
+                <ReleaseNotes markdown={info.releaseNotes} />
+              </Suspense>
             </div>
           </div>
         )}
@@ -1198,11 +1206,11 @@ export default function Settings() {
     limitBytes < 0
       ? t('settings.syncStorageUnlimited', { used: formatMB(usedBytes) })
       : t('settings.syncStorage', { used: formatMB(usedBytes), limit: formatMB(limitBytes) })
-  const entries = useUiStore((s) => s.entries)
-  const hasEntries = entries.length > 0
-  const memories = useUiStore((s) => s.memories)
+  // 窄选择器替代 s.entries/s.memories 整表订阅：仅布尔/计数翻转时重渲，
+  // 条目/记忆内容变更不再刷整个设置页（导出数值改在打开弹层时快照，见 zipStats）。
+  const hasEntries = useUiStore((s) => s.entries.length > 0)
   // P-C：归档记忆不注入 prompt，不计入「生效」条数。
-  const enabledMemoryCount = memories.filter((m) => m.enabled && !m.archivedAt).length
+  const enabledMemoryCount = useUiStore((s) => s.memories.reduce((n, m) => n + (m.enabled && !m.archivedAt ? 1 : 0), 0))
   const [editing, setEditing] = useState(false)
   const [editingStt, setEditingStt] = useState(false)
   const [editingVlm, setEditingVlm] = useState(false)
@@ -1220,12 +1228,19 @@ export default function Settings() {
   const [zipConfirm, setZipConfirm] = useState(false)
   const [zipExporting, setZipExporting] = useState(false)
   const [zipToast, setZipToast] = useState<{ msg: string; ok: boolean } | null>(null)
+  // 导出确认弹层的条目/媒体数：打开时 getState() 快照（瞬态 UI 无需响应式），
+  // 替代原 s.entries 订阅 + 每次渲染 reduce 全量 parts。
+  const [zipStats, setZipStats] = useState<{ entryCount: number; mediaCount: number } | null>(null)
 
   // D15: Markdown 导出反馈状态（镜像 zip：导出中 + toast）。
   const [mdExporting, setMdExporting] = useState(false)
   const [mdToast, setMdToast] = useState<{ msg: string; ok: boolean } | null>(null)
 
-  const zipMediaCount = entries.reduce((sum, e) => sum + countMedia(e.parts), 0)
+  function handleOpenZipConfirm() {
+    const all = useUiStore.getState().entries
+    setZipStats({ entryCount: all.length, mediaCount: all.reduce((sum, e) => sum + countMedia(e.parts), 0) })
+    setZipConfirm(true)
+  }
 
   async function handleZipExport() {
     setZipConfirm(false)
@@ -1530,7 +1545,7 @@ export default function Settings() {
           label={t('settings.exportZip')}
           value={zipExporting ? t('settings.exporting') : undefined}
           disabled={!hasEntries || zipExporting}
-          onClick={() => setZipConfirm(true)}
+          onClick={handleOpenZipConfirm}
         />
         <RowDivider />
         <SettingsRow
@@ -1575,12 +1590,12 @@ export default function Settings() {
       {editingSearch && <SearchSheet onClose={() => setEditingSearch(false)} />}
       {editingMemory && <MemorySheet onClose={() => setEditingMemory(false)} />}
       {editingLanguage && <LanguageSheet onClose={() => setEditingLanguage(false)} />}
-      {zipConfirm && (
+      {zipConfirm && zipStats && (
         <ExportConfirmSheet
           scopeLabel={t('settings.scopeAll')}
           filename="aiji-export.zip"
-          entryCount={entries.length}
-          mediaCount={zipMediaCount}
+          entryCount={zipStats.entryCount}
+          mediaCount={zipStats.mediaCount}
           onClose={() => setZipConfirm(false)}
           onConfirm={() => void handleZipExport()}
         />
