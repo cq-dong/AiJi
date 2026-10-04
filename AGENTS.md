@@ -72,6 +72,17 @@ cd server && npm run typecheck  # tsc --noEmit
 cd server && npm run test       # vitest run
 ```
 
+**Android 本地编译（2026-10-05 A1 波实锤）**：本机 brew 只有 openjdk@17（capacitor-android
+要 source 21，挂）与 openjdk 26（AGP JdkImageTransform 对 android-36 jlink 失败）。
+可用姿势 = Temurin 21（此前经代理下载解到 /tmp，重启后需重下或正式装 openjdk@21）：
+```sh
+cd android && JAVA_HOME=/tmp/jdk21/jdk-21.0.12.1+1/Contents/Home \
+  ANDROID_HOME=/opt/homebrew/share/android-commandlinetools \
+  ./gradlew :app:compileDebugJavaWithJavac
+```
+另：`android/app/src/main/res/` 下若出现非法资源目录名（如残留空目录 `xml-huawei/`）
+会挡死 `mergeDebugResources`，空目录直接 rmdir。
+
 ## 5. 后端约定（CLAUDE.md 未覆盖）
 
 - `server/src/routes/*.ts`：Hono 路由，按资源拆分。新增 API 加新路由文件并在
