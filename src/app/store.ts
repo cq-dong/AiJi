@@ -113,7 +113,16 @@ interface UiState {
   // 能力大补（2026-09-29）：改条目分类确认卡的用户抉择。confirm={entryId} 执行改分类
   // （串行 await：新类别 saveCategory → updateEntryAi → 日聚合 stale → chatAnswerCache.clear →
   // 消息 done + 回执）；'cancel' 置 cancelled + 回执。条目已删 → notFound（杀进程恢复防御）。
+  // P-F ③（2026-10-05）：实现已迁为 resolveChatAction 的兼容壳（op 缺省=changeCategory），行为不变。
   resolveCategoryAction: (msgId: string, choice: { entryId: string } | 'cancel') => Promise<void>
+  // P-F ③（2026-10-05）：三 op 统一抉择入口，按消息 action.op 分派（缺省=changeCategory）——
+  // changeCategory：同 resolveCategoryAction 语义（choice 须 {entryId}，裸 'confirm' no-op）；
+  // createReminder：'confirm' 建无源头条目 Reminder（镜像 confirmReminder 权限→saveReminder→
+  // scheduleReminders 序列，不碰 EntryAi.todoDismissed）→ done + 回执（本地化 dueAt）；
+  // deleteEntry：{entryId} → trashEntry 软删 + chatAnswerCache.clear → done + 回执；
+  // 条目已删 → notFound。'cancel' 全 op 置 cancelled + 回执。
+  // 新 op 执行体 try/catch：失败复位 status=pending + console.error（卡可重试，不 rethrow）。
+  resolveChatAction: (msgId: string, choice: { entryId: string } | 'confirm' | 'cancel') => Promise<void>
   primeLocation: () => void
   // AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md)。多会话（2026-07-22）。
   // conversation null = 尚无当前会话（newConversation 后或首次 sendMessage lazy-create）。
@@ -250,6 +259,13 @@ function chatCacheKey(question: string, entries: Entry[]): string {
   const norm = question.trim().toLowerCase()
   const sig = entries.length + ':' + (entries[0]?.updatedAt ?? '')
   return `${norm}::${sig}`
+}
+
+// 到期时间短格式「M/D HH:MM」（与 reminders 屏 formatDueAt 同式）——建提醒回执文案用。
+function formatDueShort(iso: string): string {
+  const d = new Date(iso)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
 // conversation null → 新空会话（首次 sendMessage lazy-create，id=uuid）。
@@ -1099,18 +1115,26 @@ export const useUiStore = create<UiState>((set, get) => ({
       conversation: { ...cur, messages: cur.messages.map((m) => (m.id === msgId ? { ...m, ...patch } : m)) },
     })
   },
-  // ── 能力大补（2026-09-29）：改条目分类确认卡的用户抉择 ─────────────────────
-  // confirm 串行 await（D11）：新类别先 saveCategory（slug 冲突已有同名则跳过）→
-  // updateEntryAi → 日聚合 stale（拷贝 processEntry 块，range 取条目 createdAt 当日）→
-  // chatAnswerCache.clear（同问缓存含旧分类答案）→ 消息 done + 回执。
-  // cancel → cancelled + 回执。条目已删 → notFound 终态（杀进程恢复/他端删除防御）。
-  resolveCategoryAction: async (msgId, choice) => {
+  // ── P-F ③（2026-10-05）：三 op 统一抉择 ────────────────────────────────────
+  // 按消息 action.op 分派（缺省=changeCategory，旧消息零迁移兼容）。
+  // changeCategory：confirm={entryId} 串行 await（D11）：新类别先 saveCategory（slug 冲突
+  //   已有同名则跳过）→ updateEntryAi → 日聚合 stale（拷贝 processEntry 块，range 取条目
+  //   createdAt 当日）→ chatAnswerCache.clear（同问缓存含旧分类答案）→ 消息 done + 回执；
+  //   失败抛给调用方（UI 可提示），已完成的步骤保持落库态。
+  // createReminder：'confirm' → 镜像 confirmReminder（:956）权限→saveReminder→scheduleReminders
+  //   序列建无源头条目 Reminder（不碰 EntryAi.todoDismissed）→ done + 回执（本地化 dueAt）。
+  // deleteEntry：{entryId} → trashEntry 软删 + chatAnswerCache.clear → done + 回执。
+  // 全部 cancel → cancelled + 回执；条目已删 → notFound 终态（杀进程恢复/他端删除防御）。
+  // 新 op（createReminder/deleteEntry）执行体 try/catch：失败复位 pending + console.error
+  // （卡可重试，不 rethrow——照 persist 的 :1137 日志范式）。
+  resolveChatAction: async (msgId, choice) => {
     const conv = get().conversation
     if (!conv) return
     const msg = conv.messages.find((m) => m.id === msgId)
     if (!msg || msg.kind !== 'actionConfirm' || !msg.action) return
     const a = msg.action
     if (a.status !== 'pending' && a.status !== 'ambiguous') return // 终态 → no-op
+    const op = a.op ?? 'changeCategory'
 
     // 闭包 conv 内原位更新该消息（竞态防护照 :1045 模式：set 前查当前会话 id，
     // 已切会话则只落库不 set 当前视图）。
@@ -1134,7 +1158,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         await di.storage.saveConversation(next)
         await get().refreshChatList()
       } catch (e) {
-        console.error('[store] saveConversation(resolveCategoryAction) failed', e)
+        console.error('[store] saveConversation(resolveChatAction) failed', e)
       }
     }
 
@@ -1150,6 +1174,80 @@ export const useUiStore = create<UiState>((set, get) => ({
       return
     }
 
+    if (op === 'createReminder') {
+      // 无候选卡——唯一有效抉择是 'confirm'（{entryId} 无意义 → no-op）。
+      if (choice !== 'confirm') return
+      // 负载残缺（异常数据/杀进程恢复到半截卡）→ no-op，不建残 Reminder。
+      if (!a.reminderLabel || !a.reminderDueAt) return
+      try {
+        // 镜像 confirmReminder（:956）：首次请求通知权限一次（denied 只 warn 不阻塞落库）。
+        if (!permissionRequested) {
+          permissionRequested = true
+          const ok = await di.localNotifications.requestPermission()
+          if (!ok) {
+            console.warn('[store] notification permission not granted; reminder saved but alerts may be suppressed')
+          }
+        }
+        const r: Reminder = {
+          id: crypto.randomUUID(),
+          entryId: undefined, // chat 建的提醒无源头条目（Reminder.entryId 可选，P-F 契约）
+          dueAt: a.reminderDueAt,
+          label: a.reminderLabel,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        }
+        await di.storage.saveReminder(r)
+        set((s) => ({ reminders: [r, ...s.reminders] }))
+        scheduleReminders()
+      } catch (e) {
+        // 失败复位 pending（卡仍可重试）——不 rethrow，只记日志。
+        console.error('[store] resolveChatAction(createReminder) failed', e)
+        await persist({ ...msg, action: { ...a, status: 'pending' } })
+        return
+      }
+      const done: ChatMessage = { ...msg, action: { ...a, status: 'done' } }
+      const receipt: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: t('chat.action.reminder.done', { label: a.reminderLabel, time: formatDueShort(a.reminderDueAt) }),
+        createdAt: new Date().toISOString(),
+      }
+      await persist(done, receipt)
+      return
+    }
+
+    if (op === 'deleteEntry') {
+      // 与 changeCategory 同：UI 从候选列表传 {entryId}；裸 'confirm' 无目标 → no-op。
+      if (choice === 'confirm') return
+      const cand = a.candidates.find((c) => c.entryId === choice.entryId)
+      if (!cand) return // 非候选 id（UI 只会传候选 entryId）→ no-op
+      // 条目已删（杀进程恢复后条目数据变了/他端删除）→ notFound 终态，不执行改动。
+      if (!get().entries.some((e) => e.id === choice.entryId)) {
+        await persist({ ...msg, action: { ...a, status: 'notFound' } })
+        return
+      }
+      try {
+        await get().trashEntry(choice.entryId) // 软删（回收站 30 天可恢复）
+        // 同问缓存里的答案可能引用该条目 → 全清（同 changeCategory 臂）。
+        chatAnswerCache.clear()
+      } catch (e) {
+        console.error('[store] resolveChatAction(deleteEntry) failed', e)
+        await persist({ ...msg, action: { ...a, status: 'pending' } })
+        return
+      }
+      const done: ChatMessage = { ...msg, action: { ...a, status: 'done' } }
+      const receipt: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: t('chat.action.delete.done', { label: cand.label }),
+        createdAt: new Date().toISOString(),
+      }
+      await persist(done, receipt)
+      return
+    }
+
+    // changeCategory（op 缺省）：裸 'confirm' 非法（UI 传 {entryId}）→ no-op。
+    if (choice === 'confirm') return
     const cand = a.candidates.find((c) => c.entryId === choice.entryId)
     if (!cand) return // 非候选 id（UI 只会传候选 entryId）→ no-op
     // 条目已删（杀进程恢复后条目数据变了/他端删除）→ notFound 终态，不执行改动。
@@ -1188,6 +1286,10 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
     await persist(done, receipt)
   },
+  // 能力大补（2026-09-29）兼容壳：改分类确认卡抉择 → resolveChatAction（op 缺省=
+  // changeCategory，choice 无 'confirm' 形态天然落 changeCategory 臂）。行为与原实现一致，
+  // UI 迁移到 resolveChatAction 前旧调用点照常工作（P-F ③）。
+  resolveCategoryAction: async (msgId, choice) => get().resolveChatAction(msgId, choice),
   // ── AI Chat · sendMessage (docs/design/ai-chat-impl-plan.md §4) ──────────
   // intent(LLM) → 本地 localRecall → answer(LLM) → 落 conversation。离线直接拒绝（不假装降级）。
   // 防幻觉层 3：空 cites 不调 answer LLM，直接「库内未找到依据」裸答拒绝。同问缓存命中跳两轮。
@@ -1257,6 +1359,109 @@ export const useUiStore = create<UiState>((set, get) => ({
       // 数据块拼 extraSystem（跳过 localRecall，cites=[]）；否则旧 recall 流程（一字不动）。
       if (kind === 'action' && query.action) {
         const act = query.action
+        // P-F ③（2026-10-05）：op 分派。createReminder 无条目解析（intent 轮已把自然语言
+        // 时间解析成 ISO dueAt；缺/非法 → 模板追问，纯文本消息非卡不抛错）；deleteEntry 复用
+        // 条目解析臂（0=notFound 模板 / 1=pending / 多=ambiguous ≤5）；changeCategory（op 缺省）
+        // 走下方原路径（一字未动）。
+        const actionOp = act.op ?? 'changeCategory'
+        if (actionOp === 'createReminder') {
+          const label = act.reminderLabel ?? act.entryHint
+          const dueMs = act.dueAt ? new Date(act.dueAt).getTime() : Number.NaN
+          // trace 与 changeCategory 臂同构（kind/actionHint）；recalled 空（无条目解析）。
+          const reminderTrace: ChatTrace = {
+            intent: {
+              keywords: query.keywords ?? [],
+              scope: null,
+              categorySlugs: query.categorySlugs,
+              kind: query.kind,
+              timeIntent: query.timeIntent,
+              actionHint: act.entryHint,
+            },
+            recalled: [],
+          }
+          const actionMsg: ChatMessage = Number.isNaN(dueMs)
+            ? {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: t('chat.action.reminder.needTime', { label }),
+                createdAt: new Date().toISOString(),
+                trace: reminderTrace,
+              }
+            : {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: '',
+                createdAt: new Date().toISOString(),
+                kind: 'actionConfirm',
+                trace: reminderTrace,
+                action: {
+                  op: 'createReminder',
+                  entryHint: '',
+                  status: 'pending',
+                  candidates: [],
+                  toCategorySlug: '',
+                  toCategoryLabel: '',
+                  reminderLabel: label,
+                  reminderDueAt: act.dueAt,
+                },
+              }
+          conv = appendMessage(conv, actionMsg)
+          // 竞态防护与 changeCategory 尾同：已切会话只落库不动当前视图；
+          // 自己仍是最新 seq 时复位 chatLoading（防软锁）。
+          if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
+          else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
+          void di.storage.saveConversation(conv)
+            .then(() => get().refreshChatList())
+            .catch((e) => console.error('[store] saveConversation(action) failed', e))
+          return
+        }
+        if (actionOp === 'deleteEntry') {
+          // 条目解析：intent keywords + entryHint 去重喂 localRecall，取前 5 候选（同 changeCategory 臂）。
+          const delKeywords = [...new Set([...(query.keywords ?? []), act.entryHint].filter(Boolean))]
+          const delCandidates = localRecall({ scope: null, keywords: delKeywords }, entries, aiByEntry, tags)
+            .slice(0, 5)
+            .map((c) => ({
+              entryId: c.id,
+              label: aiByEntry[c.id]?.titleSuggestion || aiByEntry[c.id]?.summary || c.textExcerpt.slice(0, 20) || t('chat.entryFallback'),
+              fromCategory: aiByEntry[c.id]?.category || '',
+            }))
+          const deleteTrace: ChatTrace = {
+            intent: {
+              keywords: query.keywords ?? [],
+              scope: null,
+              categorySlugs: query.categorySlugs,
+              kind: query.kind,
+              timeIntent: query.timeIntent,
+              actionHint: act.entryHint,
+            },
+            recalled: delCandidates.map((c) => ({ id: c.entryId, label: c.label })),
+          }
+          const actionMsg: ChatMessage = delCandidates.length === 0
+            ? { id: crypto.randomUUID(), role: 'assistant', content: t('chat.action.delete.notFound', { hint: act.entryHint }), createdAt: new Date().toISOString(), trace: deleteTrace }
+            : {
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: '',
+                createdAt: new Date().toISOString(),
+                kind: 'actionConfirm',
+                trace: deleteTrace,
+                action: {
+                  op: 'deleteEntry',
+                  entryHint: act.entryHint,
+                  status: delCandidates.length === 1 ? 'pending' : 'ambiguous',
+                  candidates: delCandidates,
+                  toCategorySlug: '',
+                  toCategoryLabel: '',
+                },
+              }
+          conv = appendMessage(conv, actionMsg)
+          if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
+          else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
+          void di.storage.saveConversation(conv)
+            .then(() => get().refreshChatList())
+            .catch((e) => console.error('[store] saveConversation(action) failed', e))
+          return
+        }
         // 1. 类别解析：slug 命中 → 现有；label/aliases 大小写不敏感匹配 → 现有；都不中 → 新涌现类别。
         const cat = resolveActionCategory(act, get().categories)
         // 2. 条目解析：intent keywords + entryHint 去重喂 localRecall，取前 5 候选。

@@ -10,6 +10,7 @@ import { dateKey, groupLabel, todayKeyFrom, topDateLabel, windowGroups } from '.
 import { HomeHeader } from './HomeHeader'
 import { CompanionCard } from './CompanionCard'
 import { dismissGreeting, maybeGreeting } from '@/app/proactive'
+import { lastWeekRange, maybeRunWeeklyReview, WR_SEEN_PREFIX } from '@/app/weeklyReview'
 import { di } from '@/app/di'
 import { JustSavedToast, OfflineBanner, PullIndicator } from './Banners'
 import { TimelineCard } from './TimelineCard'
@@ -69,14 +70,20 @@ export default function Home() {
       // W0（2026-10-04）：多会话上线后会话 id 是 randomUUID，旧死读 getConversation('1') 永远 miss。
       // 改取 updatedAt 最新会话（对齐 store.ts hydrate 的 chatList[0] 语义），其 rollingSummary 进
       // greeting context；无会话 → undefined。
+      // F2（2026-10-05）：先过滤空会话（messages.length>0，逐字对齐 refreshChatList store.ts:1804）
+      // 再取 max(updatedAt)——防旧版本残留空会话吃掉 rollingSummary。
       getConversation: async () => {
         const list = await di.storage.listConversations()
         let top: Conversation | undefined
         for (const c of list) {
+          if (c.messages.length === 0) continue // 空会话不进历史（同 refreshChatList）
           if (!top || new Date(c.updatedAt).getTime() > new Date(top.updatedAt).getTime()) top = c
         }
         return top
       },
+      // P-F ① 往日回响（2026-10-05）：标题摘录回退所需的 aiById 快照。读 live state
+      // （getState 而非 render 作用域 aiMap——本 effect 只跑一次，闭包外的渲染值可能已旧）。
+      getAiById: () => new Map(Object.entries(useUiStore.getState().aiByEntry)),
       greet: (ctx) => di.llm.proactiveGreeting(ctx),
       fallbackText: () => t('home.companion.fallback'),
     })
@@ -91,6 +98,47 @@ export default function Home() {
     dismissGreeting(new Date()) // 当日不再出现（aiji.pd.dismissedDate=今天）
     setGreeting(null)
   }, [])
+
+  // P-F ② 周回顾（2026-10-05 spec §②）：home mount 惰性触发上周 aggregate 重算。
+  // fire-and-forget——频控（rate key）/开关/上周空料守卫全在 maybeRunWeeklyReview 内
+  // （src/app/weeklyReview.ts）；失败不写 key，下次进首页重试。ref 守卫挡 StrictMode 双跑。
+  const weeklyRanRef = useRef(false)
+  useEffect(() => {
+    if (weeklyRanRef.current) return
+    weeklyRanRef.current = true
+    void maybeRunWeeklyReview().catch(() => {}) // 内部已 console.warn 兜底，这里只防意外 rejection
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅 mount 触发一次（spec §② 唯一触发点）
+  }, [])
+
+  // P-F ② 周回顾卡：问候缺席（频控中/已 dismiss/LLM 无料）时补位「上周回顾」。
+  // range 挂 useState 初值——mount 时定死，跨零点长挂不漂；seen 初值同步读 localStorage
+  // （读失败=未见过，宁可多展示一次）。recompute 落地后 aggregates 更新 → 卡自动出现。
+  const settings = useUiStore((s) => s.settings)
+  const aggregates = useUiStore((s) => s.aggregates)
+  const [weeklyRange] = useState(() => lastWeekRange(new Date()))
+  const [weeklySeen, setWeeklySeen] = useState(() => {
+    try {
+      return window.localStorage.getItem(WR_SEEN_PREFIX + weeklyRange) !== null
+    } catch {
+      return false
+    }
+  })
+  // 上周 aggregate 新鲜（非 stale）且 summary 非空才展示——stale 说明重算未完成/失败。
+  const weekAgg = useMemo(
+    () =>
+      aggregates.find(
+        (a) => a.scope.type === 'week' && a.scope.range === weeklyRange && !a.stale && a.summary.trim().length > 0,
+      ),
+    [aggregates, weeklyRange],
+  )
+  // 写 seen key（本周内不再出现；写失败只失去记忆，不阻塞交互）。
+  const markWeeklySeen = useCallback(() => {
+    try {
+      window.localStorage.setItem(WR_SEEN_PREFIX + weeklyRange, new Date().toISOString())
+    } catch {}
+  }, [weeklyRange])
+  const showWeekly =
+    greeting === null && !weeklySeen && settings.weeklyReviewEnabled !== false && weekAgg !== undefined
 
   // P-A 性能（2026-10-03）：排序/分组/索引 useMemo——此前每次 render 全量重算。
   const sorted = useMemo(
@@ -152,12 +200,35 @@ export default function Home() {
 
       <HomeHeader topDateLabel={topDateLabel(todayKey)} todayCount={todayCount} />
 
-      {/* P-D 伙伴问候卡：问候语区之下、横幅之上（spec §4）。点卡片跳 /chat；× 当日 dismiss。 */}
-      {greeting && (
+      {/* P-D 伙伴问候卡：问候语区之下、横幅之上（spec §4）。点卡片跳 /chat；× 当日 dismiss。
+          P-F ②：问候缺席时同槽位补「上周回顾」卡（二选一，不同时出现）。 */}
+      {greeting ? (
         <div className="mt-3">
           <CompanionCard text={greeting} onOpenChat={() => navigate('/chat')} onDismiss={handleDismissGreeting} />
         </div>
-      )}
+      ) : showWeekly && weekAgg ? (
+        <div className="mt-3">
+          {/* weekly 形态下 text/onOpenChat/onDismiss 三 prop 不被组件消费（CompanionCard 契约），传占位。 */}
+          <CompanionCard
+            text=""
+            onOpenChat={() => {}}
+            onDismiss={() => {}}
+            weekly={{
+              range: weeklyRange,
+              summary: weekAgg.summary,
+              onOpen: () => {
+                markWeeklySeen()
+                setWeeklySeen(true)
+                navigate('/summary')
+              },
+              onDismiss: () => {
+                markWeeklySeen()
+                setWeeklySeen(true)
+              },
+            }}
+          />
+        </div>
+      ) : null}
 
       {hasTop && (
         <div className="mt-3 flex flex-col gap-3">
