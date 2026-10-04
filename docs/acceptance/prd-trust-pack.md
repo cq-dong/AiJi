@@ -206,4 +206,57 @@ i18n 按文件切：t1=settings/detail 四件，t2=common 两件，t3 无。
 
 ## 验收记录
 
-（验收 agent 回填）
+> 验收 agent：accept-trust（独立复核，不信 lead 结论，全部独立复跑/复验）。
+> 工作树 = 未 commit 全部改动（13 M + 6 新文件/目录）。验收方未 commit/push、
+> 未改实现代码；密钥纪律遵守（未打印/报告任何 key 值）；`src/data/__tests__/dbv9.test.ts`
+> （历史未跟踪文件）全程未碰。
+
+### 执行方式
+
+- 静态门禁（独立复跑）：`npx tsc -p tsconfig.app.json` → exit 0（0 错）；
+  `npx vitest run` → **90 文件 760/760 全绿**（含新增 35：zipImport 11 +
+  shareTarget 9 + aiQueueRetry 9 + dataOutSheet 4 + detailUploadLine 2，与 lead
+  申报逐项吻合）；`npm run build` → 绿（✓ built in 968ms，PWA precache 正常）；
+  `grep share_target dist/manifest.webmanifest` → 命中（GET，`params title/text/url`）。
+- 静态复核：对三路 diff 逐行过契约不变量 + 越界检查（全部改动落在契约 t1/t2/t3
+  文件集内；zipImport.ts/zipExport.ts/store.ts/main.tsx/settings/DataOutSheet/
+  detail/vite.config/router/i18n/5 个测试文件全读，无越界、无密钥混入 diff）。
+- 浏览器联合测试：vite dev server（**5199**，5173 被他 agent 占用）+
+  chrome-devtools-mcp，视口 390×844；`aiji:onboarded=1` + 游客「开始记」进首页；
+  store/di 注入沿用 D1 先例：`await import('/src/app/store.ts')` /
+  `await import('/src/app/di.ts')`（vite dev 同模块图）。媒体断言走
+  `di.storage.getMedia(ref)`（媒体在 OPFS，不在 IndexedDB）。
+  Playwright MCP 本机 9222 拒连不可用，全程 chrome-devtools-mcp。
+
+### 用例证据（4/4 PASS）
+
+| 用例 | 结果 | 关键证据 |
+|---|---|---|
+| ① zip 导出→还原往返（不清库，新增式） | PASS | 注入 accept-e1（纯文本）+ accept-e2（含音频 part，ref=accept-ref-1，字节 `[1,2,3,4,5,250,251,252]`），EntryAi modelUsed='accept-test-model'；UI 真实导出截 download → `.e2e_shots/accept-trust-export.zip`（17693 B，PK 头，页面分块取 base64 落盘校验一致）。不 wipes 直接恢复：14 条 → **10 还原 + 4 整跳 + 5 丢 part**（种子 4 条纯媒体条目 e1/e4/e5/e7 的 OPFS 媒体从不存在 → 丢 part→整跳路径在生产流真实触发，属契约内计划外红利验证）。还原副本：全新 UUID；aiId/entryId 重映射一致；modelUsed/version 保留；媒体字节在新 ref（ca3f982a-…）逐字节一致；旧 ref accept-ref-1 仍可读（原数据零覆盖）；ownerId='local' 自动盖章；deletedAt 不携带；categories 5 / tags 7 零变化（slug upsert 保留现有）。截图 `.e2e_shots/accept-trust-case1-restored-detail.png`。 |
+| ② /share-target 接收 | PASS | 预置 capture 草稿 1 part 后 SPA 导航 `/share-target?text=...&url=...` → 落 `/capture`，草稿 = 原 part + 新增**两行**合成 part（text\nurl，追加非覆盖）。空参数 → EmptyState「没有收到可记入的内容」+「回首页」按钮（截图 `.e2e_shots/accept-trust-case2-share-empty.png`）。dist manifest share_target GET 已在门禁验证。（注：整页跳转会重置 zustand 草稿，SPA 导航才能验证追加语义；shareTarget.test.tsx「追加语义」单测同源覆盖。） |
+| ③ 隐私标识两态 + 数据出门 | PASS | 纯文本 accept-e1 detail：「文本与转写已上送 accept-test-model」**无** STT/VLM 后缀；含音频 accept-e2 detail：「…accept-test-model；语音/媒体按处理时的 STT/VLM 配置上送」（原件与还原副本一致）。设置→数据出门 sheet：顶部说明文案在；聚合行 `accept-test-model · 5 条 · 最近 07:24`（当天 → HH:mm 格式正确；按 lastAt 降序居首）。计数 5 与事实逐条核对一致：2 注入 EntryAi + 2 还原副本 EntryAi + 1 注入 Aggregate（契约预估 3 未计 case① 还原副本的副作用，聚合逻辑本身无误）。截图 `.e2e_shots/accept-trust-case3-dataout.png`。 |
+| ④ AI 队列补跑 + 尸体清扫 | PASS | failed 条目（accept-fail-1）→ `dispatchEvent(new Event('online'))` → **重试发生**：processError「验收注入的原始错误」→「条目无文本/媒体可分类」（注：注入 part 误用 `text` 字段而契约是 `content`，classify 拿到空内容属注入瑕疵，不影响重试可观察性），updatedAt 同步变化。第二次 dispatch → updatedAt/processError **逐字不变**（autoRetried 会话级去重 ✓）。reload 后该条目再次被重试（updatedAt 又变）→ 去重确为会话级，与契约一致。尸体：accept-corpse-1（processing）→ reload → 终态 ready 且带真实 EntryAi（deepseek-v4-flash）——retryFailedEntries 只捞 failed，processing→ready 必经 sweep 先转 failed，hydrate 清扫段由此演绎证实（尸体文案为瞬态，在线+LLM 健康时被重试自愈覆盖，见 OBS-1）；确定性断言：online=false 下直调 `sweepProcessingCorpses()`，accept-corpse-2 processing → **failed，processError 逐字=「应用中断，处理未完成，可重试」** ✓。 |
+
+### findings
+
+- **MINOR-1**（UX 文案）`src/ui/screens/settings/index.tsx:1698-1716` 恢复备份确认
+  sheet 复用 ExportConfirmSheet，title/confirmLabel 已覆盖，但正文行未覆盖：
+  「导出范围」（:365 `settings.exportScope`）、「保存位置 系统分享面板」
+  （:380-383 `settings.saveLocation`+`locShareSheet`）仍是导出语义——还原场景下
+  既无导出也无保存，文案误导。功能无误。
+- **MINOR-2**（计数语义）`src/app/i18n/zh/settings.ts:151`
+  「已还原 {count} 条（跳过 {skipped} 条）」：`skipped` 实按**丢掉的媒体 part**
+  计数（zipImport.ts:137 每丢一 part +1），而整条跳过的条目（zipImport.ts:149）
+  完全不计入；单位「条」读后感是条目。case① toast「已还原 10 条（跳过 5 条）」
+  中 5 = 4 条整跳条目的媒体 part + 1 条部分丢失 part——4 条整跳条目静默消失、
+  无任何计数。en 版同构。数据无损、行为符契约，仅口径误导。
+- **OBS-1**（观察项）尸体文案「应用中断，处理未完成，可重试」在「在线 + LLM
+  健康」环境下是瞬态：hydrate 链 sweep（processing→failed）后 retryFailedEntries
+  立即补跑，成功即 ready（accept-corpse-1 终态 ready）。契约测试点字面预期
+  「reload → 变 failed」仅在不自愈环境成立；该组合行为实为理想的自愈语义，
+  建议契约措辞补注，不算缺陷。
+
+### 结论
+
+**LGTM**。4/4 用例 PASS，静态门禁独立复跑全绿，无 BLOCKER/MAJOR；
+2 MINOR（文案/计数口径）+ 1 OBS 均可后续波收，不阻本波 commit。
