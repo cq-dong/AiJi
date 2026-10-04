@@ -15,6 +15,7 @@ export const common = {
   'common.disable': 'Off',
   'common.itemsCount': '{count} items',
   'common.zhOnly': '仅中文',
+  'common.exitConfirm': 'Press back again to exit',
   'chat.memoryConfirm': 'Got it, saved: {content} (manage in Settings → AI Memory)',
   'nav.home': 'Timeline',
   'nav.categories': 'Categories',

@@ -60,6 +60,9 @@ interface UiState {
   // Q6 ③（2026-10-05）：OPFS 配额快照。refreshStorageQuota（app/storageQuota.ts）写入；
   // null = 未刷新 / estimate 不可用 → home 不出配额横幅。hydrate 不调，由 home mount 触发。
   storageQuota: { usage: number; quota: number } | null
+  // A1 ②（2026-10-05）：首页双击退出武装。backButton.ts 首按置 true + 2s 自动复位 false；
+  // 窗内再按 → exitApp。只 setState 不落库（运行期态）。AppShell Toast 消费。
+  exitArmed: boolean
   hydrate: () => Promise<void>
   // D9: 导入示例数据后重读 Dexie。重置 hydrated 跑 hydrate 全量载入（onboarding/settings 导入后调）。
   rehydrate: () => Promise<void>
@@ -505,6 +508,7 @@ export const useUiStore = create<UiState>((set, get) => ({
   pendingReminder: null,
   firingReminder: null,
   storageQuota: null,
+  exitArmed: false,
   conversation: null,
   chatList: [],
   chatLoading: 'idle',

@@ -12,6 +12,7 @@ import { useAccountStore } from '@/app/accountStore'
 import { useQuotaStore } from '@/app/quotaStore'
 import { seedDevDefaults } from '@/app/devSeed'
 import { initReminderFire } from '@/app/reminderFire'
+import { initBackButton } from '@/app/backButton'
 import { maybeStartSync } from '@/app/syncEngine'
 
 // D38: 平台分流 Service Worker。
@@ -50,6 +51,11 @@ void seedDevDefaults()
 // webNotify handler + audio unlock。必须在 React render 前注册，保证 whole-app
 // 生命周期有效（监听器不依赖 React 挂载）。
 initReminderFire()
+
+// A1 ②: Android 硬件返回键编排（LIFO 栈 + 路由回退 + 首页双击退出）。
+// 函数内 isNativePlatform 自守卫——web 零行为。必须在 React render 前注册，
+// 保证 whole-app 生命周期有效（与 initReminderFire 同模式）。
+initBackButton()
 
 // online 接 navigator.onLine + 事件。store.online 之前恒 true（setOnline 零调用），
 // chat 离线禁用 + reminders 离线·待补跑都依赖它。此处正本清源，全模块受益。
