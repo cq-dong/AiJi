@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Check } from 'lucide-react'
 import type { Entry, EntryAi } from '@/domain/types'
@@ -46,11 +46,13 @@ function cardStyle(index: number): React.CSSProperties {
     : { animation: 'none' }
 }
 
-export function TimelineCard({ entry, ai, catLabel, catAccent, index = 99 }: CardProps) {
+// W0-UI: memo 包裹——entry/ai 为 store 内不可变引用，浅比较即可挡住无关列表重渲。
+export const TimelineCard = memo(function TimelineCard({ entry, ai, catLabel, catAccent, index = 99 }: CardProps) {
   const isReady = entry.status === 'ready'
   if (isReady) return <ReadyCard entry={entry} ai={ai} catLabel={catLabel} catAccent={catAccent} index={index} />
   return <ProcessingCard entry={entry} catAccent={catAccent} index={index} />
-}
+})
+TimelineCard.displayName = 'TimelineCard'
 
 // 右侧 48×48 媒体缩略图：图片 <img> 直出；视频用 <video preload="metadata"> 取首帧
 // （#t=0.1 媒体片段逼出 0.1s 解码帧）。rc10 实锤：此前视频 blob 也塞 <img>——img 无法

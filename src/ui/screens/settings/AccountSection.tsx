@@ -442,6 +442,7 @@ export function AccountSection() {
             <img
               src={account.avatar}
               alt={t('settings.avatar')}
+              loading="lazy"
               className="h-full w-full object-cover"
             />
           ) : (

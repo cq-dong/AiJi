@@ -56,6 +56,8 @@
          预约到点通知，Android 12+ (API 31+) 需 SCHEDULE_EXACT_ALARM 或 USE_EXACT_ALARM 才精确触发；
          否则系统降级为 inexact，Doze 下延迟或丢失（用户报"建立了提醒但没收到"根因之一）。
          USE_EXACT_ALARM（API 33+）安装时自动授予，免运行时请求，sideload 场景适用。 -->
+    <!-- W0-UI: WebView 里 navigator.vibrate 需 manifest 声明，否则 9 个 haptics 调用点静默 no-op。 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 </manifest>

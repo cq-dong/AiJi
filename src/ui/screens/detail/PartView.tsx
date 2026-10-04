@@ -92,6 +92,7 @@ function ImageZoomable({ src }: { src: string }) {
         <img
           src={src}
           alt=""
+          loading="lazy"
           onClick={onImgClick}
           onPointerDown={onImgPointerDown}
           onPointerMove={onImgPointerMove}

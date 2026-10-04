@@ -225,6 +225,7 @@ export default function Feedback() {
                     <img
                       src={im.url}
                       alt={t('feedback.image.alt')}
+                      loading="lazy"
                       className="h-20 w-20 rounded-btn border border-brd object-cover"
                     />
                     <button

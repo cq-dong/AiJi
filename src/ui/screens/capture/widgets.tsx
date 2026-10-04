@@ -384,7 +384,7 @@ export function FlowPart({
     <div className="relative overflow-hidden rounded-card bg-black/5">
       {isPhoto ? (
         mediaUrl ? (
-          <img src={mediaUrl} alt={t('capture.photo')} className="block max-h-[420px] w-full object-contain" />
+          <img src={mediaUrl} alt={t('capture.photo')} loading="lazy" className="block max-h-[420px] w-full object-contain" />
         ) : (
           <div className="flex aspect-square items-center justify-center bg-page text-t3">
             <ImageIcon size={28} strokeWidth={1.6} />
