@@ -279,10 +279,33 @@ export const builtinLlm: LlmPort = {
     const parsed = parseAggregateJson(raw)
     // ⚠️ Aggregate 构造：逐行对照 openAiCompatLlm.aggregate 同段（scope/summary/highlights 字段）
     const now = new Date().toISOString()
+
+    // D28: 文本模型已按 prompt 铁律在 sentences 末尾生成「图片内容：…；视频内容：…」备注。
+    // 安全网：若 LLM 漏写（含图片但正文无「图片内容：」/含视频但无「视频内容：」），用 VLM 原文补上同格式备注。
+    const baseSummary = parsed.sentences && parsed.sentences.length > 0 ? parsed.sentences.join('') : (parsed.summary ?? '')
+    const imagesParts: string[] = []
+    const videosParts: string[] = []
+    for (const e of valid) {
+      const md = e.mediaDescription
+      if (!md) continue
+      if (md.images && md.images.trim()) imagesParts.push(md.images.trim())
+      if (md.videos && md.videos.trim()) videosParts.push(md.videos.trim())
+    }
+    const hasImages = valid.some((e) => e.imageCount > 0)
+    const hasVideos = valid.some((e) => e.videoCount > 0)
+    const mediaBlock: string[] = []
+    if (hasImages && !baseSummary.includes('图片内容：')) {
+      mediaBlock.push(`图片内容：${imagesParts.length > 0 ? imagesParts.join(' | ') : '暂未识别'}`)
+    }
+    if (hasVideos && !baseSummary.includes('视频内容：')) {
+      mediaBlock.push(`视频内容：${videosParts.length > 0 ? videosParts.join(' | ') : '暂未识别'}`)
+    }
+    const summary = mediaBlock.length > 0 ? `${baseSummary}\n\n${mediaBlock.join('；')}` : baseSummary
+
     const ag: Aggregate = {
       id: id ?? crypto.randomUUID(),
       scope: { type: scope, range },
-      summary: parsed.sentences && parsed.sentences.length > 0 ? parsed.sentences.join('') : (parsed.summary ?? ''),
+      summary,
       highlights: parsed.highlights,
       entryIds: valid.map((v) => v.id),
       modelUsed: 'builtin-llm',

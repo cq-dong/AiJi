@@ -225,6 +225,81 @@ describe('builtinLlm', () => {
   })
 })
 
+// ── aggregate mediaBlock 安全网（W0：对齐 BYOK openAiCompatLlm.aggregate D28 兜底）──────
+// BYOK 在 LLM 漏写「图片内容：/视频内容：」备注时用 VLM 原文（ai.mediaDescription）补齐；
+// builtin 此前缺这张网，两路行为漂移（builtin 用户聚合摘要静默丢图/视频理解备注）。
+describe('builtinLlm — aggregate mediaBlock 安全网（对齐 BYOK D28）', () => {
+  const entryWith = (id: string, parts: { type: string; ref?: string; durationSec?: number; content?: string }[]) => {
+    fixtures.entry = {
+      id, createdAt: '2026-07-17T10:00:00+08:00', updatedAt: '', status: 'idle',
+      parts: parts as never,
+    }
+  }
+
+  it('LLM 漏写图片备注 + 有 VLM images 原文 → 摘要末尾补「图片内容：…」', async () => {
+    entryWith('e6', [
+      { type: 'text', content: '今天看到的' },
+      { type: 'video', ref: 'm1', durationSec: 0 }, // 照片 → image
+    ])
+    fixtures.ai = { summary: '看图', mediaDescription: { images: '一只橘猫。' } }
+    okReply(JSON.stringify({ sentences: ['今天很好。'], highlights: [] }))
+    const ag = await builtinLlm.aggregate(['e6'], 'day', '2026-07-17', 3)
+    expect(ag.summary).toBe('今天很好。\n\n图片内容：一只橘猫。')
+  })
+
+  it('LLM 漏写视频备注 + 有 VLM videos 原文 → 摘要末尾补「视频内容：…」', async () => {
+    entryWith('e7', [
+      { type: 'text', content: '今天看到的' },
+      { type: 'video', ref: 'm2', durationSec: 12 }, // 真视频 → video
+    ])
+    fixtures.ai = { summary: '看视频', mediaDescription: { videos: '猫跳上墙。' } }
+    okReply(JSON.stringify({ sentences: ['今天很好。'], highlights: [] }))
+    const ag = await builtinLlm.aggregate(['e7'], 'day', '2026-07-17', 3)
+    expect(ag.summary).toBe('今天很好。\n\n视频内容：猫跳上墙。')
+  })
+
+  it('图+视频都漏写 → 同段补齐，用「；」连接（与 BYOK 逐字节同格式）', async () => {
+    entryWith('e8', [
+      { type: 'text', content: '今天看到的' },
+      { type: 'video', ref: 'm1', durationSec: 0 },
+      { type: 'video', ref: 'm2', durationSec: 12 },
+    ])
+    fixtures.ai = { summary: '看图看视频', mediaDescription: { images: '一只橘猫。', videos: '猫跳上墙。' } }
+    okReply(JSON.stringify({ sentences: ['x'], highlights: [] }))
+    const ag = await builtinLlm.aggregate(['e8'], 'day', '2026-07-17', 3)
+    expect(ag.summary).toBe('x\n\n图片内容：一只橘猫。；视频内容：猫跳上墙。')
+  })
+
+  it('LLM 已写「图片内容：」→ 不重复补（摘要原样）', async () => {
+    entryWith('e9', [
+      { type: 'text', content: '今天看到的' },
+      { type: 'video', ref: 'm1', durationSec: 0 },
+    ])
+    fixtures.ai = { summary: '看图', mediaDescription: { images: '一只橘猫。' } }
+    okReply(JSON.stringify({ sentences: ['今天很好。图片内容：一只猫在晒太阳。'], highlights: [] }))
+    const ag = await builtinLlm.aggregate(['e9'], 'day', '2026-07-17', 3)
+    expect(ag.summary).toBe('今天很好。图片内容：一只猫在晒太阳。')
+  })
+
+  it('含图但无 VLM 原文 → 补「图片内容：暂未识别」', async () => {
+    entryWith('e10', [
+      { type: 'text', content: '今天看到的' },
+      { type: 'video', ref: 'm1', durationSec: 0 },
+    ])
+    fixtures.ai = { summary: '看图' } // 无 mediaDescription
+    okReply(JSON.stringify({ sentences: ['今天很好。'], highlights: [] }))
+    const ag = await builtinLlm.aggregate(['e10'], 'day', '2026-07-17', 3)
+    expect(ag.summary).toBe('今天很好。\n\n图片内容：暂未识别')
+  })
+
+  it('无媒体条目 → 摘要原样不追加（守护：不过度补齐）', async () => {
+    // 默认 fixtures.entry = 纯文本条目
+    okReply(JSON.stringify({ sentences: ['纯文本的一天。'], highlights: [] }))
+    const ag = await builtinLlm.aggregate(['e1'], 'day', '2026-07-17', 3)
+    expect(ag.summary).toBe('纯文本的一天。')
+  })
+})
+
 // ── extractMemory（AI 记忆自动提取，§4）──────────────────────────────────────
 // 走 /api/llm/chat（chatFetch 内置 401→refresh 重试）+ consume('llm', 1)。
 // parseMemoryReply 把 NULL/空 → null。BYOK 路径不 consume（在 openAiCompatLlm 测，此处只测 builtin）。

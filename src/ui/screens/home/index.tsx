@@ -5,7 +5,7 @@ import { Mic, Trash2 } from 'lucide-react'
 import { Button, EmptyState, SwipeableCard } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
-import type { Entry } from '@/domain/types'
+import type { Conversation, Entry } from '@/domain/types'
 import { dateKey, groupLabel, todayKeyFrom, topDateLabel, windowGroups } from './helpers'
 import { HomeHeader } from './HomeHeader'
 import { CompanionCard } from './CompanionCard'
@@ -66,7 +66,17 @@ export default function Home() {
       listEntries: () => di.storage.listEntries(),
       listMemories: () => di.storage.listMemories(),
       listReminders: () => di.storage.listReminders(),
-      getConversation: () => di.storage.getConversation('1'), // MVP 单会话固定 id=1
+      // W0（2026-10-04）：多会话上线后会话 id 是 randomUUID，旧死读 getConversation('1') 永远 miss。
+      // 改取 updatedAt 最新会话（对齐 store.ts hydrate 的 chatList[0] 语义），其 rollingSummary 进
+      // greeting context；无会话 → undefined。
+      getConversation: async () => {
+        const list = await di.storage.listConversations()
+        let top: Conversation | undefined
+        for (const c of list) {
+          if (!top || new Date(c.updatedAt).getTime() > new Date(top.updatedAt).getTime()) top = c
+        }
+        return top
+      },
       greet: (ctx) => di.llm.proactiveGreeting(ctx),
       fallbackText: () => t('home.companion.fallback'),
     })

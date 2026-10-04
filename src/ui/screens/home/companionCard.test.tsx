@@ -9,12 +9,13 @@ import { PD_KEYS } from '@/app/proactive'
 // × dismiss 回调（不跳 /chat）、点卡片跳 /chat；home mount 编排接线
 // （LLM 问候渲染 / 桩抛错模板兜底 / 频控中不渲染）。
 
-const { greetFn, listEntriesFn, listMemoriesFn, listRemindersFn, getConversationFn } = vi.hoisted(() => ({
+const { greetFn, listEntriesFn, listMemoriesFn, listRemindersFn, getConversationFn, listConversationsFn } = vi.hoisted(() => ({
   greetFn: vi.fn(),
   listEntriesFn: vi.fn(),
   listMemoriesFn: vi.fn(),
   listRemindersFn: vi.fn(),
   getConversationFn: vi.fn(),
+  listConversationsFn: vi.fn(),
 }))
 vi.mock('@/app/di', () => ({
   di: {
@@ -24,6 +25,7 @@ vi.mock('@/app/di', () => ({
       listMemories: listMemoriesFn,
       listReminders: listRemindersFn,
       getConversation: getConversationFn,
+      listConversations: listConversationsFn,
       getMedia: vi.fn(async () => undefined),
     },
   },
@@ -62,6 +64,7 @@ beforeEach(() => {
   listMemoriesFn.mockReset().mockResolvedValue([])
   listRemindersFn.mockReset().mockResolvedValue([])
   getConversationFn.mockReset().mockResolvedValue(undefined)
+  listConversationsFn.mockReset().mockResolvedValue([])
 })
 
 async function renderCard(text: string, onOpenChat = vi.fn(), onDismiss = vi.fn()) {
@@ -201,5 +204,39 @@ describe('home 屏问候卡挂载', () => {
     await renderHome()
     expect(container.querySelector('[aria-label="伙伴问候，点按进入对话"]')).toBeNull()
     expect(greetFn).not.toHaveBeenCalled()
+  })
+})
+
+// W0 修复（2026-10-04）：greeting context 的 rollingSummary 改取「updatedAt 最新会话」——
+// 旧实现读死会话 id='1'（单会话 MVP 残留），多会话（crypto.randomUUID id）下永远 miss，
+// rollingSummary 静默缺席。对齐 store.ts hydrate 的 chatList[0] 语义；无会话 → undefined。
+describe('home 问候 context · 最新会话 rollingSummary（W0）', () => {
+  it('两个会话 → greeting ctx 带 updatedAt 最新者的 rollingSummary，不再读死会话 id=1', async () => {
+    listConversationsFn.mockResolvedValue([
+      { id: 'c-new', messages: [], updatedAt: '2026-10-01T10:00:00.000Z', rollingSummary: '新摘要' },
+      { id: 'c-old', messages: [], updatedAt: '2026-09-01T10:00:00.000Z', rollingSummary: '旧摘要' },
+    ])
+    greetFn.mockResolvedValue('早上好')
+    await renderHome()
+    expect(greetFn).toHaveBeenCalledWith(expect.objectContaining({ rollingSummary: '新摘要' }))
+    expect(getConversationFn).not.toHaveBeenCalled() // 死路径 getConversation('1') 已移除
+  })
+
+  it('乱序返回也取 updatedAt 最大者（钉死「取最新」语义，不依赖存储排序）', async () => {
+    listConversationsFn.mockResolvedValue([
+      { id: 'c-old', messages: [], updatedAt: '2026-09-01T10:00:00.000Z', rollingSummary: '旧摘要' },
+      { id: 'c-new', messages: [], updatedAt: '2026-10-01T10:00:00.000Z', rollingSummary: '新摘要' },
+    ])
+    greetFn.mockResolvedValue('早上好')
+    await renderHome()
+    expect(greetFn).toHaveBeenCalledWith(expect.objectContaining({ rollingSummary: '新摘要' }))
+  })
+
+  it('无会话 → rollingSummary 为 undefined，问候照常渲染不崩', async () => {
+    listConversationsFn.mockResolvedValue([])
+    greetFn.mockResolvedValue('晚上好')
+    await renderHome()
+    expect(greetFn).toHaveBeenCalledWith(expect.objectContaining({ rollingSummary: undefined }))
+    expect(container.textContent).toContain('晚上好')
   })
 })
