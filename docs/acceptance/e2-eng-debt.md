@@ -177,4 +177,100 @@ zipImport.test.ts 不在 e2-llm 13 文件清单内；store.ts 独吞 e2-store。
 
 ## 验收记录
 
-（验收 agent 回填）
+> 验收 agent：accept-e2（独立复核，不信 lead 结论，全部独立复跑/复验）。
+> 工作树 = 未 commit 全部改动（19 M + 9 新 src 文件；`src/data/__tests__/dbv9.test.ts`
+> 为历史未跟踪文件，全程未碰；`软件著作权申请资料/` 不在任何改动清单）。
+> 验收方未 commit/push、未改实现代码（除回填本节）；密钥纪律遵守
+> （未打印/报告任何 key 值）。
+
+### 执行方式
+
+- 静态门禁（独立复跑，关单前 2026-10-05 09:08 又整体复跑一次，尾行如下）：
+  1. `npx tsc -p tsconfig.app.json` → **exit 0（0 错）**。
+  2. `npx vitest run` → `Test Files 96 passed (96)` / `Tests 829 passed (829)`
+     （基线 90 文件 760 + 新增 6 文件 69：summaryCache 12 + geocoding 18 +
+     zipExport 11 + chatHelpers 13 + reminderScheduler 12 + exportConfirmSheet 3，
+     与四路申报逐项吻合）。
+  3. `npm run build` → 绿（precache 55 entries）；`ls dist/assets` 出
+     **`llmShared-oz1noNVl.js`（51459 B）**；`builtinLlm-CRuN6dwb.js`（6354 B）
+     `grep -c 'chat/completions'` = **0**；`openAiCompatLlm-C8HXY7qD.js` 11561 B
+     ——BYOK HTTP 层与 builtin chunk 解耦证据成立（对照 D1 静态耦合期 63 KB）。
+  4. 逐行 diff 复核（对 HEAD，awk 行区间抽取 + diff；初版符号校验脚本曾误报，
+     重写 zsh 版复跑后确认）：
+     - `llmShared.ts`（新，1090 行）：21 函数 + 3 类型对 HEAD openAiCompatLlm.ts
+       **逐字一致**；ChatMessage 增 `export` + 注释属契约允许（新文件需导出）。
+     - `openAiCompatLlm.ts`（1633→566）：port 对象（:105 起 462 行）对 HEAD 逐字；
+       `SECRET_KEY`（:30）/`isDeepSeek`（:34）/`answerChatStreaming`（:43）原位
+       保留；**零 re-export**；仅新增 llmShared import 块。
+     - `builtinLlm.ts`：仅 :28-31 import 源改 llmShared，其余零 diff。
+     - `store.ts`（2011→1719）：t3 块（autoRetried/retrying/
+       __resetAiQueueRetryForTests，:211-221）原位保留；`UiState` 仅加 `export`
+       （两个新模块 import type 需要）；尾部 create 完成后立即
+       `initReminderScheduler({getState,setState})` + `initChatHelpers({...})`
+       注入。sendMessage/processEntry/recomputeAggregate 未迁出（契约非目标，
+       grep 证仍在 store.ts）。
+     - `reminderScheduler.ts`（新，108 行）：4 函数 + permission 块对 HEAD
+       store.ts 逐字；`import type { UiState }` type-only（verbatimModuleSyntax
+       编译期抹除，零运行时环）；`let useUiStore!: SchedulerStore`
+       definite-assignment，注入面 Pick<'reminders'|'trashed'|
+       'showFiringReminder'>。
+     - `chatHelpers.ts`（新，281 行）：11 函数逐字；chatSendSeq/memoryQueue
+       模块态随行，经 nextChatSendSeq/currentChatSendSeq/getMemoryQueue/
+       setMemoryQueue 4 个 accessor 暴露读写面（见 OBS-2）。
+     - 13 个既有 e2-llm 测试：10 个 builder/parse 类改指 llmShared（aiMemory/
+       answerPromptExtra/extractMemory/intentSchema/parseAnswerJson/pbSummarize/
+       pcAdjudicate/pdProactive/pfCompanionEcho/promptLang）；diProxy/pbEmbed/
+       answerChatStream 3 个 port/HTTP 行为测试保持 import openAiCompatLlm 不变
+       ——与契约判断条款逐项吻合（git status 实证：恰 10 个 M）。
+     - 5 个既有 store 测试（storeChatCapabilities/storeChatStream/
+       storeChatActionOps/storeRollingSummary/storeEmbeddingGc）：**零 diff**
+       ——仅 import useUiStore，helper 名只在注释出现（见 OBS-1）。
+     - `zipExport.ts`：单行 diff（:15 `c >>> 1`，e2-crc 路 #48）。
+     - `zipImport.ts`：restoreBackup 返回 `{entries, media, skippedParts,
+       skippedEntries}`；skippedParts++（:143 丢媒体 part）与 skippedEntries++
+       （:154-157 part 丢光整跳）两口径分开。
+     - `settings/index.tsx`：ExportConfirmSheet 新增可选 props `scopeRowLabel?`/
+       `hideSaveLocation?`（缺省 false 保持导出语义），恢复调用方传
+       `scopeRowLabel={t('settings.importBackupScope')} hideSaveLocation`；
+       toast 用 r.skippedEntries/r.skippedParts。
+     - i18n zh/en settings.ts：`settings.importBackupScope`（还原范围 /
+       Restore scope）+ importBackupDone 新口径（zh「已还原 {count} 条（跳过
+       {skippedEntries} 条、媒体 {skippedParts} 项）」/ en 同构）双语一致。
+     - 越界扫描：全部改动落契约四路白名单（19 M + 9 新）；无密钥混入 diff；
+       `summaryCache.ts`/`geocoding.ts` 零 diff（e2-tests 纯新文件）。
+- 浏览器联合测试：chrome-devtools-mcp（Playwright MCP 本机 9222 拒连不可用），
+  视口 390×844；5173 被他 agent 占用 → vite dev **5209** + prod preview
+  **4199**（`npm run build && npm run preview`）；`aiji:onboarded=1` + 游客
+  「开始记」；store/调度器注入：`await import('/src/app/store.ts')` /
+  `await import('/src/app/reminderScheduler.ts')`（vite dev 同模块图）；
+  下载拦截 = 预 patch `URL.createObjectURL` 截 blob；瞬态 toast 捕获 =
+  MutationObserver 武装 `[role="status"]`（3.5s 寿命，DOM 轮询两次漏捕后改用）。
+  截图与产物全存 `.e2e_shots/`。
+
+### 用例证据（5/5 PASS）
+
+| 用例 | 结果 | 关键证据 |
+|---|---|---|
+| ① llmShared preview 冒烟 | PASS | preview 4199（prod build 同产物）：首页/设置/chat 三屏渲染正常，无 chunk 加载错误；chat 未配 key 走预期降级（错误气泡，非 chunk 失败）。截图 `.e2e_shots/e2-01-preview-home.png` / `e2-01-preview-settings.png` / `e2-01-preview-chat-degraded.png`。 |
+| ② store 拆分（提醒 + chat） | PASS | vite dev 5209：setState 注入 5 秒后 due 的 pending 提醒 → 调 `/src/app/reminderScheduler.ts` 的 scheduleReminders（**新模块真实链路**）→ ~6 秒后 store state=fired 且 Dexie 持久化 fired，in-app 弹窗出现（截图 `e2-02-reminder-firing.png`）。chat 发一条 smoke：相位 intent→recall→answer→idle 依序推进，answer 消息落会话（截图 `e2-02b-chat-smoke.png`）——chatHelpers 链路（chatSendSeq/chatHistory/chatAnswerCache）真实走通。 |
+| ③ e2-minor（sheet + toast） | PASS | 恢复备份确认 sheet：**无「保存位置」行**、scope 行文案=「还原范围」（截图 `e2-03-restore-sheet.png`）；导出变体回归干净（仍「导出范围」+「保存位置 系统分享面板」）。造 skipped 场景（手工 STORE zip `.e2e_shots/e2-restore-test.zip`：3 条目——纯文本 1 + 仅缺音频 1 + 文本+缺视频 1）→ 还原 entries=2 / skippedParts=2 / skippedEntries=1；toast 经 MutationObserver 捕获：**「已还原 2 条（跳过 1 条、媒体 2 项）」** 与 i18n 新口径逐字一致（截图 `e2-03-toast.png`）。 |
+| ④ e2-tests 静态 | PASS | 三新测试文件 41 例全绿（summaryCache 12 + geocoding 18 + zipExport 11，含 crc32 已知向量断言）；`git diff src/adapters/summaryCache.ts src/adapters/geocoding.ts` = 空——实现零改动（zipExport.ts 单行 CRC 修复属 e2-crc 路 #48，非本 lane）。 |
+| ⑤ CRC 端到端 | PASS | 浏览器真实导出（18 条目 = 种子 12 + 用例③三轮还原副本 6，manifest entryCount=18）截 download → `.e2e_shots/e2-export-crc.zip`（19374 B，23 entries）。`python3 -c "import zipfile; z=zipfile.ZipFile('.e2e_shots/e2-export-crc.zip'); print(z.testzip())"` → **None**（修复前每个 entry 报 bad CRC）；`unzip -t` → "No errors detected in compressed data"。 |
+
+### findings
+
+- **OBS-1**（契约措辞偏差，非缺陷）契约 §现状② 称 5 个既有 store 测试「按名
+  引用上述 helper（随迁移改 import）」；实况该 5 文件仅 import useUiStore、
+  helper 名只出现在注释——零改动即全绿。e2-store 路判断正确，契约描述偏严。
+- **OBS-2**（观察项）chatHelpers.ts 的 chatSendSeq/memoryQueue 经
+  nextChatSendSeq/currentChatSendSeq/getMemoryQueue/setMemoryQueue 4 个
+  accessor 暴露（let 绑定跨模块不可直接赋值的等价改写），store.ts 调用点同步
+  改写；行为等价由 storeChatStream/storeRollingSummary 等既有测试 + 用例②
+  浏览器实测双重证实。属契约「同走晚绑定注入，lane 先逐函数核实依赖再定
+  注入面」的允许裁量，记录备查。
+
+### 结论
+
+**LGTM**。4 静态门禁 + 5 浏览器用例全 PASS；无 BLOCKER/MAJOR/MINOR；
+2 OBS 备查不阻 commit。E2 波（e2-llm/e2-store/e2-minor/e2-tests + e2-crc）
+可进入 lead 集成 commit 阶段。
