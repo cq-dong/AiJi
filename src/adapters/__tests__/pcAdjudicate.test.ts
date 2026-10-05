@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setCurrentLang } from '@/app/currentLang'
-import { buildMemoryAdjudicationPrompt, parseAdjudicationJson, openAiCompatLlm, loadEnabledMemoryContents } from '@/adapters/openAiCompatLlm'
+import { buildMemoryAdjudicationPrompt, parseAdjudicationJson, loadEnabledMemoryContents } from '@/adapters/llmShared'
+import { openAiCompatLlm } from '@/adapters/openAiCompatLlm'
 import { builtinLlm } from '@/adapters/builtinLlm'
 import { localSession } from '@/app/session'
 import type { Memory } from '@/domain/types'

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseAnswerJson, sanitizeInlineCites } from '@/adapters/openAiCompatLlm'
+import { parseAnswerJson, sanitizeInlineCites } from '@/adapters/llmShared'
 
 // parseAnswerJson / sanitizeInlineCites 是纯函数（无 I/O），直接测。
 // 背景：answer 轮 LLM 偶发不遵守纯 JSON 封包，输出散文 + 末尾 JS 风格

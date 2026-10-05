@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setCurrentLang } from '@/app/currentLang'
-import { buildConversationSummaryPrompt, openAiCompatLlm } from '@/adapters/openAiCompatLlm'
+import { buildConversationSummaryPrompt } from '@/adapters/llmShared'
+import { openAiCompatLlm } from '@/adapters/openAiCompatLlm'
 import { builtinLlm } from '@/adapters/builtinLlm'
 import { localSession } from '@/app/session'
 

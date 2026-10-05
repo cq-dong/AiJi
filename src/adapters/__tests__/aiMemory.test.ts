@@ -4,7 +4,7 @@ import Dexie from 'dexie'
 import type { Category, ChatCite, Tag } from '@/domain/types'
 
 // buildPrompt/buildAnswerPrompt 是纯函数，无需 mock。用真实签名构造最小入参。
-import { buildPrompt, buildAnswerPrompt } from '@/adapters/openAiCompatLlm'
+import { buildPrompt, buildAnswerPrompt } from '@/adapters/llmShared'
 
 // ── Prompt builder：记忆注入字节级回归 ──────────────────────────────────────
 // 无记忆（undefined / []）必须与历史输出逐字节一致；有记忆追加设计 §3 段落。

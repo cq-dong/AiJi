@@ -3,8 +3,8 @@ import { setCurrentLang } from '@/app/currentLang'
 import {
   buildProactiveGreetingPrompt,
   parseProactiveGreetingReply,
-  openAiCompatLlm,
-} from '@/adapters/openAiCompatLlm'
+} from '@/adapters/llmShared'
+import { openAiCompatLlm } from '@/adapters/openAiCompatLlm'
 import { builtinLlm } from '@/adapters/builtinLlm'
 import { localSession } from '@/app/session'
 import type { ProactiveGreetingContext } from '@/ports'

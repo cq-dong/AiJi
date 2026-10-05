@@ -6,7 +6,7 @@ import {
   buildExtractMemoryPrompt,
   buildAggregatePrompt,
   buildIntentPrompt,
-} from '@/adapters/openAiCompatLlm'
+} from '@/adapters/llmShared'
 
 // 提示词按 currentLang 生成 zh/en 两份系统提示。default 测试环境 lang=en（jsdom
 // navigator.language=en-US），故每个用例显式 setCurrentLang 锁定被测语言，避免

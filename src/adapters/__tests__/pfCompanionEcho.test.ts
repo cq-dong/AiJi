@@ -4,7 +4,7 @@ import {
   buildIntentPrompt,
   buildProactiveGreetingPrompt,
   parseIntentJson,
-} from '@/adapters/openAiCompatLlm'
+} from '@/adapters/llmShared'
 import type { ProactiveGreetingContext } from '@/ports'
 
 // P-F 陪伴深化包（docs/acceptance/pf-companion-pack.md §①③，2026-10-05）：

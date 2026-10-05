@@ -28,7 +28,7 @@ import {
   buildProactiveGreetingPrompt, parseProactiveGreetingReply,
   collectEntryImages, inferMediaType, loadEnabledMemoryContents,
   type VisionTextPart, type VisionImagePart,
-} from '@/adapters/openAiCompatLlm'
+} from '@/adapters/llmShared'
 
 const BASE = import.meta.env.VITE_AIJI_BACKEND_BASE ?? ''
 

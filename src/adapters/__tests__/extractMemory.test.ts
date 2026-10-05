@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setCurrentLang } from '@/app/currentLang'
-import { buildExtractMemoryPrompt, parseMemoryReply } from '@/adapters/openAiCompatLlm'
+import { buildExtractMemoryPrompt, parseMemoryReply } from '@/adapters/llmShared'
 
 // buildExtractMemoryPrompt / parseMemoryReply 是纯函数（无 I/O），直接测。
 // 镜像 aiMemory.test.ts 的 buildPrompt/buildAnswerPrompt 纯函数测法。

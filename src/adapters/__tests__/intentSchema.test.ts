@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setCurrentLang } from '@/app/currentLang'
-import { buildIntentPrompt, parseIntentJson } from '@/adapters/openAiCompatLlm'
+import { buildIntentPrompt, parseIntentJson } from '@/adapters/llmShared'
 
 // 问 AI 能力大补（2026-09-29）intent 轮扩展：
 // kind 判别（recall/weather/search/action）+ timeIntent + city + action 四组新字段，

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setCurrentLang } from '@/app/currentLang'
-import { buildAnswerPrompt } from '@/adapters/openAiCompatLlm'
+import { buildAnswerPrompt } from '@/adapters/llmShared'
 
 // 问 AI 能力大补（2026-09-29）answer 轮扩展：
 // extraSystem（第 5 参）拼在 system + memoryBlock 之后——时间行/天气块/搜索块统一注入口；
