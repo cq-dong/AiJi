@@ -322,9 +322,13 @@ function formatMB(bytes: number): string {
 // D10: 导出 .zip 确认对话框。说明范围 + 文件名 + 媒体数 + 保存位置，确认后执行。
 // PRD trust pack t1：复用于「恢复备份」确认——可选 title/confirmLabel 覆盖导出文案，
 // 缺省保持导出语义，export 调用方零变化。
-function ExportConfirmSheet({
+// E2 MINOR-1：scopeRowLabel 覆盖 scope 行 label（恢复场景「还原范围」）+
+// hideSaveLocation 隐藏保存位置行（恢复无导出/保存动作）。export 供渲染测试。
+export function ExportConfirmSheet({
   title,
   confirmLabel,
+  scopeRowLabel,
+  hideSaveLocation,
   scopeLabel,
   filename,
   entryCount,
@@ -334,6 +338,8 @@ function ExportConfirmSheet({
 }: {
   title?: string
   confirmLabel?: string
+  scopeRowLabel?: string
+  hideSaveLocation?: boolean
   scopeLabel: string
   filename: string
   entryCount: number
@@ -362,7 +368,7 @@ function ExportConfirmSheet({
 
         <div className="mt-3 space-y-2">
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">{t('settings.exportScope')}</span>
+            <span className="text-[13px] text-t2">{scopeRowLabel ?? t('settings.exportScope')}</span>
             <span className="text-[13px] font-medium text-ink">{scopeLabel}</span>
           </div>
           <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
@@ -377,10 +383,12 @@ function ExportConfirmSheet({
             <span className="text-[13px] text-t2">{t('settings.fileName')}</span>
             <span className="text-[12px] font-medium text-ink">{filename}</span>
           </div>
-          <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
-            <span className="text-[13px] text-t2">{t('settings.saveLocation')}</span>
-            <span className="text-[12px] font-medium text-t2">{locationHint}</span>
-          </div>
+          {!hideSaveLocation && (
+            <div className="flex items-center justify-between rounded-card border border-brd bg-card px-3 py-2.5">
+              <span className="text-[13px] text-t2">{t('settings.saveLocation')}</span>
+              <span className="text-[12px] font-medium text-t2">{locationHint}</span>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 flex gap-2">
@@ -1289,7 +1297,11 @@ export default function Settings() {
     try {
       const r = await restoreBackup(bc.parsed)
       await useUiStore.getState().rehydrate()
-      setZipToast({ msg: t('settings.importBackupDone', { count: r.entries, skipped: r.skipped }), ok: true })
+      // E2 MINOR-2：skippedEntries（整条跳过）/ skippedParts（丢媒体 part）两口径分开报。
+      setZipToast({
+        msg: t('settings.importBackupDone', { count: r.entries, skippedEntries: r.skippedEntries, skippedParts: r.skippedParts }),
+        ok: true,
+      })
     } catch (e) {
       setZipToast({ msg: t('settings.importBackupFailed', { error: e instanceof Error ? e.message : String(e) }), ok: false })
     } finally {
@@ -1708,6 +1720,8 @@ export default function Settings() {
         <ExportConfirmSheet
           title={t('settings.importBackupTitle')}
           confirmLabel={t('settings.importBackupConfirm')}
+          scopeRowLabel={t('settings.importBackupScope')}
+          hideSaveLocation
           scopeLabel={t('settings.scopeAll')}
           filename={backupConfirm.filename}
           entryCount={backupConfirm.parsed.entryCount}

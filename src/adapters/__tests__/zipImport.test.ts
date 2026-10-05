@@ -2,7 +2,8 @@
 // 契约：docs/acceptance/prd-trust-pack.md §范围① / §测试要点 t1。
 // - parseZip：STORE-only 读取器（EOCD→central→local），与 zipExport buildZip 镜像。
 // - readBackup：entries.json 缺失抛 'invalid'；ai/categories/tags 可缺省。
-// - restoreBackup：新 id 重映射 / processing→failed / slug 冲突保留 / 丢媒体 skipped / 日聚合置 stale。
+// - restoreBackup：新 id 重映射 / processing→failed / slug 冲突保留 / 丢媒体 skippedParts /
+//   整条跳过 skippedEntries / 日聚合置 stale。
 // - exportZip v2：产物含 entries/categories/tags.json + manifest.version===2。
 // 测试内 mini STORE builder 镜像 buildZip（~40 行），不依赖 zipExport 内部未导出函数。
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -246,7 +247,7 @@ describe('restoreBackup', () => {
       }),
     )
     const r = await restoreBackup(parsed)
-    expect(r).toEqual({ entries: 1, media: 1, skipped: 0 })
+    expect(r).toEqual({ entries: 1, media: 1, skippedParts: 0, skippedEntries: 0 })
 
     expect(storeMocks.saveEntry).toHaveBeenCalledTimes(1)
     const saved = storeMocks.saveEntry.mock.calls[0][0] as Entry
@@ -310,7 +311,7 @@ describe('restoreBackup', () => {
     expect((storeMocks.saveTag.mock.calls[0][0] as Tag).usageCount).toBe(0)
   })
 
-  it('媒体缺失 → 丢该 part（skipped++）；全部 part 丢光 → 整条跳过', async () => {
+  it('媒体缺失 → 丢该 part（skippedParts++）；全部 part 丢光 → 整条跳过（skippedEntries++）', async () => {
     const parsed = await readBackup(
       backupZip({
         entries: [
@@ -328,7 +329,10 @@ describe('restoreBackup', () => {
     const r = await restoreBackup(parsed)
     expect(r.entries).toBe(1)
     expect(r.media).toBe(0)
-    expect(r.skipped).toBe(2)
+    // 两个媒体 part 各丢一次（keep 的 audio + drop 的 video）→ skippedParts=2；
+    // drop 唯一 part 丢光 → 整条跳过 → skippedEntries=1（E2 MINOR-2：两口径分开计数）。
+    expect(r.skippedParts).toBe(2)
+    expect(r.skippedEntries).toBe(1)
     expect(storeMocks.saveEntry).toHaveBeenCalledTimes(1)
     const saved = storeMocks.saveEntry.mock.calls[0][0] as Entry
     expect(saved.parts).toHaveLength(1)
@@ -394,7 +398,7 @@ describe('exportZip v2', () => {
     expect(parsed.entryCount).toBe(1)
     expect(parsed.mediaCount).toBe(1)
     const r = await restoreBackup(parsed)
-    expect(r).toEqual({ entries: 1, media: 1, skipped: 0 })
+    expect(r).toEqual({ entries: 1, media: 1, skippedParts: 0, skippedEntries: 0 })
     const saved = storeMocks.saveEntry.mock.calls[0][0] as Entry
     expect(saved.id).not.toBe('ex1')
   })

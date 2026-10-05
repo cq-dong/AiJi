@@ -7,6 +7,8 @@
 // - restoreBackup：新增式恢复——全部新 id，永不覆盖；processing 尸体 → failed；
 //   类别/标签按 slug upsert（冲突整条保留现有）；媒体按 media/<oldRef>. 前缀匹配，
 //   命中落新 ref、未命中丢 part；日聚合置 stale 待自然重算。
+//   返回计数两口径分开（E2 MINOR-2）：skippedParts=丢掉的媒体 part 数；
+//   skippedEntries=part 丢光整条跳过的条目数。
 // 落库全走 di.storage 单条 save*，ownerId 由 stampOwner 自动盖当前账号，导入方无需传。
 import { di } from '@/app/di'
 import type { Category, Entry, EntryAi, EntryPart, Tag } from '@/domain/types'
@@ -102,7 +104,10 @@ function findMedia(media: Map<string, Uint8Array>, ref: string): Uint8Array | un
 }
 
 // 新增式还原：全部新 id（crypto.randomUUID），永不覆盖现有数据。返回计数供 toast。
-export async function restoreBackup(parsed: ParsedBackup): Promise<{ entries: number; media: number; skipped: number }> {
+// skippedParts / skippedEntries 两口径分开（E2 MINOR-2），toast 单位不再混「条」。
+export async function restoreBackup(
+  parsed: ParsedBackup,
+): Promise<{ entries: number; media: number; skippedParts: number; skippedEntries: number }> {
   // 1. 类别/标签按 slug upsert：slug 已存在整条保留现有（用户可能已策展改名/合并）；
   //    新增插入 usageCount=0（备份里的计数对本机无意义）。
   const [existingCats, existingTags] = await Promise.all([di.storage.listCategories(), di.storage.listTags()])
@@ -124,7 +129,8 @@ export async function restoreBackup(parsed: ParsedBackup): Promise<{ entries: nu
   // 2. 条目逐条还原。
   let restored = 0
   let mediaRestored = 0
-  let skipped = 0
+  let skippedParts = 0
+  let skippedEntries = 0
   for (const e of parsed.entries) {
     const parts: EntryPart[] = []
     for (const p of e.parts) {
@@ -134,7 +140,7 @@ export async function restoreBackup(parsed: ParsedBackup): Promise<{ entries: nu
       }
       const data = findMedia(parsed.media, p.ref)
       if (!data) {
-        skipped++
+        skippedParts++
         continue
       }
       const newRef = crypto.randomUUID()
@@ -145,8 +151,11 @@ export async function restoreBackup(parsed: ParsedBackup): Promise<{ entries: nu
       mediaRestored++
       parts.push({ ...p, ref: newRef })
     }
-    // 原有 part 全部丢光 → 整条跳过（空壳条目无意义）。
-    if (e.parts.length > 0 && parts.length === 0) continue
+    // 原有 part 全部丢光 → 整条跳过（空壳条目无意义），单独计 skippedEntries。
+    if (e.parts.length > 0 && parts.length === 0) {
+      skippedEntries++
+      continue
+    }
 
     const newId = crypto.randomUUID()
     const oldAi = parsed.aiByEntry[e.id]
@@ -175,5 +184,5 @@ export async function restoreBackup(parsed: ParsedBackup): Promise<{ entries: nu
     }
   }
 
-  return { entries: restored, media: mediaRestored, skipped }
+  return { entries: restored, media: mediaRestored, skippedParts, skippedEntries }
 }

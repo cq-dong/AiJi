@@ -147,8 +147,11 @@ export const settings = {
   'settings.importBackupHelp': '从导出的 .zip 备份还原条目，不覆盖现有数据',
   'settings.importBackupTitle': '恢复备份',
   'settings.importBackupConfirm': '确认恢复',
+  // E2 MINOR-1：恢复确认 sheet 的 scope 行 label（覆盖默认「导出范围」）。
+  'settings.importBackupScope': '还原范围',
   'settings.importBackupInvalid': '不是有效的 AiJi 备份或版本过旧',
-  'settings.importBackupDone': '已还原 {count} 条（跳过 {skipped} 条）',
+  // E2 MINOR-2：skippedEntries=整条跳过条目数 / skippedParts=丢掉的媒体 part 数，两口径分开。
+  'settings.importBackupDone': '已还原 {count} 条（跳过 {skippedEntries} 条、媒体 {skippedParts} 项）',
   'settings.importBackupFailed': '恢复失败：{error}',
   // 数据出门（PRD trust pack t1 隐私标识）：按模型聚合的数据上送记录。
   'settings.dataOut': '数据出门',

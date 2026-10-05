@@ -147,8 +147,11 @@ export const settings = {
   'settings.importBackupHelp': 'Restore entries from an exported .zip; existing data is kept',
   'settings.importBackupTitle': 'Restore backup',
   'settings.importBackupConfirm': 'Confirm restore',
+  // E2 MINOR-1: scope-row label on the restore confirm sheet (overrides the default "Scope").
+  'settings.importBackupScope': 'Restore scope',
   'settings.importBackupInvalid': 'Not a valid AiJi backup, or the backup is too old',
-  'settings.importBackupDone': 'Restored {count} entries ({skipped} skipped)',
+  // E2 MINOR-2: skippedEntries = whole entries skipped, skippedParts = dropped media parts.
+  'settings.importBackupDone': 'Restored {count} entries ({skippedEntries} entries, {skippedParts} media items skipped)',
   'settings.importBackupFailed': 'Restore failed: {error}',
   // Data out (PRD trust pack t1 privacy labeling): what was sent to model providers.
   'settings.dataOut': 'Data out',
