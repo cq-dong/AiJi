@@ -1,19 +1,38 @@
 import { create } from 'zustand'
-import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryEmbedding, EntryPart, GeoPoint, Memory, MemoryVerdict, Reminder, Settings, Tag } from '@/domain/types'
+import type { Aggregate, AggregateScopeType, Category, ChatAnswer, ChatCite, ChatMessage, ChatTrace, Conversation, Draft, Entry, EntryAi, EntryPart, GeoPoint, Memory, MemoryVerdict, Reminder, Settings, Tag } from '@/domain/types'
 import { scopeRange } from '@/domain/dateRange'
-import { localRecall, dateKey, currentTimeLine, resolveActionCategory, toCite } from '@/ui/screens/chat/helpers'
-import { semanticArm, mergeCites, queryVectorCache, DEFAULT_EMBEDDING_MODEL } from '@/app/semanticRecall'
+import { localRecall, currentTimeLine, resolveActionCategory } from '@/ui/screens/chat/helpers'
 import { topSimilarMemories, isStaleMemory, applyMemoryVerdict } from '@/app/memoryLifecycle'
-import { buildEmbeddingText, textHash, listEmbeddings, saveEmbedding, deleteStaleEmbeddings } from '@/data/embeddings'
-import { getCurrentOwner } from '@/app/currentOwner'
 import { seedSettings } from '@/data/defaultSettings'
 import { enrichLocation, reverseGeocodeCity } from '@/adapters/geocoding'
 import { getWeatherLive } from '@/adapters/weather'
 import { webSearch } from '@/adapters/webSearch'
-import { playReminderBeep } from '@/adapters/reminderSound'
 import { extractPartialAnswer } from '@/adapters/sseStream'
 import * as summaryCache from '@/adapters/summaryCache'
 import { di } from './di'
+// E2（2026-10-05 store 拆分一阶）：提醒调度簇 / chat 辅助簇 + P-B 簇已逐字迁出至
+// reminderScheduler.ts / chatHelpers.ts（契约 docs/acceptance/e2-eng-debt.md §范围②）。
+// 下方同名 import 替代原模块级定义，调用点零改动；两新模块在 create 完成后经 init 晚绑定注入。
+import { initReminderScheduler, clearScheduledTimeout, scheduleReminders, requestReminderPermissionOnce } from './reminderScheduler'
+import {
+  initChatHelpers,
+  CHAT_HISTORY_WINDOW,
+  chatAnswerCache,
+  chatCacheKey,
+  formatDueShort,
+  ensureConversation,
+  appendMessage,
+  stripLeadingDatePrefix,
+  nextChatSendSeq,
+  currentChatSendSeq,
+  getMemoryQueue,
+  setMemoryQueue,
+  stripStreamingFlags,
+  chatHistory,
+  withSemanticArm,
+  embedEntryNow,
+  maybeRollSummary,
+} from './chatHelpers'
 import { useAccountStore, registerStoreRehydrate } from './accountStore'
 import { setCurrentLang, detectLang } from '@/app/currentLang'
 import { t } from '@/app/i18n'
@@ -34,7 +53,9 @@ interface CaptureDraft {
   resumedDraftId?: string
 }
 
-interface UiState {
+// E2（2026-10-05）：加 export 供 reminderScheduler/chatHelpers 的 import type 引用
+//（type-only，verbatimModuleSyntax 编译期抹除，零运行时环）。interface 本体不拆（契约非目标）。
+export interface UiState {
   capture: CaptureDraft
   online: boolean
   entries: Entry[] // D9: 首屏空状态（不再 seed 兜底），hydrate 后为 Dexie 真实数据
@@ -183,131 +204,8 @@ function entriesInRange(entries: Entry[], scope: AggregateScopeType, range: stri
   return entries.filter((e) => scopeRange(scope, new Date(e.createdAt)) === range)
 }
 
-// ── 提醒调度（Phase 9 Batch 2b · B5 · D4 重构）──────────────────────────
-// D4：旧方案纯 setTimeout 前台 only——app 进后台/被杀后到点不触发（无铃声无弹窗）。
-// 新方案：di.localNotifications.schedule(r) 预约系统级本地通知（原生：铃声+弹窗+
-// 锁屏，后台/被杀仍触发；web：浏览器 Notification 前台 best-effort）。store 仍保留
-// setTimeout 做前台状态更新（标 fired/missed）——两路并行，通知展示归 port，状态归 store。
-// module-level timeout 句柄表，key=reminder.id，供 dismiss/snooze cancel。
-const scheduledTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
-// Q4：仅在首次 confirmReminder 时请求权限一次（permission !== 'default' 后不再弹）。
-let permissionRequested = false
-
-function clearScheduledTimeout(id: string): void {
-  const h = scheduledTimeouts.get(id)
-  if (h !== undefined) {
-    clearTimeout(h)
-    scheduledTimeouts.delete(id)
-  }
-  // D4: 同步取消系统级本地通知预约（原生 cancel pending notification；web 清 adapter timeout）
-  void di.localNotifications.cancel(id)
-}
-
-// 到点 fire：置 fired + 落库 + 更新 state + 清 timeout 表。
-// D39: 始终显式 notify 一次系统通知。原非 overdue 路径省略 notify（依赖 schedule 预约），
-// 但 Android 前台 schedule 触发的系统横幅常被抑制 → 用户只看到 in-app 弹窗，通知栏无横幅。
-// notify 用 hashId(r.id) 与 schedule 同 id → NotificationManager 替换，不产生重复通知。
-function fireReminder(r: Reminder, _opts?: { fromOverdue?: boolean }): void {
-  clearScheduledTimeout(r.id)
-  di.localNotifications.notify('AiJi 提醒', r.label, r.id)
-  // 前台 setTimeout 到点：直接 in-app 弹窗 + beep 兜底（不依赖 listener）。后台时
-  // setTimeout 不跑，靠原生 schedule 发系统通知 + listener；notify 亦补一发系统横幅。
-  useUiStore.getState().showFiringReminder({ reminderId: r.id, entryId: r.entryId, label: r.label, dueAt: r.dueAt })
-  playReminderBeep()
-  const fired: Reminder = { ...r, status: 'fired' }
-  void di.storage.saveReminder(fired).catch((e) => console.error('[store] saveReminder(fired) failed', e))
-  useUiStore.setState((s) => ({ reminders: s.reminders.map((x) => (x.id === r.id ? fired : x)) }))
-}
-
-// Q3：>1h overdue pending → 标 missed 不打扰。
-function markMissed(r: Reminder): void {
-  clearScheduledTimeout(r.id)
-  const missed: Reminder = { ...r, status: 'missed' }
-  void di.storage.saveReminder(missed).catch((e) => console.error('[store] saveReminder(missed) failed', e))
-  useUiStore.setState((s) => ({ reminders: s.reminders.map((x) => (x.id === r.id ? missed : x)) }))
-}
-
-// 扫 reminders state：pending 的 → 未来预约系统通知 + setTimeout 状态更新；overdue <1h 补 fire；>1h 标 missed。
-// 去重守卫：已在 timeout 表的 id 跳过（confirm/snooze 先 clearScheduledTimeout 再调本函数）。
-function scheduleReminders(): void {
-  const { reminders, trashed } = useUiStore.getState()
-  const trashedIds = new Set(trashed.map((e) => e.id))
-  const now = Date.now()
-  for (const r of reminders) {
-    if (r.status !== 'pending' && r.status !== 'snoozed') continue
-    if (scheduledTimeouts.has(r.id)) continue
-    // P-F：entryId 可选（chat 建的提醒无源头条目）——无 entryId 不可能在回收站，正常调度。
-    if (r.entryId && trashedIds.has(r.entryId)) continue // Wave 4: 条目在回收站 → 不调度其提醒（recover 后 scheduleReminders 重 arm）
-    const due = new Date(r.dueAt).getTime()
-    const diff = due - now
-    if (diff <= 0) {
-      // overdue（含到点 0ms）
-      if (-diff < 3_600_000) fireReminder(r, { fromOverdue: true }) // <1h 补推（Q3）
-      else markMissed(r) // ≥1h 标错过
-    } else {
-      // D4: 预约系统级本地通知（原生铃声+弹窗 / web 浏览器 Notification）——后台/被杀仍触发
-      void di.localNotifications.schedule(r).catch((e) => console.error('[store] localNotifications.schedule failed', e))
-      // 前台状态更新：setTimeout 到点标 fired；fire 前 re-check（可能已被 dismiss/snooze）
-      const h = setTimeout(() => {
-        const cur = useUiStore.getState().reminders.find((x) => x.id === r.id)
-        if (cur && (cur.status === 'pending' || cur.status === 'snoozed')) fireReminder(cur)
-        else scheduledTimeouts.delete(r.id)
-      }, diff)
-      scheduledTimeouts.set(r.id, h)
-    }
-  }
-}
-
-// ── AI Chat · 纯读检索 (docs/design/ai-chat-impl-plan.md §4) ──────────────
-// 多会话（2026-07-22）：无固定 id，新会话用 crypto.randomUUID()；chatList 缓存历史。
-// answer 轮塞入的先前对话条数（滑动窗，token 预算——不全量塞历史）。
-const CHAT_HISTORY_WINDOW = 6
-
-// 同会话同问题缓存（hash(question + entries 签名)）：entries 数量/最新 updatedAt 不变即复用上次
-// answer，免两轮付费 LLM。内存态不持久——重载空，可接受。entries 变（新记/删/改）即失效。
-const chatAnswerCache = new Map<string, ChatAnswer>()
-
-function chatCacheKey(question: string, entries: Entry[]): string {
-  const norm = question.trim().toLowerCase()
-  const sig = entries.length + ':' + (entries[0]?.updatedAt ?? '')
-  return `${norm}::${sig}`
-}
-
-// 到期时间短格式「M/D HH:MM」（与 reminders 屏 formatDueAt 同式）——建提醒回执文案用。
-function formatDueShort(iso: string): string {
-  const d = new Date(iso)
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`
-}
-
-// conversation null → 新空会话（首次 sendMessage lazy-create，id=uuid）。
-function ensureConversation(c: Conversation | null): Conversation {
-  return c ?? { id: crypto.randomUUID(), messages: [], updatedAt: new Date().toISOString() }
-}
-
-function appendMessage(c: Conversation, m: ChatMessage): Conversation {
-  return { ...c, messages: [...c.messages, m], updatedAt: m.createdAt }
-}
-
-// Finding 5 兜底（2026-09-29 rc9）：历史注入 prompt 带 [YYYY-MM-DD] 前缀，模型可能模仿该格式
-// 把回答正文以 [日期] 开头（prompt 规则引导之外的第二道防线）。只 strip 开头一处——
-// 正文中间的合法日期引用（如「[2026-09-29] 那天…」非开头）不动。
-function stripLeadingDatePrefix(text: string): string {
-  return text.replace(/^\s*\[\d{4}-\d{2}-\d{2}\]\s*/, '')
-}
-
-// M2（2026-09-28 流式验收）：chatLoading 所有权序号。每次 sendMessage 递增并记录本轮 seq；
-// 离开/切换会话（newConversation/loadConversation 异 id/deleteChatConversation 当前条）同样递增——
-// 旧轮随即放弃 chatLoading 所有权：相位推入点（recall/answer）仅在 seq 最新时生效，
-// finalize/早退路径 guard 失败时仅在自己仍是最新 seq 才复位 idle（防永久卡 'answer' 软锁输入框）。
-let chatSendSeq = 0
-
-// W0（2026-10-04）：saveMemory 串行化队列。旧实现 candidates 取 T0 快照后经 embed/裁决两次
-// await 让出事件循环——两次并行 saveMemory（sendMessage 记忆提取 fire-and-forget 与
-// MemorySheet 手动添加可并行）各持 T0 快照裁决，merge/replace 后写覆盖先写，记忆静默丢失。
-// 模块级 promise 链：每次调用把整个函数体挂到链尾串行执行；链尾 catch 吞错（console.error）
-// 防一次失败毒化后续所有排队任务。
-let memoryQueue: Promise<unknown> = Promise.resolve()
+// ── 提醒调度 / AI Chat 辅助 / P-B 语义召回+滚动摘要：逐字迁至 ./reminderScheduler 与
+// ./chatHelpers（E2 store 拆分一阶），本文件经顶部同名 import 继续引用，调用点零改动。
 
 // t3（2026-10-05 prd-trust-pack §④）：AI 失败队列自动补跑 + processing 尸体清扫的模块级状态。
 // autoRetried 会话级去重：每条目每会话至多自动补跑一次（BYOK 配额纪律，重试一次失败即停，
@@ -321,191 +219,6 @@ let retrying = false
 export function __resetAiQueueRetryForTests(): void {
   autoRetried.clear()
   retrying = false
-}
-
-// M4：流式占位（streaming:true）是内存态语义——进程被杀后 Dexie 可能残留 streaming:true 的
-// 尸体会话（空气泡+打字光标+压住 LoadingBubble）。读出时一律抹 false：内存态不信持久层。
-function stripStreamingFlags(conv: Conversation): Conversation {
-  if (!conv.messages.some((m) => m.streaming)) return conv
-  return { ...conv, messages: conv.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)) }
-}
-
-// 从 conversation 取最近 N 条 {role, content, date} 作 answer LLM 对话历史（不含当前问题——
-// buildAnswerPrompt 把当前问题作为最后一轮 user 追加，故此处只给先前轮次）。跳过 error 消息。
-// date（2026-09-29 能力大补）：每条历史的本地日键（YYYY-MM-DD），prompt 渲染 [日期] 前缀，
-// LLM 可解析「昨天说的」等跨天指代。
-function chatHistory(conv: Conversation | null, limit: number): { role: 'user' | 'assistant'; content: string; date?: string }[] {
-  if (!conv) return []
-  return conv.messages
-    .filter((m) => !m.error)
-    .slice(-limit)
-    .map((m) => ({ role: m.role, content: m.content, date: dateKey(m.createdAt) }))
-}
-
-// ── P-B 语义召回（2026-10-03 spec §1）────────────────────────────────────
-// 语义臂：embed 可用时按问句向量补召回——关键词 cites 在前保序，语义命中且未中关键词的
-// 条目按 sim 降序追加（总长 ≤12，ChatTrace.recalled 照旧记录合并后列表，prompt 零改动）。
-// embed 缺席/抛错/返 null → 原样返回关键词 cites（行为与纯关键词召回逐字节一致）。
-async function withSemanticArm(
-  question: string,
-  cites: ChatCite[],
-  entries: Entry[],
-  aiByEntry: Record<string, EntryAi>,
-): Promise<ChatCite[]> {
-  const embed = di.llm.embed
-  if (!embed) return cites
-  try {
-    // model 与适配器同源（accept-pb 修 1）：读 di.storage.getSettings()（适配器 embed
-    // 同读 Dexie settings），不用 uiStore 内存态——两侧失步会「戳≠实际模型」致重复重嵌。
-    // 读失败回退缺省模型，不阻断召回。
-    const settings = await di.storage.getSettings().catch(() => null)
-    const model = settings?.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
-    // 问句向量：进程内 LRU(50) 同问免调（键含模型名，换模型不串）；每问至多 1 次 embed 调用。
-    let qv = queryVectorCache.get(model, question)
-    if (!qv) {
-      const vecs = await embed.call(di.llm, [question]).catch(() => null)
-      qv = vecs?.[0] ?? undefined
-      if (qv && qv.length > 0) queryVectorCache.set(model, question, qv)
-    }
-    if (!qv) return cites
-    // 只召回当前条目集内的向量（回收站/已删条目的残留向量自然出局）。
-    const entryIds = new Set(entries.map((e) => e.id))
-    const allRows = await listEmbeddings()
-    const rows = allRows.filter((r) => entryIds.has(r.entryId))
-    // W0 惰性 GC（2026-10-04）：embeddings 表无 delete 挂点，条目已删/已清的向量行永久残留
-    // ——召回过滤时顺带发现（allRows 比 rows 多即有残留），fire-and-forget 清掉。
-    // 不阻塞召回主路径；失败静默（console.warn），下轮召回再试。
-    if (allRows.length !== rows.length) {
-      void deleteStaleEmbeddings(entryIds).catch((e) => console.warn('[store] stale embedding GC failed', e))
-    }
-    // 惰性回填：发现无向量/文本已变的 ready 条目 → 后台补嵌（每轮 ≤20），本轮不等。
-    void backfillEmbeddings(rows, entries, aiByEntry, model)
-    const sem = semanticArm(qv, rows)
-    if (sem.length === 0) return cites
-    const mergedIds = mergeCites(cites.map((c) => c.id), sem)
-    const citeById = new Map(cites.map((c) => [c.id, c]))
-    const entryById = new Map(entries.map((e) => [e.id, e]))
-    const merged: ChatCite[] = []
-    for (const id of mergedIds) {
-      const hit = citeById.get(id)
-      if (hit) {
-        merged.push(hit)
-        continue
-      }
-      // 语义臂新命中：复用 localRecall 同一压缩逻辑造 ChatCite（形状与关键词臂一致）。
-      const e = entryById.get(id)
-      if (e) merged.push(toCite(e, aiByEntry[e.id]))
-    }
-    return merged
-  } catch (e) {
-    console.warn('[store] semantic arm failed, fallback to keyword recall', e)
-    return cites
-  }
-}
-
-// 惰性回填（spec §1）：语义臂激活时，无向量或文本已变（textHash/model 不等）的 ready
-// 条目 → fire-and-forget 批量补嵌，每轮最多 20 条（防首轮爆配额）。失败静默。
-// model 由调用方（withSemanticArm）传入——与本轮 embed 实际用模同源，免二次 IDB 读。
-async function backfillEmbeddings(
-  existing: EntryEmbedding[],
-  entries: Entry[],
-  aiByEntry: Record<string, EntryAi>,
-  model: string,
-): Promise<void> {
-  const embed = di.llm.embed
-  if (!embed) return
-  try {
-    const byEntryId = new Map(existing.map((r) => [r.entryId, r]))
-    const targets: { entry: Entry; text: string; hash: string }[] = []
-    for (const entry of entries) {
-      if (entry.status !== 'ready') continue // STT/分类失败的条目不嵌
-      const text = buildEmbeddingText(entry, aiByEntry[entry.id])
-      if (!text.trim()) continue
-      const hash = textHash(text)
-      const row = byEntryId.get(entry.id)
-      if (row && row.textHash === hash && row.model === model) continue // 双键新鲜 → 跳过
-      targets.push({ entry, text, hash })
-      if (targets.length >= 20) break
-    }
-    if (targets.length === 0) return
-    const vecs = await embed.call(di.llm, targets.map((x) => x.text)).catch(() => null)
-    if (!vecs) return
-    const now = new Date().toISOString()
-    for (let i = 0; i < targets.length; i++) {
-      const v = vecs[i]
-      if (!v || v.length === 0) continue
-      await saveEmbedding({
-        entryId: targets[i].entry.id,
-        ownerId: getCurrentOwner(),
-        vector: v,
-        model,
-        textHash: targets[i].hash,
-        updatedAt: now,
-      })
-    }
-  } catch (e) {
-    console.warn('[store] embedding backfill failed', e)
-  }
-}
-
-// 增量嵌（spec §1）：processEntry classify 成功后 fire-and-forget 嵌该条目。
-// embed 缺席/失败静默——绝不影响条目处理主流程。
-async function embedEntryNow(entry: Entry, ai: EntryAi): Promise<void> {
-  const embed = di.llm.embed
-  if (!embed) return
-  try {
-    const text = buildEmbeddingText(entry, ai)
-    if (!text.trim()) return
-    // model 与适配器同源（accept-pb 修 1）：读 Dexie settings，不用 uiStore 内存态。
-    const settings = await di.storage.getSettings().catch(() => null)
-    const model = settings?.embeddingModel ?? DEFAULT_EMBEDDING_MODEL
-    const vecs = await embed.call(di.llm, [text]).catch(() => null)
-    const v = vecs?.[0]
-    if (!v || v.length === 0) return
-    await saveEmbedding({
-      entryId: entry.id,
-      ownerId: getCurrentOwner(),
-      vector: v,
-      model,
-      textHash: textHash(text),
-      updatedAt: new Date().toISOString(),
-    })
-  } catch (e) {
-    console.warn('[store] embedEntry failed', e)
-  }
-}
-
-// ── P-B 滚动对话摘要（2026-10-03 spec §2）────────────────────────────────
-// 答案落库后 fire-and-forget：积攒 >10 条未压缩 → 把 [summarizedCount, len-6) 区间压进
-// rollingSummary（最近 6 条永保原文，与 chatHistory 窗口同边界，摘要与原文不重叠）。
-// 本轮问答不等摘要——摘要为下一轮准备。失败仅 console.warn，不影响问答。
-async function maybeRollSummary(conv: Conversation): Promise<void> {
-  if (typeof di.llm.summarizeConversation !== 'function') return
-  try {
-    const total = conv.messages.length
-    // 防御：summarizedCount 越界（杀进程恢复/历史脏数据）按 0 重算。
-    let start = conv.summarizedCount ?? 0
-    if (start < 0 || start > total) start = 0
-    if (total - start <= 10) return
-    const end = total - 6
-    const chunk = conv.messages
-      .slice(start, end)
-      .filter((m) => !m.error)
-      .map((m) => ({ role: m.role, content: m.content, date: dateKey(m.createdAt) }))
-    if (chunk.length === 0) return
-    const summary = await di.llm.summarizeConversation(conv.rollingSummary ?? null, chunk)
-    if (!summary) return
-    // 竞态：await 期间用户可能已发新消息。以最新会话为底合并摘要字段——messages 只增
-    // 不改，end 作为前缀位置仍合法（≤ 最新长度），不会盖住后到的消息。
-    const cur = useUiStore.getState().conversation
-    const base = cur?.id === conv.id ? cur : await di.storage.getConversation(conv.id)
-    if (!base) return
-    const next: Conversation = { ...base, rollingSummary: summary, summarizedCount: Math.min(end, base.messages.length) }
-    if (cur?.id === conv.id) useUiStore.setState({ conversation: next })
-    await di.storage.saveConversation(next)
-  } catch (e) {
-    console.warn('[store] rolling summary failed', e)
-  }
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
@@ -1009,13 +722,8 @@ export const useUiStore = create<UiState>((set, get) => ({
     // permissionRequested flag 保证只问一次；denied 后不再骚扰，notify 走 toast 降级。
     // D4: 走 di.localNotifications（原生 requestPermissions / web Notification.requestPermission）
     // D4 修复：await requestPermission 检查返回值——未授权仍落库 Reminder 但 warn（不阻塞）。
-    if (!permissionRequested) {
-      permissionRequested = true
-      const ok = await di.localNotifications.requestPermission()
-      if (!ok) {
-        console.warn('[store] notification permission not granted; reminder saved but alerts may be suppressed')
-      }
-    }
+    // E2：权限一次性请求块随调度簇迁至 reminderScheduler（原内联块逐字提取，行为一致）。
+    await requestReminderPermissionOnce()
     const r: Reminder = {
       id: crypto.randomUUID(),
       entryId,
@@ -1216,13 +924,8 @@ export const useUiStore = create<UiState>((set, get) => ({
       if (!a.reminderLabel || !a.reminderDueAt) return
       try {
         // 镜像 confirmReminder（:956）：首次请求通知权限一次（denied 只 warn 不阻塞落库）。
-        if (!permissionRequested) {
-          permissionRequested = true
-          const ok = await di.localNotifications.requestPermission()
-          if (!ok) {
-            console.warn('[store] notification permission not granted; reminder saved but alerts may be suppressed')
-          }
-        }
+        // E2：同上，走 reminderScheduler 的一次性权限请求（原内联块逐字提取）。
+        await requestReminderPermissionOnce()
         const r: Reminder = {
           id: crypto.randomUUID(),
           entryId: undefined, // chat 建的提醒无源头条目（Reminder.entryId 可选，P-F 契约）
@@ -1346,7 +1049,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     }
 
     // M2: 本轮 chatLoading 所有权序号（离线拒绝是 UI 级拒绝、不占用序号）。
-    const seq = ++chatSendSeq
+    const seq = nextChatSendSeq()
 
     // 1. 乐观追加用户消息 + intent 阶段。先落库用户消息（即使后续 LLM 失败也保留对话记录）。
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: trimmed, createdAt: now }
@@ -1444,7 +1147,7 @@ export const useUiStore = create<UiState>((set, get) => ({
           // 竞态防护与 changeCategory 尾同：已切会话只落库不动当前视图；
           // 自己仍是最新 seq 时复位 chatLoading（防软锁）。
           if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
-          else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
+          else if (seq === currentChatSendSeq()) set({ chatLoading: 'idle' })
           void di.storage.saveConversation(conv)
             .then(() => get().refreshChatList())
             .catch((e) => console.error('[store] saveConversation(action) failed', e))
@@ -1491,7 +1194,7 @@ export const useUiStore = create<UiState>((set, get) => ({
               }
           conv = appendMessage(conv, actionMsg)
           if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
-          else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
+          else if (seq === currentChatSendSeq()) set({ chatLoading: 'idle' })
           void di.storage.saveConversation(conv)
             .then(() => get().refreshChatList())
             .catch((e) => console.error('[store] saveConversation(action) failed', e))
@@ -1542,7 +1245,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         // 竞态防护照 answer finalize（:1045 模式）：已切会话只落库不动当前视图；
         // 自己仍是最新 seq 时复位 chatLoading（防软锁）。
         if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
-        else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
+        else if (seq === currentChatSendSeq()) set({ chatLoading: 'idle' })
         void di.storage.saveConversation(conv)
           .then(() => get().refreshChatList())
           .catch((e) => console.error('[store] saveConversation(action) failed', e))
@@ -1557,7 +1260,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       let extraSystem = ''
       if (dispatchKind === 'weather') {
         // weather 分支：city=问句地名 → 有 key 时定位反查兜底；一切失败写降级数据块（不抛错）。
-        if (seq === chatSendSeq) set({ chatLoading: 'weather' })
+        if (seq === currentChatSendSeq()) set({ chatLoading: 'weather' })
         const key = await di.secrets.get('geocoding:key')
         let city = query.city
         if (!city && key) {
@@ -1576,7 +1279,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         }
       } else if (dispatchKind === 'search') {
         // search 分支（Tavily 唯一 provider）：结果块带 [标题](URL) 标注指令；失败写降级数据块。
-        if (seq === chatSendSeq) set({ chatLoading: 'search' })
+        if (seq === currentChatSendSeq()) set({ chatLoading: 'search' })
         const key = await di.secrets.get('search:key')
         if (!key) {
           extraSystem = t('chat.search.noKey')
@@ -1589,7 +1292,7 @@ export const useUiStore = create<UiState>((set, get) => ({
         }
       } else {
         // 本地召回（recall 阶段，纯函数，毫秒级）。
-        if (seq === chatSendSeq) set({ chatLoading: 'recall' })
+        if (seq === currentChatSendSeq()) set({ chatLoading: 'recall' })
         cites = localRecall(query, entries, aiByEntry, tags)
         // P-B 语义臂（2026-10-03）：embed 可用时按问句向量补召回合并进 cites；
         // 缺席/失败静默降级，行为与纯关键词召回逐字节一致。
@@ -1627,7 +1330,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       // 4. answer 轮：localRecall 兜底保证 cites 非空（全 0 命中时回落近期 top-K）。
       // 不再因 cites 空硬裸答——交给 LLM 综合判断相关性并自然作答（D35：效果优先）。
       // M2: seq 守卫同 recall——旧轮不得把 chatLoading 推成 answer（曾致全局输入软锁）。
-      if (seq === chatSendSeq) set({ chatLoading: 'answer' })
+      if (seq === currentChatSendSeq()) set({ chatLoading: 'answer' })
 
       // 流式编排（2026-09-28）：cites 非空走流式链路——先 append 占位 assistant 消息
       // （streaming:true，落库一次），onEvent 增量 ~80ms 节流 flush 到内存（流式期间不再
@@ -1733,7 +1436,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       // M2: guard 失败但自己仍是最新 seq（如切走但未发新问）→ 必须复位 chatLoading，
       // 否则本轮推入的 'answer' 相位永久残留 → 全局输入框软锁。
       if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
-      else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
+      else if (seq === currentChatSendSeq()) set({ chatLoading: 'idle' })
       void di.storage.saveConversation(conv)
         .then(() => get().refreshChatList())
         .catch((e) => console.error('[store] saveConversation(answer) failed', e))
@@ -1798,7 +1501,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       // 竞态防护同 answer finalize：已切会话只落库，不动当前 conversation/chatLoading；
       // M2: 自己仍是最新 seq 时复位 chatLoading（防错误路径同样软锁）。
       if (get().conversation?.id === conv.id) set({ conversation: conv, chatLoading: 'idle' })
-      else if (seq === chatSendSeq) set({ chatLoading: 'idle' })
+      else if (seq === currentChatSendSeq()) set({ chatLoading: 'idle' })
       void di.storage.saveConversation(conv)
         .then(() => get().refreshChatList())
         .catch((e2) => console.error('[store] saveConversation(err) failed', e2))
@@ -1808,7 +1511,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     // 置 conversation=null。当前会话消息每次 append 时已落库（saveConversation），无需显式存档；
     // 空会话不落库自然消失。下条 sendMessage lazy-create 新 uuid 行。
     // M2: 离开发问中的会话 → 递增 seq，旧轮放弃 chatLoading 所有权（相位推入/finalize 复位随之失效）。
-    chatSendSeq++
+    nextChatSendSeq()
     set({ conversation: null, chatLoading: 'idle' })
   },
   loadConversation: async (id) => {
@@ -1818,7 +1521,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     const conv = await di.storage.getConversation(id)
     if (conv && conv.messages.length > 0) {
       // M2: 切到不同会话 → 递增 seq（同 id 续看不夺权——发问中的会话仍归本轮管）。
-      if (get().conversation?.id !== conv.id) chatSendSeq++
+      if (get().conversation?.id !== conv.id) nextChatSendSeq()
       set({ conversation: stripStreamingFlags(conv), chatLoading: 'idle' })
     }
   },
@@ -1826,7 +1529,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     // 删单个会话。若删的是当前会话 → conversation=null（回到空新会话语义）。chatList 同步剔除。
     await di.storage.deleteConversation(id)
     // M2: 删除发问中的当前会话 → 递增 seq，旧轮放弃 chatLoading 所有权。
-    if (get().conversation?.id === id) chatSendSeq++
+    if (get().conversation?.id === id) nextChatSendSeq()
     set((s) => ({
       conversation: s.conversation?.id === id ? null : s.conversation,
       chatList: s.chatList.filter((c) => c.id !== id),
@@ -1880,7 +1583,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     // 链上任务真正运行时（非调用时），两次并行调用不再各持 T0 快照互踩。
     // 返回本次任务的 promise——调用方仍能 await/捕获本次错误（与串行 await 旧行为一致）；
     // 队列本身走 catch 分支续链，一次失败不毒化后续排队任务。
-    const task = memoryQueue.then(async () => {
+    const task = getMemoryQueue().then(async () => {
       const trimmed = content.trim()
       if (!trimmed) return
       const nowIso = new Date().toISOString()
@@ -1930,7 +1633,7 @@ export const useUiStore = create<UiState>((set, get) => ({
       // 归档扫描时机之一（spec §4）：saveMemory 成功后。await 保测试确定性；全表几十条开销可忽略。
       await get().archiveStaleMemories()
     })
-    memoryQueue = task.catch((e) => console.error('[store] saveMemory task failed', e))
+    setMemoryQueue(task.catch((e) => console.error('[store] saveMemory task failed', e)))
     return task
   },
   restoreMemory: async (id) => {
@@ -1998,6 +1701,11 @@ export const useUiStore = create<UiState>((set, get) => ({
     set((s) => ({ memories: s.memories.map((m) => (m.id === id ? updated : m)) }))
   },
 }))
+
+// E2（2026-10-05 store 拆分一阶）：晚绑定注入——reminderScheduler/chatHelpers 的运行时
+// store 依赖在 create 完成后立即注入（两模块对 store 仅 import type，编译期抹除零运行时环）。
+initReminderScheduler({ getState: useUiStore.getState, setState: useUiStore.setState })
+initChatHelpers({ getState: useUiStore.getState, setState: useUiStore.setState })
 
 // 账号切换（login/register/bindNetwork/logout/registerGuest）后，accountStore 调本回调触发
 // store 全量重载——清旧 owner 快照（隔离）。`if (hydrated)` 守卫：boot 期 accountStore.hydrate
