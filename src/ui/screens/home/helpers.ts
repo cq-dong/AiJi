@@ -2,8 +2,6 @@ import { t } from '@/app/i18n'
 import { getCurrentLang } from '@/app/currentLang'
 import type { EntryPart } from '@/domain/types'
 
-// "今天" 的参照点：取最新一条 entry 的日期作为时间线的锚定今天，
-// 避免依赖系统真实日期（原型 seed 以 2026-07-15 为今天）。
 // ISO → 本地日期键；seed +08:00 与新条目 Z 都走 new Date(iso) 取本地年月日，避免裸 slice 落到 UTC 日期。
 function localDateKey(iso: string): string {
   const d = new Date(iso)
@@ -11,17 +9,6 @@ function localDateKey(iso: string): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
-}
-
-export function todayKeyFrom(entries: ReadonlyArray<{ createdAt: string }>): string {
-  if (entries.length === 0) return ''
-  let maxIso = entries[0]!.createdAt
-  let maxT = new Date(maxIso).getTime()
-  for (const e of entries) {
-    const ts = new Date(e.createdAt).getTime()
-    if (ts > maxT) { maxT = ts; maxIso = e.createdAt }
-  }
-  return localDateKey(maxIso)
 }
 
 export function dateKey(iso: string): string {

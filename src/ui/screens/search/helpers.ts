@@ -169,20 +169,6 @@ export function modality(entry: Entry): string {
   return t('search.modality.text')
 }
 
-// Anchor "today" to the newest entry's day so relative labels (今天/昨天/M/D)
-// read the way the design intends, regardless of the real wall clock.
-// Falls back to wall clock when there are no entries.
-export function todayRefFrom(entries: ReadonlyArray<{ createdAt: string }>): Date {
-  if (entries.length === 0) return new Date()
-  let maxT = 0
-  for (const e of entries) {
-    const t = new Date(e.createdAt).getTime()
-    if (t > maxT) maxT = t
-  }
-  const d = new Date(maxT)
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate())
-}
-
 export function formatRelativeTime(iso: string, now: Date): string {
   const d = new Date(iso)
   const startNow = new Date(now.getFullYear(), now.getMonth(), now.getDate())

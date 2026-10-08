@@ -14,7 +14,6 @@ import {
   moodChipsFrom,
   QUICK_DATE_CHIPS,
   searchEntries,
-  todayRefFrom,
   type SearchFilters,
   type SearchResult,
 } from './helpers'
@@ -175,7 +174,8 @@ export default function Search() {
     filters.modality !== 'all' ||
     filters.date !== 'all'
 
-  const todayRef = useMemo(() => todayRefFrom(entries), [entries])
+  // 结果卡相对时间与日期过滤器统一锚真实系统时钟（修复：结果卡曾锚最新条目日期，
+  // 旧条目错显「今天 HH:mm」，与过滤器口径自相矛盾）。
   const now = useMemo(() => new Date(), [])
 
   // useDeferredValue：输入即时回显，搜索计算延迟到空闲帧——长列表连续击键不卡输入。
@@ -326,7 +326,7 @@ export default function Search() {
                   entry={r.entry}
                   ai={r.ai}
                   category={r.category}
-                  now={todayRef}
+                  now={now}
                   query={query}
                   onClick={() => openResult(r)}
                 />

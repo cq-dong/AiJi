@@ -3,7 +3,7 @@ import type { Category, Entry, EntryAi } from '@/domain/types'
 import { EmptyState } from '@/ui/components'
 import { useT } from '@/app/i18n/useT'
 import { useUiStore } from '@/app/store'
-import { dateKey, groupLabel, todayKeyFrom } from './helpers'
+import { dateKey, groupLabel } from './helpers'
 import { EntryRow } from './EntryRow'
 
 interface TimeLensProps {
@@ -18,7 +18,8 @@ export function TimeLens({ entries, aiByEntry, categories }: TimeLensProps) {
   const t = useT()
   const lang = useUiStore((s) => s.settings.language)
   const catMap = useMemo(() => new Map(categories.map((c) => [c.slug, c])), [categories])
-  const todayKey = useMemo(() => todayKeyFrom(entries), [entries])
+  // 「今天」锚真实系统时钟（修复：曾锚最新条目日期，旧条目分组头被错标「今天」）。
+  const todayKey = useMemo(() => dateKey(new Date().toISOString()), [])
 
   const groups = useMemo(() => {
     const map = new Map<string, Entry[]>()

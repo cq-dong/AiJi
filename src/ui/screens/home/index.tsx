@@ -6,7 +6,7 @@ import { Button, EmptyState, SwipeableCard } from '@/ui/components'
 import { useUiStore } from '@/app/store'
 import { useT } from '@/app/i18n/useT'
 import type { Conversation, Entry } from '@/domain/types'
-import { dateKey, groupLabel, todayKeyFrom, topDateLabel, windowGroups } from './helpers'
+import { dateKey, groupLabel, topDateLabel, windowGroups } from './helpers'
 import { HomeHeader } from './HomeHeader'
 import { CompanionCard } from './CompanionCard'
 import { dismissGreeting, maybeGreeting } from '@/app/proactive'
@@ -40,8 +40,9 @@ export default function Home() {
   const { ref: ptrRef, pull, refreshing } = usePullToRefresh(handleRefresh)
   const indicatorOpacity = useTransform(pull, [0, 40], [0, 1])
 
-  // 空库时 todayKeyFrom 返 ''，topDateLabel('') 会渲出「NaN月undefined日」——回落系统今天。
-  const todayKey = todayKeyFrom(entries) || dateKey(new Date().toISOString())
+  // 「今天」锚真实系统时钟（修复：曾锚最新条目日期——原型 seed 遗留，最新条目是几天前时
+  // 其分组头/头部计数被错标「今天」）。空库同一天键，天然回落。
+  const todayKey = dateKey(new Date().toISOString())
   const todayCount = entries.filter((e) => dateKey(e.createdAt) === todayKey).length
 
   const showOffline = !online

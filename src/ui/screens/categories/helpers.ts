@@ -29,18 +29,6 @@ export function dateKey(iso: string): string {
   return localDateKey(iso)
 }
 
-// "今天" anchor: newest entry's date (so seed data with 2026-07-15 still labels "今天").
-export function todayKeyFrom(entries: ReadonlyArray<{ createdAt: string }>): string {
-  if (entries.length === 0) return ''
-  let maxIso = entries[0]!.createdAt
-  let maxT = new Date(maxIso).getTime()
-  for (const e of entries) {
-    const t = new Date(e.createdAt).getTime()
-    if (t > maxT) { maxT = t; maxIso = e.createdAt }
-  }
-  return localDateKey(maxIso)
-}
-
 // getDay() → 0=Sunday … 6=Saturday；对齐 categories.date.weekday.* 的 sun..sat 顺序。
 const WEEKDAY_KEYS: I18nKey[] = [
   'categories.date.weekday.sun',
